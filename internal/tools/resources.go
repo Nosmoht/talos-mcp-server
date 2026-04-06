@@ -46,7 +46,7 @@ func (h *Handlers) HandleGetResource(ctx context.Context, _ *mcp.CallToolRequest
 			return nil, nil, fmt.Errorf("get resource %s/%s/%s: %w", ns, resourceType, args.ResourceID, err)
 		}
 
-		data, err := marshalResource(r)
+		data, err := MarshalResource(r)
 		if err != nil {
 			return nil, nil, fmt.Errorf("marshal resource: %w", err)
 		}
@@ -62,7 +62,7 @@ func (h *Handlers) HandleGetResource(ctx context.Context, _ *mcp.CallToolRequest
 		}
 
 		for _, r := range list.Items {
-			data, err := marshalResource(r)
+			data, err := MarshalResource(r)
 			if err != nil {
 				return nil, nil, fmt.Errorf("marshal resource: %w", err)
 			}
@@ -93,7 +93,7 @@ func (h *Handlers) HandleResourceDefinitions(ctx context.Context, _ *mcp.CallToo
 	var defs []map[string]any
 
 	for rd := range list.All() {
-		defs = append(defs, marshalResourceDefinition(rd))
+		defs = append(defs, MarshalResourceDefinition(rd))
 	}
 
 	out, err := json.MarshalIndent(defs, "", "  ")

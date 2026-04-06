@@ -72,11 +72,11 @@ func resolveDryRun(v *bool) bool {
 	return v == nil || *v
 }
 
-// marshalResource converts a COSI resource to a JSON-serializable map.
+// MarshalResource converts a COSI resource to a JSON-serializable map.
 // It uses the same path as talosctl get --output json:
 //
 //	resource.MarshalYAML → yaml.Marshal → yaml.Unmarshal → map[string]any
-func marshalResource(r resource.Resource) (map[string]any, error) {
+func MarshalResource(r resource.Resource) (map[string]any, error) {
 	out, err := resource.MarshalYAML(r)
 	if err != nil {
 		return nil, err
@@ -96,8 +96,8 @@ func marshalResource(r resource.Resource) (map[string]any, error) {
 	return data, nil
 }
 
-// marshalResourceDefinition converts a ResourceDefinition to a compact summary map.
-func marshalResourceDefinition(rd *meta.ResourceDefinition) map[string]any {
+// MarshalResourceDefinition converts a ResourceDefinition to a compact summary map.
+func MarshalResourceDefinition(rd *meta.ResourceDefinition) map[string]any {
 	spec := rd.TypedSpec()
 
 	return map[string]any{

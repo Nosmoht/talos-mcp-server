@@ -21,7 +21,7 @@ type ServiceActionArgs struct {
 
 // HandleServiceAction implements the talos_service_action tool.
 func (h *Handlers) HandleServiceAction(ctx context.Context, _ *mcp.CallToolRequest, args ServiceActionArgs) (*mcp.CallToolResult, any, error) {
-	auditLog("talos_service_action", args, args.Nodes)
+	h.auditLog("talos_service_action", args, args.Nodes)
 
 	ctx = talos.WithNodes(ctx, args.Nodes)
 
@@ -42,6 +42,7 @@ func (h *Handlers) HandleServiceAction(ctx context.Context, _ *mcp.CallToolReque
 	}
 
 	if err != nil {
+		h.mcpLogError("talos_service_action", err)
 		return nil, nil, fmt.Errorf("service %s %q: %w", args.Action, args.ServiceName, err)
 	}
 
@@ -62,7 +63,7 @@ type RebootArgs struct {
 
 // HandleReboot implements the talos_reboot tool.
 func (h *Handlers) HandleReboot(ctx context.Context, req *mcp.CallToolRequest, args RebootArgs) (*mcp.CallToolResult, any, error) {
-	auditLog("talos_reboot", args, args.Nodes)
+	h.auditLog("talos_reboot", args, args.Nodes)
 
 	if !args.Confirm {
 		return nil, nil, fmt.Errorf("reboot refused: confirm must be explicitly set to true")
@@ -86,6 +87,7 @@ func (h *Handlers) HandleReboot(ctx context.Context, req *mcp.CallToolRequest, a
 	}
 
 	if err := h.Client.Reboot(ctx, opts...); err != nil {
+		h.mcpLogError("talos_reboot", err)
 		return nil, nil, fmt.Errorf("reboot: %w", err)
 	}
 
@@ -103,7 +105,7 @@ type UpgradeArgs struct {
 
 // HandleUpgrade implements the talos_upgrade tool.
 func (h *Handlers) HandleUpgrade(ctx context.Context, req *mcp.CallToolRequest, args UpgradeArgs) (*mcp.CallToolResult, any, error) {
-	auditLog("talos_upgrade", args, args.Nodes)
+	h.auditLog("talos_upgrade", args, args.Nodes)
 
 	if !args.Confirm {
 		return nil, nil, fmt.Errorf("upgrade refused: confirm must be explicitly set to true")
@@ -123,6 +125,7 @@ func (h *Handlers) HandleUpgrade(ctx context.Context, req *mcp.CallToolRequest, 
 
 	resp, err := h.Client.Upgrade(ctx, args.Image, false, false)
 	if err != nil {
+		h.mcpLogError("talos_upgrade", err)
 		return nil, nil, fmt.Errorf("upgrade: %w", err)
 	}
 
@@ -147,7 +150,7 @@ type PatchConfigArgs struct {
 // HandlePatchConfig implements the talos_patch_config tool.
 func (h *Handlers) HandlePatchConfig(ctx context.Context, req *mcp.CallToolRequest, args PatchConfigArgs) (*mcp.CallToolResult, any, error) {
 	// Log a redacted copy: the patch content may contain TLS keys, tokens, or registry passwords.
-	auditLog("talos_patch_config", struct {
+	h.auditLog("talos_patch_config", struct {
 		Mode   string   `json:"mode,omitempty"`
 		DryRun *bool    `json:"dry_run,omitempty"`
 		Nodes  []string `json:"nodes,omitempty"`
@@ -198,6 +201,7 @@ func (h *Handlers) HandlePatchConfig(ctx context.Context, req *mcp.CallToolReque
 
 	resp, err := h.Client.ApplyConfiguration(ctx, applyReq)
 	if err != nil {
+		h.mcpLogError("talos_patch_config", err)
 		return nil, nil, fmt.Errorf("apply configuration: %w", err)
 	}
 

@@ -9,14 +9,22 @@
 //   - TALOS_CONTEXT: context name to use (default: active context in config)
 //   - TALOS_ENDPOINTS: comma-separated endpoint overrides
 //   - TALOS_MCP_READ_ONLY: set to "true" to disable all mutating tools
+//   - TALOS_MCP_HTTP_ADDR: if set (e.g. ":8080"), serve HTTP instead of stdio
+//   - TALOS_MCP_AUTH_TOKEN: required bearer token when HTTP mode is active
 package main
 
 import (
 	"context"
+	"crypto/subtle"
+	"errors"
+	"fmt"
 	"log"
 	"log/slog"
+	"net/http"
 	"os"
+	"time"
 
+	"github.com/modelcontextprotocol/go-sdk/auth"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/Nosmoht/talos-mcp-server/internal/prompts"
@@ -38,6 +46,12 @@ func main() {
 	ctx := context.Background()
 
 	readOnly := os.Getenv("TALOS_MCP_READ_ONLY") == "true"
+	httpAddr := os.Getenv("TALOS_MCP_HTTP_ADDR")
+	authToken := os.Getenv("TALOS_MCP_AUTH_TOKEN")
+
+	if err := validateHTTPConfig(httpAddr, authToken); err != nil {
+		log.Fatalf("%v", err)
+	}
 
 	tc, err := talos.NewClient(ctx)
 	if err != nil {
@@ -49,10 +63,7 @@ func main() {
 
 	h := &tools.Handlers{Client: tc}
 
-	server := mcp.NewServer(&mcp.Implementation{
-		Name:    "talos",
-		Version: version,
-	}, &mcp.ServerOptions{
+	serverOpts := &mcp.ServerOptions{
 		Instructions: "Talos Linux cluster management server. " +
 			"MCP Resources: read talos://cluster/resource-definitions to discover COSI resource types, " +
 			"then read talos://{node}/resource/{namespace}/{type} to list them or " +
@@ -61,13 +72,25 @@ func main() {
 			"All tools accept an optional 'nodes' field to target specific node IPs; " +
 			"omit it to use the active context from talosconfig. " +
 			"Destructive tools (talos_reboot, talos_upgrade) require confirm=true and explicit nodes.",
-		InitializedHandler: func(_ context.Context, req *mcp.InitializedRequest) {
+	}
+
+	if httpAddr == "" {
+		// Stdio is single-session: wire per-session MCP log notifications.
+		// HTTP mode omits this — multiple concurrent sessions would race on the
+		// shared atomic.Pointer[slog.Logger], misdirecting notifications.
+		serverOpts.InitializedHandler = func(_ context.Context, req *mcp.InitializedRequest) {
 			logger := slog.New(mcp.NewLoggingHandler(req.Session, &mcp.LoggingHandlerOptions{
 				LoggerName: "talos-mcp",
 			}))
 			h.SetLogger(logger)
-		},
-	})
+		}
+	}
+
+	server := mcp.NewServer(&mcp.Implementation{
+		Name:    "talos",
+		Version: version,
+	}, serverOpts)
+
 
 	// All tools operate on a specific configured Talos cluster (closed world).
 	closedWorld := boolPtr(false)
@@ -188,7 +211,7 @@ func main() {
 	resources.Register(server, tc)
 	prompts.Register(server, readOnly)
 
-	if err := server.Run(ctx, &mcp.StdioTransport{}); err != nil {
+	if err := runServer(ctx, server, httpAddr, authToken); err != nil {
 		log.Printf("server stopped: %v", err)
 	}
 }
@@ -196,4 +219,65 @@ func main() {
 // boolPtr returns a pointer to a bool value.
 func boolPtr(b bool) *bool {
 	return &b
+}
+
+// validateHTTPConfig returns an error if HTTP mode is requested without an auth token.
+func validateHTTPConfig(addr, token string) error {
+	if addr != "" && token == "" {
+		return fmt.Errorf("TALOS_MCP_AUTH_TOKEN must be set when TALOS_MCP_HTTP_ADDR is configured")
+	}
+	return nil
+}
+
+// buildTokenVerifier constructs a bearer token verifier using constant-time comparison.
+// TokenInfo.Expiration is set to a far-future value to satisfy the SDK's non-zero contract.
+func buildTokenVerifier(token string) auth.TokenVerifier {
+	tokenBytes := []byte(token)
+	return func(_ context.Context, incoming string, _ *http.Request) (*auth.TokenInfo, error) {
+		if subtle.ConstantTimeCompare([]byte(incoming), tokenBytes) != 1 {
+			return nil, fmt.Errorf("%w: bearer token mismatch", auth.ErrInvalidToken)
+		}
+		return &auth.TokenInfo{
+			Expiration: time.Now().Add(365 * 24 * time.Hour),
+		}, nil
+	}
+}
+
+// runServer starts the server in either stdio or HTTP mode.
+func runServer(ctx context.Context, server *mcp.Server, addr, token string) error {
+	if addr == "" {
+		// stdio mode — unchanged behaviour
+		return server.Run(ctx, &mcp.StdioTransport{})
+	}
+
+	// HTTP mode
+	mcpHandler := mcp.NewStreamableHTTPHandler(func(_ *http.Request) *mcp.Server {
+		return server
+	}, &mcp.StreamableHTTPOptions{
+		// DisableLocalhostProtection allows proxied requests whose Host header
+		// differs from the bind address (e.g. behind nginx/Caddy/Tailscale).
+		DisableLocalhostProtection: true,
+		Logger:                     slog.Default(),
+	})
+
+	verifier := buildTokenVerifier(token)
+	authedHandler := auth.RequireBearerToken(verifier, nil)(mcpHandler)
+
+	httpSrv := &http.Server{
+		Addr:              addr,
+		Handler:           authedHandler,
+		ReadHeaderTimeout: 30 * time.Second,
+	}
+
+	// Shutdown on context cancellation.
+	go func() { //nolint:gosec // G118: intentional — shutdown uses a fresh background context, not the cancelled one
+		<-ctx.Done()
+		_ = httpSrv.Shutdown(context.Background()) //nolint:contextcheck
+	}()
+
+	log.Printf("HTTP transport listening on %s", addr) //nolint:gosec // G706: addr is operator-supplied config, not user input
+	if err := httpSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		return fmt.Errorf("HTTP server: %w", err)
+	}
+	return nil
 }

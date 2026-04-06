@@ -18,6 +18,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/Nosmoht/talos-mcp-server/internal/resources"
 	"github.com/Nosmoht/talos-mcp-server/internal/talos"
 	"github.com/Nosmoht/talos-mcp-server/internal/tools"
 )
@@ -49,8 +50,10 @@ func main() {
 		Version: version,
 	}, &mcp.ServerOptions{
 		Instructions: "Talos Linux cluster management server. " +
-			"Start with talos_resource_definitions to see all available resource types, " +
-			"then use talos_get to query them. " +
+			"MCP Resources: read talos://cluster/resource-definitions to discover COSI resource types, " +
+			"then read talos://{node}/resource/{namespace}/{type} to list them or " +
+			"talos://{node}/resource/{namespace}/{type}/{id} to get a specific one. " +
+			"Tools: use talos_get for node-targeted queries with aliases and namespace auto-resolution. " +
 			"All tools accept an optional 'nodes' field to target specific node IPs; " +
 			"omit it to use the active context from talosconfig. " +
 			"Destructive tools (talos_reboot, talos_upgrade) require confirm=true and explicit nodes.",
@@ -173,6 +176,8 @@ func main() {
 			Annotations: &mcp.ToolAnnotations{DestructiveHint: destructive, OpenWorldHint: closedWorld},
 		}, h.HandlePatchConfig)
 	}
+
+	resources.Register(server, tc)
 
 	if err := server.Run(ctx, &mcp.StdioTransport{}); err != nil {
 		log.Printf("server stopped: %v", err)

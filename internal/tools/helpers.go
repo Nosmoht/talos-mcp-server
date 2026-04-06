@@ -6,7 +6,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"log/slog"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/cosi-project/runtime/pkg/resource"
@@ -20,6 +22,14 @@ import (
 // Handlers holds the Talos client and exposes MCP tool handler methods.
 type Handlers struct {
 	Client *talos.Client
+	logger atomic.Pointer[slog.Logger]
+}
+
+// SetLogger installs the MCP-backed slog.Logger for this session.
+// Note: uses last-writer-wins semantics — intentional for single-session
+// stdio transport. Not safe for concurrent multi-client deployments.
+func (h *Handlers) SetLogger(l *slog.Logger) {
+	h.logger.Store(l)
 }
 
 // NodesOnlyArgs is a common base for tools that only target nodes.
@@ -46,9 +56,11 @@ func jsonMarshal(v any) (string, error) {
 	return string(out), nil
 }
 
-// auditLog emits a structured audit log entry for mutating tool invocations.
-// Output format: AUDIT timestamp=<RFC3339> tool=<name> args=<json> nodes=<list>
-func auditLog(tool string, args any, nodes []string) {
+// auditLog emits a structured audit record at INFO level.
+// Always writes to the server-side log; additionally forwards to the MCP
+// client via notifications/message when a session logger is installed.
+// MCP delivery is best-effort — errors are silently dropped per slog contract.
+func (h *Handlers) auditLog(tool string, args any, nodes []string) {
 	argsJSON, err := json.Marshal(args)
 	if err != nil {
 		argsJSON = []byte("<marshal error>")
@@ -65,6 +77,23 @@ func auditLog(tool string, args any, nodes []string) {
 		nodeList,
 		argsJSON,
 	)
+
+	if l := h.logger.Load(); l != nil {
+		l.Info("tool invoked",
+			"tool", tool,
+			"nodes", nodeList,
+			"args", string(argsJSON),
+		)
+	}
+}
+
+// mcpLogError forwards an operational error to the MCP client at ERROR level.
+// Only called after guard checks pass (not for validation errors).
+// Best-effort — silently dropped if no logger is set or delivery fails.
+func (h *Handlers) mcpLogError(tool string, err error) {
+	if l := h.logger.Load(); l != nil {
+		l.Error("tool error", "tool", tool, "error", err.Error())
+	}
 }
 
 // resolveDryRun returns true (dry-run mode) unless v is explicitly set to false.

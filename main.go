@@ -41,7 +41,7 @@ func main() {
 	}
 	defer tc.Close() //nolint:errcheck
 
-	log.Printf("talos-mcp version=%s commit=%s date=%s read_only=%v", version, commit, date, readOnly)
+	log.Printf("talos-mcp version=%q commit=%q date=%q read_only=%v", version, commit, date, readOnly)
 
 	server := mcp.NewServer(&mcp.Implementation{
 		Name:    "talos",

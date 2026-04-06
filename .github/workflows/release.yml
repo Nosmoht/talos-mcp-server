@@ -37,10 +37,11 @@ jobs:
           name: dist
           path: dist/
 
-  # NOTE: This job authenticates to npm via OIDC trusted publishing.
-  # Each package (talos-mcp, @talos-mcp/*) must have a Trusted Publisher
-  # configured on npmjs.com (GitHub Actions → this repo → npm-publish job)
-  # before the first release. One-time manual setup per package (see SECURITY.md).
+  # NOTE: This job authenticates to npm via OIDC trusted publishing (tokenless).
+  # Trusted Publishers are configured on npmjs.com for all 5 packages.
+  # Requires npm >= 11.5.1 — Node.js 22 LTS ships with npm 10.x so we upgrade
+  # npm explicitly. registry-url is intentionally omitted: setup-node's .npmrc
+  # placeholder (_authToken=${NODE_AUTH_TOKEN}) blocks the OIDC auth exchange.
   npm-publish:
     needs: goreleaser
     runs-on: ubuntu-latest
@@ -51,8 +52,9 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v4
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
-          node-version: "20"
-          registry-url: "https://registry.npmjs.org"
+          node-version: "22"
+      - name: Upgrade npm to support OIDC trusted publishing
+        run: npm install -g npm@11
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: dist
@@ -113,4 +115,4 @@ jobs:
       - name: Publish main package
         run: |
           cd npm/talos-mcp
-          npm publish --provenance
+          npm publish --access public --provenance

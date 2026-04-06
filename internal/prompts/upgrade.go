@@ -46,6 +46,12 @@ func handlePreUpgrade(_ context.Context, req *mcp.GetPromptRequest) (*mcp.GetPro
 
 Work through each gate in order. If any gate fails, stop and report — do not proceed to later gates. A failed gate means the cluster is NOT ready to upgrade.
 
+Gate 0 — Version compatibility check
+Fetch the current Talos version from any node using talos_version. Compare with the target version %s.
+Talos supports upgrades of at most one minor version at a time (e.g. v1.11.x → v1.12.x).
+If the target skips a minor version or is a downgrade, stop and report — the upgrade path is not supported.
+Confirm the current version and validate the upgrade path before proceeding to Gate 1.
+
 Gate 1 — Cluster health
 Check overall cluster health using talos_health. All checks must pass: etcd healthy, Kubernetes API reachable, all nodes ready. A timeout or any failure here is a hard blocker.
 
@@ -64,7 +70,7 @@ List services using talos_services. Confirm kubelet, containerd, and etcd (on co
 Gate 6 — Running containers
 Check containers using talos_containers with namespace="k8s.io". Confirm critical system pods (kube-apiserver, kube-controller-manager, kube-scheduler, coredns) have running containers.
 
-Final report: state whether the cluster PASSES or FAILS the pre-upgrade checklist. List any failed gates with details. If all gates pass, confirm it is safe to proceed with upgrading one node at a time using talos_upgrade, starting with control plane nodes, targeting Talos %s.`, targetVersion, nodeClause, targetVersion)
+Final report: state whether the cluster PASSES or FAILS the pre-upgrade checklist. List any failed gates with details. If all gates pass, confirm it is safe to proceed with upgrading one node at a time using talos_upgrade, starting with control plane nodes, targeting Talos %s.`, targetVersion, nodeClause, targetVersion, targetVersion)
 
 	return textMsg(msg), nil
 }

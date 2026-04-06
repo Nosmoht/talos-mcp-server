@@ -51,6 +51,26 @@ Environment variables (set in `.mcp.json` env block or shell):
 - `talos_upgrade` — upgrade Talos on nodes (requires `confirm=true` + `nodes` + `image`)
 - `talos_patch_config` — apply machine config patch (defaults to `dry_run=true`)
 
+## Prompts (5)
+
+Prompts are guided workflows that instruct the AI agent which tools to call and in what order. They accept arguments and return structured investigation or action plans.
+
+- `diagnose-node` — systematic node diagnosis: services → logs → events → MachineStatus → dmesg
+  - `node` (required): IP address or hostname of the node to diagnose
+- `pre-upgrade-checklist` — verify cluster readiness before upgrading to a target Talos version
+  - `target_version` (required): target Talos version, e.g. `v1.9.0`
+  - `nodes` (optional): comma-separated node IPs; omit to check all nodes in the active context
+- `investigate-etcd` — deep-dive etcd health: status, members, logs, control-plane services, dmesg
+  - `node` (optional): control plane node IP to focus on; omit to query all nodes
+- `debug-service` — debug a crashing or failing service: state, logs, events, processes, dmesg
+  - `service` (required): service name, e.g. `kubelet`, `containerd`, `etcd`
+  - `node` (required): target node IP or hostname
+  - `tail_lines` (optional): number of log lines to retrieve (default: `200`)
+- `apply-config` — safe config patch workflow: health check → dry-run → user confirmation → apply (mutating; not registered in read-only mode)
+  - `patch` (required): machine config patch as a JSON or YAML string
+  - `node` (required): target node IP or hostname
+  - `mode` (optional): apply mode — `auto`, `reboot`, `no_reboot`, `staged`, or `try` (default: `try`)
+
 ## Safety
 
 - `talos_reboot` and `talos_upgrade` require `confirm=true` and explicit `nodes` — will error without both.

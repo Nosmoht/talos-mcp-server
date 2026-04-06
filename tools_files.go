@@ -120,7 +120,7 @@ func (tc *TalosClient) handleReadFile(ctx context.Context, _ *mcp.CallToolReques
 	sb.WriteString(content)
 
 	if truncated {
-		sb.WriteString(fmt.Sprintf("\n\n[truncated at %d bytes]", maxBytes))
+		fmt.Fprintf(&sb, "\n\n[truncated at %d bytes]", maxBytes)
 	}
 
 	return textResult(sb.String()), nil, nil

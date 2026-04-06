@@ -134,7 +134,7 @@ type PatchConfigArgs struct {
 func (tc *TalosClient) handlePatchConfig(ctx context.Context, _ *mcp.CallToolRequest, args PatchConfigArgs) (*mcp.CallToolResult, any, error) {
 	ctx = withNodes(ctx, args.Nodes)
 
-	mode := machineapi.ApplyConfigurationRequest_AUTO
+	var mode machineapi.ApplyConfigurationRequest_Mode
 
 	switch args.Mode {
 	case "reboot":

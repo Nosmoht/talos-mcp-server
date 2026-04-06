@@ -37,9 +37,11 @@ func main() {
 	}
 	defer tc.Close() //nolint:errcheck
 
+	log.Printf("talos-mcp version=%s commit=%s date=%s", version, commit, date)
+
 	server := mcp.NewServer(&mcp.Implementation{
 		Name:    "talos",
-		Version: "0.1.0",
+		Version: version,
 	}, &mcp.ServerOptions{
 		Instructions: "Talos Linux cluster management server. " +
 			"Start with talos_resource_definitions to see all available resource types, " +

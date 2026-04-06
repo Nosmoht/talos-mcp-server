@@ -14,6 +14,7 @@ package main
 import (
 	"context"
 	"log"
+	"log/slog"
 	"os"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -46,6 +47,8 @@ func main() {
 
 	log.Printf("talos-mcp version=%q commit=%q date=%q read_only=%v", version, commit, date, readOnly) //nolint:gosec // G706 false positive: version/commit/date are build-time ldflags constants injected by GoReleaser, not runtime user input
 
+	h := &tools.Handlers{Client: tc}
+
 	server := mcp.NewServer(&mcp.Implementation{
 		Name:    "talos",
 		Version: version,
@@ -58,9 +61,13 @@ func main() {
 			"All tools accept an optional 'nodes' field to target specific node IPs; " +
 			"omit it to use the active context from talosconfig. " +
 			"Destructive tools (talos_reboot, talos_upgrade) require confirm=true and explicit nodes.",
+		InitializedHandler: func(_ context.Context, req *mcp.InitializedRequest) {
+			logger := slog.New(mcp.NewLoggingHandler(req.Session, &mcp.LoggingHandlerOptions{
+				LoggerName: "talos-mcp",
+			}))
+			h.SetLogger(logger)
+		},
 	})
-
-	h := &tools.Handlers{Client: tc}
 
 	// All tools operate on a specific configured Talos cluster (closed world).
 	closedWorld := boolPtr(false)

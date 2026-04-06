@@ -58,8 +58,12 @@ func Register(server *mcp.Server, client *talos.Client) {
 // url.Parse treats the part after // as the authority, so for
 // talos://10.0.0.1/resource/runtime/MachineStatus it gives:
 //
-//	Host = "10.0.0.1"
-//	Path = "/resource/runtime/MachineStatus"
+//	Hostname() = "10.0.0.1"
+//	Path       = "/resource/runtime/MachineStatus"
+//
+// Hostname() (not Host) is used so that an optional port — e.g.
+// talos://10.0.0.1:50000/... — is stripped before passing the node
+// address to the Talos client.
 func parseCOSIURI(rawURI string) (node, namespace, resourceType, resourceID string, err error) {
 	u, err := url.Parse(rawURI)
 	if err != nil {
@@ -69,7 +73,7 @@ func parseCOSIURI(rawURI string) (node, namespace, resourceType, resourceID stri
 		return "", "", "", "", fmt.Errorf("unexpected scheme %q, want \"talos\"", u.Scheme)
 	}
 
-	node = u.Host
+	node = u.Hostname()
 	if node == "" {
 		return "", "", "", "", fmt.Errorf("missing node in URI %q", rawURI)
 	}

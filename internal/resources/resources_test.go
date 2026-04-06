@@ -47,6 +47,21 @@ func TestParseCOSIURI(t *testing.T) {
 			wantType: "ms",
 		},
 		{
+			name:     "ip with port - list",
+			uri:      "talos://10.0.0.1:50000/resource/runtime/MachineStatus",
+			wantNode: "10.0.0.1",
+			wantNS:   "runtime",
+			wantType: "MachineStatus",
+		},
+		{
+			name:     "hostname with port - get",
+			uri:      "talos://node1:50000/resource/network/LinkStatus/eth0",
+			wantNode: "node1",
+			wantNS:   "network",
+			wantType: "LinkStatus",
+			wantID:   "eth0",
+		},
+		{
 			name:    "wrong scheme",
 			uri:     "http://10.0.0.1/resource/runtime/MachineStatus",
 			wantErr: true,

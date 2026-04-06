@@ -66,6 +66,9 @@ func (h *Handlers) handleCOSIResource(ctx context.Context, req *mcp.ReadResource
 		}
 	}
 
+	// Resources wrap results in an envelope to convey truncation state.
+	// Unlike the talos_get tool (which returns a raw array), resources may
+	// be capped at maxListResults items; the truncated field signals this.
 	type response struct {
 		Items     []map[string]any `json:"items"`
 		Truncated bool             `json:"truncated,omitempty"`

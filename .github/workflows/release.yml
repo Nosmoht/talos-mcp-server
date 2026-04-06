@@ -30,6 +30,10 @@ jobs:
           name: dist
           path: dist/
 
+  # NOTE: This job authenticates to npm via OIDC trusted publishing.
+  # Each package (talos-mcp, @talos-mcp/*) must have a Trusted Publisher
+  # configured on npmjs.com (GitHub Actions → this repo → npm-publish job)
+  # before the first release. One-time manual setup per package (see SECURITY.md).
   npm-publish:
     needs: goreleaser
     runs-on: ubuntu-latest
@@ -88,19 +92,15 @@ jobs:
           "
 
       - name: Publish platform packages
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           for dir in linux-x64 linux-arm64 darwin-x64 darwin-arm64; do
             echo "--- Publishing @talos-mcp/${dir}"
             cd "npm/${dir}"
-            npm publish --access public
+            npm publish --access public --provenance
             cd ../..
           done
 
       - name: Publish main package
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           cd npm/talos-mcp
-          npm publish
+          npm publish --provenance

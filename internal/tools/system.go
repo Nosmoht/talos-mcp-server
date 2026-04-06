@@ -136,7 +136,13 @@ func (h *Handlers) HandleHealth(ctx context.Context, req *mcp.CallToolRequest, a
 		}
 
 		i++
-		notifyProgress(ctx, req, "checking cluster health", i, 0)
+
+		progressMsg := msg.GetMessage()
+		if progressMsg == "" {
+			progressMsg = "checking cluster health"
+		}
+
+		notifyProgress(ctx, req, progressMsg, i, 0)
 
 		if msg.GetMessage() != "" {
 			messages = append(messages, msg.GetMessage())

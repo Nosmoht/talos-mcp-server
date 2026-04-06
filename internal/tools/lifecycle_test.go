@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/modelcontextprotocol/go-sdk/mcp"
+
 	"github.com/Nosmoht/talos-mcp-server/internal/talos"
 )
 
@@ -126,6 +128,22 @@ func TestHandlePatchConfig_InvalidMode(t *testing.T) {
 	if !strings.Contains(err.Error(), "unknown mode") {
 		t.Errorf("unexpected error: %v", err)
 	}
+}
+
+// TestNotifyProgress_NilReq verifies that notifyProgress is a no-op when req is nil.
+func TestNotifyProgress_NilReq(_ *testing.T) {
+	// Must not panic.
+	notifyProgress(context.Background(), nil, "test", 1, 1)
+}
+
+// TestNotifyProgress_NoToken verifies that notifyProgress is a no-op when the
+// request carries no progress token.
+func TestNotifyProgress_NoToken(_ *testing.T) {
+	req := &mcp.CallToolRequest{
+		Params: &mcp.CallToolParamsRaw{},
+	}
+	// Token is nil — must not panic or call NotifyProgress.
+	notifyProgress(context.Background(), req, "test", 1, 1)
 }
 
 // TestResolveDryRun verifies the dry_run default behaviour.

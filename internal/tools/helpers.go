@@ -92,8 +92,22 @@ func (h *Handlers) auditLog(tool string, args any, nodes []string) {
 // Only called after guard checks pass (not for validation errors).
 // Best-effort — silently dropped if no logger is set or delivery fails.
 func (h *Handlers) mcpLogError(tool string, err error) {
+	log.Printf("ERROR tool=%s error=%v", tool, err)
+
 	if l := h.logger.Load(); l != nil {
 		l.Error("tool error", "tool", tool, "error", err.Error())
+	}
+}
+
+// mcpLogWarn forwards a warning to the MCP client at WARN level.
+// Takes an explicit msg parameter (unlike mcpLogError) because warnings
+// carry additional context alongside the underlying error.
+// Best-effort — silently dropped if no logger is set or delivery fails.
+func (h *Handlers) mcpLogWarn(tool string, msg string, err error) {
+	log.Printf("WARN tool=%s msg=%s error=%v", tool, msg, err)
+
+	if l := h.logger.Load(); l != nil {
+		l.Warn(msg, "tool", tool, "error", err.Error())
 	}
 }
 

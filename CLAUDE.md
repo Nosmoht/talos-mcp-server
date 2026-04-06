@@ -139,3 +139,52 @@ export GITHUB_PERSONAL_ACCESS_TOKEN=ghp_...
 ```
 
 The token value uses `${GITHUB_PERSONAL_ACCESS_TOKEN}` — Claude Code expands this from the environment at startup. The actual token never appears in `.mcp.json`.
+
+## Change Governance
+
+Every change to tracked files requires review before commit. No exceptions for size, type, or perceived risk.
+
+### What constitutes a change
+
+Any modification to Go source, tests, documentation, CI config, prompts, or generated output.
+
+### Required review flow
+
+1. **Plan** → invoke `senior-plan-reviewer` agent. Artifact: `.claude/reviews/<change-id>/plan-review.md`
+2. **Implement** → invoke `senior-implementer` agent (or implement manually)
+3. **Code + doc review** → invoke `staff-reviewer` agent. Artifact: `.claude/reviews/<change-id>/impl-review.md`
+4. **Final approval** → invoke `principal-architect-reviewer` agent. Artifact: `.claude/reviews/<change-id>/final-approval.md`
+5. **Commit** → only after all three artifacts show `status: approved` with zero findings
+
+### Change-id convention
+
+Use semantic slugs (e.g., `add-etcd-defrag-tool`, `fix-health-timeout`). Include in commit message:
+
+```
+feat(etcd): add defrag tool [review:add-etcd-defrag-tool]
+```
+
+### Role separation
+
+The implementing agent/person must not serve as reviewer for the same change. The `principal-architect-reviewer` verifies this mechanically.
+
+### Research
+
+When uncertain about API behavior, conventions, or prior decisions: invoke the `researcher` agent. Repo-first, official-docs fallback.
+
+### Enforcement
+
+- `.claude/settings.json` hooks block `git commit` (Bash) and MCP GitHub push tools without valid review artifacts
+- Native git `pre-commit` hook provides defense-in-depth for commits outside Claude Code
+
+Install the git hook (one-time per clone):
+
+```bash
+cp .claude/hooks/pre-commit .git/hooks/pre-commit && chmod +x .git/hooks/pre-commit
+```
+
+### Known limitations (v1)
+
+- Hook enforcement covers Claude Code sessions (Bash tool, MCP GitHub tools) and git CLI via the pre-commit hook
+- Review artifacts are process guards, not cryptographically signed — trust is enforced by role separation and the principal-architect-reviewer gate
+- Post-review file modifications are not detected (tracked for v2: content hashing in artifact frontmatter)

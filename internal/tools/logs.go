@@ -1,4 +1,4 @@
-package main
+package tools
 
 import (
 	"context"
@@ -9,6 +9,8 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	commonapi "github.com/siderolabs/talos/pkg/machinery/api/common"
 	talosclient "github.com/siderolabs/talos/pkg/machinery/client"
+
+	"github.com/Nosmoht/talos-mcp-server/internal/talos"
 )
 
 // LogsArgs defines input for talos_logs.
@@ -19,9 +21,9 @@ type LogsArgs struct {
 	Nodes       []string `json:"nodes,omitempty" jsonschema:"Target node IPs or hostnames. Omit to use the default nodes from talosconfig."`
 }
 
-// handleLogs implements the talos_logs tool.
-func (tc *TalosClient) handleLogs(ctx context.Context, _ *mcp.CallToolRequest, args LogsArgs) (*mcp.CallToolResult, any, error) {
-	ctx = withNodes(ctx, args.Nodes)
+// HandleLogs implements the talos_logs tool.
+func (h *Handlers) HandleLogs(ctx context.Context, _ *mcp.CallToolRequest, args LogsArgs) (*mcp.CallToolResult, any, error) {
+	ctx = talos.WithNodes(ctx, args.Nodes)
 
 	tailLines := args.TailLines
 	if tailLines <= 0 {
@@ -34,7 +36,7 @@ func (tc *TalosClient) handleLogs(ctx context.Context, _ *mcp.CallToolRequest, a
 	}
 
 	// follow=false: finite stream capped by tailLines
-	stream, err := tc.client.Logs(ctx, ns, commonapi.ContainerDriver_CONTAINERD, args.ServiceName, false, tailLines)
+	stream, err := h.Client.Logs(ctx, ns, commonapi.ContainerDriver_CONTAINERD, args.ServiceName, false, tailLines)
 	if err != nil {
 		return nil, nil, fmt.Errorf("logs for %q: %w", args.ServiceName, err)
 	}
@@ -61,9 +63,9 @@ type DmesgArgs struct {
 	Nodes    []string `json:"nodes,omitempty" jsonschema:"Target node IPs or hostnames. Omit to use the default nodes from talosconfig."`
 }
 
-// handleDmesg implements the talos_dmesg tool.
-func (tc *TalosClient) handleDmesg(ctx context.Context, _ *mcp.CallToolRequest, args DmesgArgs) (*mcp.CallToolResult, any, error) {
-	ctx = withNodes(ctx, args.Nodes)
+// HandleDmesg implements the talos_dmesg tool.
+func (h *Handlers) HandleDmesg(ctx context.Context, _ *mcp.CallToolRequest, args DmesgArgs) (*mcp.CallToolResult, any, error) {
+	ctx = talos.WithNodes(ctx, args.Nodes)
 
 	maxLines := args.MaxLines
 	if maxLines <= 0 {
@@ -71,7 +73,7 @@ func (tc *TalosClient) handleDmesg(ctx context.Context, _ *mcp.CallToolRequest, 
 	}
 
 	// follow=false, tail=false: collect existing messages
-	stream, err := tc.client.Dmesg(ctx, false, false)
+	stream, err := h.Client.Dmesg(ctx, false, false)
 	if err != nil {
 		return nil, nil, fmt.Errorf("dmesg: %w", err)
 	}
@@ -112,16 +114,16 @@ type EventsArgs struct {
 	Nodes     []string `json:"nodes,omitempty" jsonschema:"Target node IPs or hostnames. Omit to use the default nodes from talosconfig."`
 }
 
-// handleEvents implements the talos_events tool.
+// HandleEvents implements the talos_events tool.
 // Uses a 5-second collection window to gather recent events after the tail snapshot.
-func (tc *TalosClient) handleEvents(ctx context.Context, _ *mcp.CallToolRequest, args EventsArgs) (*mcp.CallToolResult, any, error) {
+func (h *Handlers) HandleEvents(ctx context.Context, _ *mcp.CallToolRequest, args EventsArgs) (*mcp.CallToolResult, any, error) {
 	tailCount := args.TailCount
 	if tailCount == 0 {
 		tailCount = 50
 	}
 
 	// Use a cancellable child context so we can stop after collecting enough events.
-	collectCtx, cancel := context.WithTimeout(withNodes(ctx, args.Nodes), 5*time.Second)
+	collectCtx, cancel := context.WithTimeout(talos.WithNodes(ctx, args.Nodes), 5*time.Second)
 	defer cancel()
 
 	type eventEntry struct {
@@ -136,7 +138,7 @@ func (tc *TalosClient) handleEvents(ctx context.Context, _ *mcp.CallToolRequest,
 	// EventsWatch streams forever — we stop it via context timeout.
 	// WithTailEvents sends the last N historical events, then continues streaming new ones.
 	// The 5-second timeout gives us the tail events plus any immediate new ones.
-	_ = tc.client.EventsWatch(collectCtx,
+	_ = h.Client.EventsWatch(collectCtx,
 		func(ch <-chan talosclient.Event) {
 			for ev := range ch {
 				entry := eventEntry{

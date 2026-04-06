@@ -1,7 +1,7 @@
 version: 2
 
 builds:
-  - main: .
+  - main: ./cmd/talos-mcp
     binary: talos-mcp
     env:
       - CGO_ENABLED=0

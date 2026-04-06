@@ -1,4 +1,7 @@
-talos-mcp
+/talos-mcp
 dist/
-npm/*/bin/talos-mcp
+.mcp.json
+/npm/*/bin/talos-mcp
 node_modules/
+.env
+.envrc

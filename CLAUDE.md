@@ -60,7 +60,7 @@ make help       # list all targets
 Raw commands (no make):
 
 ```bash
-go build -o talos-mcp .
+go build -o talos-mcp ./cmd/talos-mcp
 go test -race ./...
 go vet ./...
 gofmt -l .
@@ -85,7 +85,7 @@ This repo ships a `.mcp.json.example` with two MCP servers. `.mcp.json` is gitig
 cp .mcp.json.example .mcp.json
 ```
 
-- **talos** — for local dev, replace `npx` with `./talos-mcp` (build first: `go build -o talos-mcp .`)
+- **talos** — for local dev, replace `npx` with `./talos-mcp` (build first: `go build -o talos-mcp ./cmd/talos-mcp`)
 - **github** — requires the `github-mcp-server` binary in `$PATH` and a token in the environment
 
 ```bash

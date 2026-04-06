@@ -1,4 +1,4 @@
-package main
+package tools
 
 import (
 	"context"
@@ -7,6 +7,8 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	machineapi "github.com/siderolabs/talos/pkg/machinery/api/machine"
+
+	"github.com/Nosmoht/talos-mcp-server/internal/talos"
 )
 
 // EtcdArgs defines input for talos_etcd.
@@ -15,13 +17,13 @@ type EtcdArgs struct {
 	Nodes      []string `json:"nodes,omitempty" jsonschema:"Target node IPs or hostnames. Omit to use the default nodes from talosconfig."`
 }
 
-// handleEtcd implements the talos_etcd tool.
-func (tc *TalosClient) handleEtcd(ctx context.Context, _ *mcp.CallToolRequest, args EtcdArgs) (*mcp.CallToolResult, any, error) {
-	ctx = withNodes(ctx, args.Nodes)
+// HandleEtcd implements the talos_etcd tool.
+func (h *Handlers) HandleEtcd(ctx context.Context, _ *mcp.CallToolRequest, args EtcdArgs) (*mcp.CallToolResult, any, error) {
+	ctx = talos.WithNodes(ctx, args.Nodes)
 
 	switch args.Subcommand {
 	case "", "members":
-		resp, err := tc.client.EtcdMemberList(ctx, &machineapi.EtcdMemberListRequest{})
+		resp, err := h.Client.EtcdMemberList(ctx, &machineapi.EtcdMemberListRequest{})
 		if err != nil {
 			return nil, nil, fmt.Errorf("etcd member list: %w", err)
 		}
@@ -34,7 +36,7 @@ func (tc *TalosClient) handleEtcd(ctx context.Context, _ *mcp.CallToolRequest, a
 		return textResult(string(out)), nil, nil
 
 	case "status":
-		resp, err := tc.client.EtcdStatus(ctx)
+		resp, err := h.Client.EtcdStatus(ctx)
 		if err != nil {
 			return nil, nil, fmt.Errorf("etcd status: %w", err)
 		}

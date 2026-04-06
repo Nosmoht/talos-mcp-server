@@ -1,20 +1,22 @@
-package main
+package tools
 
 import (
 	"context"
 	"strings"
 	"testing"
+
+	"github.com/Nosmoht/talos-mcp-server/internal/talos"
 )
 
-// safeTC returns a TalosClient with a nil inner client.
-// Safe to use only for test cases that return before touching tc.client.
-func safeTC() *TalosClient {
-	return &TalosClient{}
+// safeH returns a Handlers with a nil-embedded Talos client.
+// Safe to use only for test cases that return before touching the gRPC client.
+func safeH() *Handlers {
+	return &Handlers{Client: &talos.Client{}}
 }
 
 // TestHandleReboot_Guards verifies that reboot is rejected without confirm or without nodes.
 func TestHandleReboot_Guards(t *testing.T) {
-	tc := safeTC()
+	h := safeH()
 	ctx := context.Background()
 
 	tests := []struct {
@@ -41,7 +43,7 @@ func TestHandleReboot_Guards(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, _, err := tc.handleReboot(ctx, nil, tt.args)
+			_, _, err := h.HandleReboot(ctx, nil, tt.args)
 			if err == nil {
 				t.Fatal("expected error, got nil")
 			}
@@ -54,7 +56,7 @@ func TestHandleReboot_Guards(t *testing.T) {
 
 // TestHandleUpgrade_Guards verifies that upgrade is rejected for missing fields.
 func TestHandleUpgrade_Guards(t *testing.T) {
-	tc := safeTC()
+	h := safeH()
 	ctx := context.Background()
 
 	tests := []struct {
@@ -81,7 +83,7 @@ func TestHandleUpgrade_Guards(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, _, err := tc.handleUpgrade(ctx, nil, tt.args)
+			_, _, err := h.HandleUpgrade(ctx, nil, tt.args)
 			if err == nil {
 				t.Fatal("expected error, got nil")
 			}
@@ -94,10 +96,10 @@ func TestHandleUpgrade_Guards(t *testing.T) {
 
 // TestHandleServiceAction_InvalidAction verifies unknown actions are rejected.
 func TestHandleServiceAction_InvalidAction(t *testing.T) {
-	tc := safeTC()
+	h := safeH()
 	ctx := context.Background()
 
-	_, _, err := tc.handleServiceAction(ctx, nil, ServiceActionArgs{
+	_, _, err := h.HandleServiceAction(ctx, nil, ServiceActionArgs{
 		ServiceName: "kubelet",
 		Action:      "obliterate",
 	})
@@ -111,10 +113,10 @@ func TestHandleServiceAction_InvalidAction(t *testing.T) {
 
 // TestHandlePatchConfig_InvalidMode verifies unknown modes are rejected.
 func TestHandlePatchConfig_InvalidMode(t *testing.T) {
-	tc := safeTC()
+	h := safeH()
 	ctx := context.Background()
 
-	_, _, err := tc.handlePatchConfig(ctx, nil, PatchConfigArgs{
+	_, _, err := h.HandlePatchConfig(ctx, nil, PatchConfigArgs{
 		Patch: `{}`,
 		Mode:  "turbo",
 	})

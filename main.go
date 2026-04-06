@@ -8,6 +8,7 @@
 //   - TALOSCONFIG: path to talosconfig file (default: ~/.talos/config)
 //   - TALOS_CONTEXT: context name to use (default: active context in config)
 //   - TALOS_ENDPOINTS: comma-separated endpoint overrides
+//   - TALOS_MCP_READ_ONLY: set to "true" to disable all mutating tools
 package main
 
 import (
@@ -15,6 +16,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"os"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -31,13 +33,15 @@ var (
 func main() {
 	ctx := context.Background()
 
+	readOnly := os.Getenv("TALOS_MCP_READ_ONLY") == "true"
+
 	tc, err := NewTalosClient(ctx)
 	if err != nil {
 		log.Fatalf("failed to create Talos client: %v", err)
 	}
 	defer tc.Close() //nolint:errcheck
 
-	log.Printf("talos-mcp version=%s commit=%s date=%s", version, commit, date)
+	log.Printf("talos-mcp version=%s commit=%s date=%s read_only=%v", version, commit, date, readOnly)
 
 	server := mcp.NewServer(&mcp.Implementation{
 		Name:    "talos",
@@ -132,34 +136,37 @@ func main() {
 	}, tc.handleReadFile)
 
 	// ── Write / mutating tools ───────────────────────────────────────────────
+	// Skipped when TALOS_MCP_READ_ONLY=true.
 
-	destructive := boolPtr(true)
+	if !readOnly {
+		destructive := boolPtr(true)
 
-	mcp.AddTool(server, &mcp.Tool{
-		Name:        "talos_service_action",
-		Description: "Start, stop, or restart a Talos service on the target nodes.",
-		Annotations: &mcp.ToolAnnotations{DestructiveHint: destructive},
-	}, tc.handleServiceAction)
+		mcp.AddTool(server, &mcp.Tool{
+			Name:        "talos_service_action",
+			Description: "Start, stop, or restart a Talos service on the target nodes.",
+			Annotations: &mcp.ToolAnnotations{DestructiveHint: destructive},
+		}, tc.handleServiceAction)
 
-	mcp.AddTool(server, &mcp.Tool{
-		Name:        "talos_reboot",
-		Description: "Reboot the specified nodes. Requires explicit nodes and confirm=true. Use mode='powercycle' for a full power cycle.",
-		Annotations: &mcp.ToolAnnotations{DestructiveHint: destructive},
-	}, tc.handleReboot)
+		mcp.AddTool(server, &mcp.Tool{
+			Name:        "talos_reboot",
+			Description: "Reboot the specified nodes. Requires explicit nodes and confirm=true. Use mode='powercycle' for a full power cycle.",
+			Annotations: &mcp.ToolAnnotations{DestructiveHint: destructive},
+		}, tc.handleReboot)
 
-	mcp.AddTool(server, &mcp.Tool{
-		Name:        "talos_upgrade",
-		Description: "Upgrade Talos on the specified nodes. Requires explicit nodes, an installer image reference, and confirm=true.",
-		Annotations: &mcp.ToolAnnotations{DestructiveHint: destructive},
-	}, tc.handleUpgrade)
+		mcp.AddTool(server, &mcp.Tool{
+			Name:        "talos_upgrade",
+			Description: "Upgrade Talos on the specified nodes. Requires explicit nodes, an installer image reference, and confirm=true.",
+			Annotations: &mcp.ToolAnnotations{DestructiveHint: destructive},
+		}, tc.handleUpgrade)
 
-	mcp.AddTool(server, &mcp.Tool{
-		Name: "talos_patch_config",
-		Description: "Apply a machine config patch to the target nodes. " +
-			"Defaults to dry_run=true — set dry_run=false to actually apply. " +
-			"Patch can be a JSON or YAML strategic merge patch.",
-		Annotations: &mcp.ToolAnnotations{DestructiveHint: destructive},
-	}, tc.handlePatchConfig)
+		mcp.AddTool(server, &mcp.Tool{
+			Name: "talos_patch_config",
+			Description: "Apply a machine config patch to the target nodes. " +
+				"Defaults to dry_run=true — set dry_run=false to actually apply. " +
+				"Patch can be a JSON or YAML strategic merge patch.",
+			Annotations: &mcp.ToolAnnotations{DestructiveHint: destructive},
+		}, tc.handlePatchConfig)
+	}
 
 	if err := server.Run(ctx, &mcp.StdioTransport{}); err != nil {
 		log.Printf("server stopped: %v", err)

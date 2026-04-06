@@ -18,6 +18,16 @@ Environment variables (set in `.mcp.json` env block or shell):
 | `TALOS_CONTEXT` | active context | Context name override |
 | `TALOS_ENDPOINTS` | from config | Comma-separated endpoint overrides |
 
+## Resources
+
+### Static
+- `talos://cluster/version` — Talos version information from the cluster's default endpoint
+- `talos://cluster/resource-definitions` — all available COSI resource types with aliases and default namespaces; read this first to discover what types can be queried
+
+### Templates
+- `talos://{node}/resource/{namespace}/{type}` — list all COSI resources of a given type in a namespace on a specific node
+- `talos://{node}/resource/{namespace}/{type}/{id}` — get a specific COSI resource by namespace, type, and ID on a specific node
+
 ## Tools (15)
 
 ### Read-only

@@ -180,20 +180,28 @@ func (h *Handlers) HandlePatchConfig(ctx context.Context, req *mcp.CallToolReque
 
 	dryRun := resolveDryRun(args.DryRun)
 
+	applyMsg := "Applying configuration"
+	doneMsg := "Configuration applied"
+
+	if dryRun {
+		applyMsg = "Validating configuration (dry run)"
+		doneMsg = "Configuration validated (dry run)"
+	}
+
 	applyReq := &machineapi.ApplyConfigurationRequest{
 		Data:   []byte(args.Patch),
 		Mode:   mode,
 		DryRun: dryRun,
 	}
 
-	notifyProgress(ctx, req, "Applying configuration", 1, 2)
+	notifyProgress(ctx, req, applyMsg, 1, 2)
 
 	resp, err := h.Client.ApplyConfiguration(ctx, applyReq)
 	if err != nil {
 		return nil, nil, fmt.Errorf("apply configuration: %w", err)
 	}
 
-	notifyProgress(ctx, req, "Configuration applied", 2, 2)
+	notifyProgress(ctx, req, doneMsg, 2, 2)
 
 	out, err := json.MarshalIndent(resp, "", "  ")
 	if err != nil {

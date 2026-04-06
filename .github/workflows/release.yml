@@ -31,7 +31,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
         with:
-          subject-path: dist/talos-mcp_*.tar.gz
+          subject-path: dist/talos-mcp-server_*.tar.gz
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: dist
@@ -75,7 +75,7 @@ jobs:
 
           for go_platform in "${!MAPPING[@]}"; do
             npm_dir="${MAPPING[$go_platform]}"
-            archive="dist/talos-mcp_${VERSION}_${go_platform}.tar.gz"
+            archive="dist/talos-mcp-server_${VERSION}_${go_platform}.tar.gz"
 
             echo "--- Preparing @talos-mcp/${npm_dir} from ${archive}"
             mkdir -p "npm/${npm_dir}/bin"

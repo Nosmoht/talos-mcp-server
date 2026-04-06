@@ -41,7 +41,7 @@ func main() {
 	}
 	defer tc.Close() //nolint:errcheck
 
-	log.Printf("talos-mcp version=%q commit=%q date=%q read_only=%v", version, commit, date, readOnly)
+	log.Printf("talos-mcp version=%q commit=%q date=%q read_only=%v", version, commit, date, readOnly) //nolint:gosec // G706 false positive: version/commit/date are build-time ldflags constants injected by GoReleaser, not runtime user input
 
 	server := mcp.NewServer(&mcp.Implementation{
 		Name:    "talos",

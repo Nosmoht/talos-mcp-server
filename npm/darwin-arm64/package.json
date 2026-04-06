@@ -1,14 +1,23 @@
 {
   "name": "@talos-mcp/darwin-arm64",
-  "version": "0.0.0",
+  "version": "0.22.0",
   "description": "talos-mcp binary for macOS ARM64",
   "license": "MIT",
+  "author": "Thomas Krahn",
+  "homepage": "https://github.com/Nosmoht/talos-mcp-server#readme",
+  "bugs": {
+    "url": "https://github.com/Nosmoht/talos-mcp-server/issues"
+  },
   "repository": {
     "type": "git",
     "url": "https://github.com/Nosmoht/talos-mcp-server"
   },
-  "os": ["darwin"],
-  "cpu": ["arm64"],
+  "os": [
+    "darwin"
+  ],
+  "cpu": [
+    "arm64"
+  ],
   "bin": {
     "talos-mcp": "bin/talos-mcp"
   },

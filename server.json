@@ -1,0 +1,37 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.Nosmoht/talos-mcp-server",
+  "title": "Talos Linux MCP Server",
+  "description": "Manage Talos Linux clusters via the native gRPC API. 15 tools for resources, services, logs, health, config patching, and lifecycle operations.",
+  "version": "0.1.0",
+  "repository": {
+    "url": "https://github.com/Nosmoht/talos-mcp-server",
+    "source": "https://github.com/Nosmoht/talos-mcp-server"
+  },
+  "packages": [
+    {
+      "registryType": "mcpb",
+      "identifier": "Nosmoht/talos-mcp-server",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "TALOSCONFIG",
+          "description": "Path to talosconfig file (default: ~/.talos/config)",
+          "isRequired": false
+        },
+        {
+          "name": "TALOS_CONTEXT",
+          "description": "Context name override (default: active context from config)",
+          "isRequired": false
+        },
+        {
+          "name": "TALOS_ENDPOINTS",
+          "description": "Comma-separated endpoint overrides",
+          "isRequired": false
+        }
+      ]
+    }
+  ]
+}

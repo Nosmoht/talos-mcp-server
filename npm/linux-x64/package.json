@@ -1,0 +1,21 @@
+{
+  "name": "@talos-mcp/linux-x64",
+  "version": "0.0.0",
+  "description": "talos-mcp binary for Linux x64",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Nosmoht/talos-mcp-server"
+  },
+  "os": ["linux"],
+  "cpu": ["x64"],
+  "bin": {
+    "talos-mcp": "bin/talos-mcp"
+  },
+  "files": [
+    "bin/talos-mcp"
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
+}

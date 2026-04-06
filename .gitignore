@@ -1,0 +1,4 @@
+talos-mcp
+dist/
+npm/*/bin/talos-mcp
+node_modules/

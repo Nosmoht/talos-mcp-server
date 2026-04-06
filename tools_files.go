@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -21,15 +22,21 @@ type ListFilesArgs struct {
 
 // handleListFiles implements the talos_list_files tool.
 func (tc *TalosClient) handleListFiles(ctx context.Context, _ *mcp.CallToolRequest, args ListFilesArgs) (*mcp.CallToolResult, any, error) {
-	ctx = withNodes(ctx, args.Nodes)
-
-	path := args.Path
-	if path == "" {
-		path = "/"
+	listPath := args.Path
+	if listPath == "" {
+		listPath = "/"
 	}
 
+	if err := checkPathAllowed(listPath, allowedPaths()); err != nil {
+		return nil, nil, err
+	}
+
+	ctx = withNodes(ctx, args.Nodes)
+
+	path := listPath
+
 	stream, err := tc.client.LS(ctx, &machineapi.ListRequest{
-		Root:    path,
+		Root:    listPath,
 		Recurse: args.Recurse,
 	})
 	if err != nil {
@@ -85,8 +92,50 @@ type ReadFileArgs struct {
 	Nodes    []string `json:"nodes,omitempty" jsonschema:"Target node IPs or hostnames. Omit to use the default nodes from talosconfig."`
 }
 
+// allowedPaths returns the configured path allowlist from TALOS_MCP_ALLOWED_PATHS,
+// or nil if no allowlist is set (all paths permitted).
+func allowedPaths() []string {
+	val := os.Getenv("TALOS_MCP_ALLOWED_PATHS")
+	if val == "" {
+		return nil
+	}
+
+	var paths []string
+
+	for _, p := range strings.Split(val, ",") {
+		if trimmed := strings.TrimSpace(p); trimmed != "" {
+			paths = append(paths, trimmed)
+		}
+	}
+
+	return paths
+}
+
+// checkPathAllowed returns an error if path is not under any of the allowed prefixes.
+// It returns nil when allowed is empty (no allowlist configured).
+// Prefix matching is directory-boundary-safe: "/etc" does not match "/etc-evil".
+func checkPathAllowed(path string, allowed []string) error {
+	if len(allowed) == 0 {
+		return nil
+	}
+
+	for _, prefix := range allowed {
+		// Normalise so the prefix always ends with "/" for safe directory boundary matching.
+		dirPrefix := strings.TrimSuffix(prefix, "/") + "/"
+		if path == prefix || strings.HasPrefix(path, dirPrefix) {
+			return nil
+		}
+	}
+
+	return fmt.Errorf("path %q is not in the allowed paths list (TALOS_MCP_ALLOWED_PATHS=%s)", path, strings.Join(allowed, ","))
+}
+
 // handleReadFile implements the talos_read_file tool.
 func (tc *TalosClient) handleReadFile(ctx context.Context, _ *mcp.CallToolRequest, args ReadFileArgs) (*mcp.CallToolResult, any, error) {
+	if err := checkPathAllowed(args.Path, allowedPaths()); err != nil {
+		return nil, nil, err
+	}
+
 	ctx = withNodes(ctx, args.Nodes)
 
 	maxBytes := args.MaxBytes

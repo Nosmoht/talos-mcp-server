@@ -2,6 +2,7 @@
 package tools
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -94,6 +95,27 @@ func MarshalResource(r resource.Resource) (map[string]any, error) {
 	}
 
 	return data, nil
+}
+
+// notifyProgress sends a progress notification to the client if the request
+// carries a progress token. It is a no-op when req is nil or when no token is
+// present, so callers do not need to guard every call site.
+func notifyProgress(ctx context.Context, req *mcp.CallToolRequest, message string, progress, total float64) {
+	if req == nil {
+		return
+	}
+	token := req.Params.GetProgressToken()
+	if token == nil {
+		return
+	}
+	if err := req.Session.NotifyProgress(ctx, &mcp.ProgressNotificationParams{
+		ProgressToken: token,
+		Message:       message,
+		Progress:      progress,
+		Total:         total,
+	}); err != nil {
+		log.Printf("progress notification: %v", err)
+	}
 }
 
 // MarshalResourceDefinition converts a ResourceDefinition to a compact summary map.

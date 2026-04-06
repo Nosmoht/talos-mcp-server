@@ -194,6 +194,44 @@ This covers all tools except `talos_patch_config` (which requires `os:admin`).
 
 Use your default talosconfig or generate one with `os:admin`. Reserve this for setups where config patch capability is explicitly needed.
 
+## Verifying Downloads
+
+### Checksums (integrity)
+
+Each release includes a `talos-mcp_<version>_checksums.txt` file with SHA-256 hashes of all archives. Verify the binary after downloading:
+
+```bash
+# Download archive and checksums
+curl -LO https://github.com/Nosmoht/talos-mcp-server/releases/download/v<version>/talos-mcp_<version>_linux_amd64.tar.gz
+curl -LO https://github.com/Nosmoht/talos-mcp-server/releases/download/v<version>/talos-mcp_<version>_checksums.txt
+
+# Verify
+sha256sum --check --ignore-missing talos-mcp_<version>_checksums.txt
+```
+
+This detects corruption or truncated downloads. It does not protect against a compromised release pipeline.
+
+### GitHub Artifact Attestations (SLSA L2 provenance)
+
+Each release includes a GitHub-native build provenance attestation that cryptographically links the binary to the specific commit and workflow run that produced it:
+
+```bash
+gh attestation verify talos-mcp_<version>_linux_amd64.tar.gz \
+  --repo Nosmoht/talos-mcp-server
+```
+
+This requires the [GitHub CLI](https://cli.github.com/). A passing verification means the artifact was produced by the official release workflow in this repository, not a third-party build.
+
+### npm Package Provenance
+
+The npm package is published with provenance attestation:
+
+```bash
+npm audit signatures
+```
+
+A passing result means the package was published by the official GitHub Actions release workflow via OIDC trusted publishing.
+
 ## Development
 
 ```bash

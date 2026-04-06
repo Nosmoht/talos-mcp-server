@@ -20,6 +20,15 @@ Environment variables (set in `.mcp.json` env block or shell):
 | `TALOS_MCP_READ_ONLY` | `false` | Set to `"true"` to disable all mutating tools |
 | `TALOS_MCP_HTTP_ADDR` | (unset) | If set (e.g. `:8080`), serve HTTP instead of stdio |
 | `TALOS_MCP_AUTH_TOKEN` | (unset) | Required bearer token when HTTP mode is active |
+| `TALOS_MCP_SKIP_VERSION_CHECK` | `false` | Set to `"true"` to bypass upgrade path validation |
+
+## Compatibility
+
+Tested against Talos Linux v1.9.x – v1.12.x (machinery SDK v1.12.6). The server logs a startup warning when the connected cluster version is outside this range.
+
+- `talos_upgrade` validates that the target version is at most +1 minor from current (Talos upgrade path rule). Images with unparseable tags (factory images, `:latest`, custom registries) skip validation automatically.
+- Set `TALOS_MCP_SKIP_VERSION_CHECK=true` to bypass validation in emergency scenarios.
+- Compatibility range constants: `internal/version/version.go` (`MinSupported`, `MaxTested`) — update these when bumping the machinery SDK.
 
 ## Resources
 

@@ -43,6 +43,23 @@ Reads `~/.talos/config` by default (the same file `talosctl` uses). Override via
 | `TALOS_ENDPOINTS` | from config | Comma-separated endpoint overrides |
 | `TALOS_MCP_READ_ONLY` | `false` | Set to `true` to disable all mutating tools at startup |
 | `TALOS_MCP_ALLOWED_PATHS` | *(all)* | Comma-separated path prefixes allowed for `talos_read_file` and `talos_list_files` (e.g. `/etc,/proc`) |
+| `TALOS_MCP_SKIP_VERSION_CHECK` | `false` | Set to `true` to bypass upgrade path validation (e.g. for factory images or custom tags) |
+
+## Compatibility
+
+This server is tested against Talos Linux v1.9.x through v1.12.x.
+
+| talos-mcp | Talos Linux | machinery SDK |
+|-----------|-------------|---------------|
+| v0.x (current) | v1.9.0 – v1.12.x | v1.12.6 |
+
+The server logs a startup warning if the connected cluster's Talos version is outside the tested range. All 19 gRPC methods used have been stable since Talos v1.9.
+
+### Upgrade path validation
+
+The `talos_upgrade` tool validates that the target version follows Talos's supported upgrade path — at most one minor version at a time (e.g. v1.11.x → v1.12.x). Upgrades that skip minor versions are rejected with an error.
+
+If your image uses a custom or factory tag (e.g. `factory.talos.dev/...` or `:latest`) the tag cannot be parsed and validation is skipped automatically. To bypass validation explicitly, set `TALOS_MCP_SKIP_VERSION_CHECK=true`.
 
 ## Client Setup
 

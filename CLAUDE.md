@@ -146,6 +146,13 @@ Releases are fully automated via conventional commits:
 
 The auto-tag workflow uses a GitHub App token (`RELEASE_APP_ID` / `RELEASE_APP_PRIVATE_KEY`) to push tags that trigger downstream workflows.
 
+### npm OIDC Trusted Publishing (release.yml)
+
+- Use `node-version: "24"` in the npm-publish job — Node.js 22 bundles npm 10.x which cannot self-upgrade to npm 11 (`MODULE_NOT_FOUND` during `npm install -g npm@11`); Node.js 24 ships with npm 11 natively
+- Do **not** set `registry-url` in `actions/setup-node` — it writes `.npmrc` with `_authToken=${NODE_AUTH_TOKEN}` placeholder that blocks the OIDC token exchange (causes 404)
+- Keep `--provenance` on all `npm publish` calls — provenance is not auto-generated despite what the docs say; the flag is harmless with OIDC and required with tokens
+- Trusted Publishers must be configured per-package on npmjs.com before OIDC works (one-time setup per package at `https://www.npmjs.com/package/<name>/access`)
+
 ## MCP Development Setup
 
 This repo ships a `.mcp.json.example` with two MCP servers. `.mcp.json` is gitignored so local paths stay out of source control.

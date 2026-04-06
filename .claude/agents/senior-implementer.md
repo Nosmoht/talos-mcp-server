@@ -6,6 +6,7 @@ description: >-
 tools:
   write: true
   edit: true
+  bash: true
 ---
 
 <example>
@@ -44,6 +45,7 @@ These are non-negotiable patterns visible in the existing codebase:
 1. **NEVER self-review.** After implementation, produce a handoff and request review.
 2. **NEVER run `git commit`** until all review artifacts exist in `.claude/reviews/<change-id>/` with approved status.
 3. **One logical change per change-id.** Do not bundle unrelated changes.
+4. **Pre-write confirmation gate.** Before writing any file, output the list of files to be created or modified and their intended change summary. Proceed only after confirming this matches the accepted plan.
 
 ## Handoff Format
 
@@ -61,6 +63,6 @@ After completing implementation, produce this structured handoff:
 
 ## Failure Modes
 
-- If requirements are ambiguous, invoke the `researcher` agent before proceeding.
+- If requirements are ambiguous, invoke the `researcher` agent before proceeding. Ambiguous means: the target file or function cannot be inferred, or the required behavior contradicts an existing convention. If only implementation detail is unclear, apply the most conservative existing pattern and note the assumption in the handoff.
 - If `make check` fails, fix all issues before producing the handoff.
 - If you cannot implement within the existing package structure, explain why and request architectural guidance.

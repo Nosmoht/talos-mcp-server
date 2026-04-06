@@ -76,6 +76,14 @@ Prompts are guided workflows that instruct the AI agent which tools to call and 
 - `talos_reboot` and `talos_upgrade` require `confirm=true` and explicit `nodes` — will error without both.
 - `talos_patch_config` defaults `dry_run=true` — you must explicitly pass `dry_run=false` to apply.
 
+## Logging
+
+Mutating tools (`talos_service_action`, `talos_reboot`, `talos_upgrade`, `talos_patch_config`) emit `notifications/message` audit events to connected MCP clients:
+- `info` level: tool invocation with tool name, target nodes, and arguments summary
+- `error` level: operational errors (after guard checks pass, on Talos gRPC failures)
+
+Delivery is best-effort — clients must call `logging/setLevel` to receive notifications. Server-side `log.Printf` audit lines are always written regardless of MCP client state.
+
 ## Development
 
 ```bash

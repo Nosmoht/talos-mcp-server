@@ -1,0 +1,84 @@
+#!/bin/bash
+# Native git pre-commit hook: require review artifacts before commits
+#
+# Defense-in-depth layer — catches ALL commit paths including those outside
+# Claude Code (terminal, scripts, other tools).
+#
+# Install: cp .claude/hooks/pre-commit .git/hooks/pre-commit
+#          chmod +x .git/hooks/pre-commit
+#
+# This is a standard git hook — exit 0 allows, exit non-zero blocks.
+
+set -uo pipefail
+
+REVIEW_BASE=".claude/reviews"
+
+error() {
+  echo "COMMIT BLOCKED: $1" >&2
+  exit 1
+}
+
+if [ ! -d "$REVIEW_BASE" ]; then
+  error "No .claude/reviews/ directory found. Create review artifacts before committing. See CLAUDE.md governance section."
+fi
+
+# Find review directories
+REVIEW_DIRS=()
+while IFS= read -r d; do REVIEW_DIRS+=("$d"); done \
+  < <(find "$REVIEW_BASE" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | sort)
+
+if [ "${#REVIEW_DIRS[@]}" -eq 0 ]; then
+  error "No review directories in .claude/reviews/. Invoke senior-plan-reviewer, staff-reviewer, and principal-architect-reviewer first."
+fi
+
+# Use the last directory (lexicographically most recent)
+# Portable: ${REVIEW_DIRS[${#REVIEW_DIRS[@]}-1]} works on bash 3.2+ (no negative index)
+REVIEW_DIR="${REVIEW_DIRS[${#REVIEW_DIRS[@]}-1]}"
+CHANGE_ID=$(basename "$REVIEW_DIR")
+
+# Helper: extract a YAML frontmatter field value
+get_yaml_field() {
+  local file="$1"
+  local field="$2"
+  awk '/^---$/{c++;next} c==1{print}' "$file" 2>/dev/null \
+    | grep -E "^${field}:" \
+    | head -1 \
+    | sed "s/^${field}:[[:space:]]*//" \
+    | tr -d '[:space:]"'"'"
+}
+
+echo "Validating review artifacts for change: $CHANGE_ID"
+
+# Check required artifacts exist and are approved
+for artifact in plan-review.md impl-review.md final-approval.md; do
+  FILE="$REVIEW_DIR/$artifact"
+
+  if [ ! -f "$FILE" ]; then
+    error "Missing ${artifact} for change '${CHANGE_ID}'."
+  fi
+
+  STATUS=$(get_yaml_field "$FILE" "status")
+
+  if [ -z "$STATUS" ]; then
+    error "${artifact} for '${CHANGE_ID}' has no parseable 'status' field."
+  fi
+
+  if [ "$STATUS" != "approved" ]; then
+    error "${artifact} for '${CHANGE_ID}' has status '${STATUS}', not 'approved'."
+  fi
+
+  echo "  ✓ ${artifact}: approved"
+done
+
+# Verify role separation
+for artifact in plan-review.md impl-review.md final-approval.md; do
+  FILE="$REVIEW_DIR/$artifact"
+  ROLE=$(get_yaml_field "$FILE" "reviewer-role")
+
+  if [ "$ROLE" = "senior-implementer" ]; then
+    error "${artifact} was produced by 'senior-implementer'. Role separation violated."
+  fi
+done
+
+echo "Review artifacts validated for change '${CHANGE_ID}'. Commit allowed."
+exit 0

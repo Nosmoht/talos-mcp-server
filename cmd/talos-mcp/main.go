@@ -13,12 +13,13 @@ package main
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
 	"log"
 	"os"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/Nosmoht/talos-mcp-server/internal/talos"
+	"github.com/Nosmoht/talos-mcp-server/internal/tools"
 )
 
 // Build info injected by GoReleaser via ldflags.
@@ -35,7 +36,7 @@ func main() {
 
 	readOnly := os.Getenv("TALOS_MCP_READ_ONLY") == "true"
 
-	tc, err := NewTalosClient(ctx)
+	tc, err := talos.NewClient(ctx)
 	if err != nil {
 		log.Fatalf("failed to create Talos client: %v", err)
 	}
@@ -55,6 +56,8 @@ func main() {
 			"Destructive tools (talos_reboot, talos_upgrade) require confirm=true and explicit nodes.",
 	})
 
+	h := &tools.Handlers{Client: tc}
+
 	// All tools operate on a specific configured Talos cluster (closed world).
 	closedWorld := boolPtr(false)
 
@@ -64,79 +67,79 @@ func main() {
 		Name:        "talos_resource_definitions",
 		Description: "List all available Talos resource types with their aliases. Call this first to discover what resources can be queried with talos_get.",
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, OpenWorldHint: closedWorld},
-	}, tc.handleResourceDefinitions)
+	}, h.HandleResourceDefinitions)
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "talos_get",
 		Description: "Get Talos resources by type. Use talos_resource_definitions to discover available types. Examples: MachineStatus, Member, NodeAddress, LinkStatus, Route, Service, Extension.",
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, OpenWorldHint: closedWorld},
-	}, tc.handleGetResource)
+	}, h.HandleGetResource)
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "talos_version",
 		Description: "Get Talos version information from the target nodes.",
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, OpenWorldHint: closedWorld},
-	}, tc.handleVersion)
+	}, h.HandleVersion)
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "talos_services",
 		Description: "List all Talos services and their current state (running, stopped, health status).",
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, OpenWorldHint: closedWorld},
-	}, tc.handleServices)
+	}, h.HandleServices)
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "talos_containers",
 		Description: "List containers running in the specified namespace. Defaults to the 'k8s.io' namespace (Kubernetes containers).",
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, OpenWorldHint: closedWorld},
-	}, tc.handleContainers)
+	}, h.HandleContainers)
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "talos_processes",
 		Description: "List running processes on the target nodes.",
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, OpenWorldHint: closedWorld},
-	}, tc.handleProcesses)
+	}, h.HandleProcesses)
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "talos_health",
 		Description: "Check the health of the Talos cluster (etcd, Kubernetes API, node readiness). Waits up to wait_timeout for all checks to pass.",
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, OpenWorldHint: closedWorld},
-	}, tc.handleHealth)
+	}, h.HandleHealth)
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "talos_logs",
 		Description: "Stream recent service logs from the target nodes. Returns the last tail_lines lines without following.",
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, OpenWorldHint: closedWorld},
-	}, tc.handleLogs)
+	}, h.HandleLogs)
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "talos_dmesg",
 		Description: "Read kernel ring buffer (dmesg) messages from the target nodes.",
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, OpenWorldHint: closedWorld},
-	}, tc.handleDmesg)
+	}, h.HandleDmesg)
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "talos_events",
 		Description: "Fetch recent Talos runtime events (node lifecycle, service changes, config changes). Returns the last tail_count events.",
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, OpenWorldHint: closedWorld},
-	}, tc.handleEvents)
+	}, h.HandleEvents)
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "talos_etcd",
 		Description: "Query etcd cluster information. Use subcommand='members' (default) or subcommand='status'.",
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, OpenWorldHint: closedWorld},
-	}, tc.handleEtcd)
+	}, h.HandleEtcd)
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "talos_list_files",
 		Description: "List files and directories on a target node filesystem.",
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, OpenWorldHint: closedWorld},
-	}, tc.handleListFiles)
+	}, h.HandleListFiles)
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "talos_read_file",
 		Description: "Read the contents of a file from a target node filesystem (e.g. /etc/os-release, /etc/machine-config.yaml).",
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, OpenWorldHint: closedWorld},
-	}, tc.handleReadFile)
+	}, h.HandleReadFile)
 
 	// ── Write / mutating tools ───────────────────────────────────────────────
 	// Skipped when TALOS_MCP_READ_ONLY=true.
@@ -148,19 +151,19 @@ func main() {
 			Name:        "talos_service_action",
 			Description: "Start, stop, or restart a Talos service on the target nodes.",
 			Annotations: &mcp.ToolAnnotations{DestructiveHint: destructive, OpenWorldHint: closedWorld},
-		}, tc.handleServiceAction)
+		}, h.HandleServiceAction)
 
 		mcp.AddTool(server, &mcp.Tool{
 			Name:        "talos_reboot",
 			Description: "Reboot the specified nodes. Requires explicit nodes and confirm=true. Use mode='powercycle' for a full power cycle.",
 			Annotations: &mcp.ToolAnnotations{DestructiveHint: destructive, OpenWorldHint: closedWorld},
-		}, tc.handleReboot)
+		}, h.HandleReboot)
 
 		mcp.AddTool(server, &mcp.Tool{
 			Name:        "talos_upgrade",
 			Description: "Upgrade Talos on the specified nodes. Requires explicit nodes, an installer image reference, and confirm=true.",
 			Annotations: &mcp.ToolAnnotations{DestructiveHint: destructive, OpenWorldHint: closedWorld},
-		}, tc.handleUpgrade)
+		}, h.HandleUpgrade)
 
 		mcp.AddTool(server, &mcp.Tool{
 			Name: "talos_patch_config",
@@ -168,7 +171,7 @@ func main() {
 				"Defaults to dry_run=true — set dry_run=false to actually apply. " +
 				"Patch can be a JSON or YAML strategic merge patch.",
 			Annotations: &mcp.ToolAnnotations{DestructiveHint: destructive, OpenWorldHint: closedWorld},
-		}, tc.handlePatchConfig)
+		}, h.HandlePatchConfig)
 	}
 
 	if err := server.Run(ctx, &mcp.StdioTransport{}); err != nil {
@@ -179,14 +182,4 @@ func main() {
 // boolPtr returns a pointer to a bool value.
 func boolPtr(b bool) *bool {
 	return &b
-}
-
-// jsonMarshal marshals v to indented JSON string.
-func jsonMarshal(v any) (string, error) {
-	out, err := json.MarshalIndent(v, "", "  ")
-	if err != nil {
-		return "", fmt.Errorf("marshal JSON: %w", err)
-	}
-
-	return string(out), nil
 }

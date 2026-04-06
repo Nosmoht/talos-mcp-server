@@ -1,38 +1,16 @@
-package main
+package tools
 
 import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
-	"strings"
-	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	machineapi "github.com/siderolabs/talos/pkg/machinery/api/machine"
 	talosclient "github.com/siderolabs/talos/pkg/machinery/client"
+
+	"github.com/Nosmoht/talos-mcp-server/internal/talos"
 )
-
-// auditLog emits a structured audit log entry for mutating tool invocations.
-// Output format: AUDIT timestamp=<RFC3339> tool=<name> args=<json> nodes=<list>
-func auditLog(tool string, args any, nodes []string) {
-	argsJSON, err := json.Marshal(args)
-	if err != nil {
-		argsJSON = []byte("<marshal error>")
-	}
-
-	nodeList := strings.Join(nodes, ",")
-	if nodeList == "" {
-		nodeList = "<default>"
-	}
-
-	log.Printf("AUDIT timestamp=%s tool=%s nodes=%s args=%s",
-		time.Now().UTC().Format(time.RFC3339),
-		tool,
-		nodeList,
-		argsJSON,
-	)
-}
 
 // ServiceActionArgs defines input for talos_service_action.
 type ServiceActionArgs struct {
@@ -41,11 +19,11 @@ type ServiceActionArgs struct {
 	Nodes       []string `json:"nodes,omitempty" jsonschema:"Target node IPs or hostnames. Omit to use the default nodes from talosconfig."`
 }
 
-// handleServiceAction implements the talos_service_action tool.
-func (tc *TalosClient) handleServiceAction(ctx context.Context, _ *mcp.CallToolRequest, args ServiceActionArgs) (*mcp.CallToolResult, any, error) {
+// HandleServiceAction implements the talos_service_action tool.
+func (h *Handlers) HandleServiceAction(ctx context.Context, _ *mcp.CallToolRequest, args ServiceActionArgs) (*mcp.CallToolResult, any, error) {
 	auditLog("talos_service_action", args, args.Nodes)
 
-	ctx = withNodes(ctx, args.Nodes)
+	ctx = talos.WithNodes(ctx, args.Nodes)
 
 	var (
 		resp any
@@ -54,11 +32,11 @@ func (tc *TalosClient) handleServiceAction(ctx context.Context, _ *mcp.CallToolR
 
 	switch args.Action {
 	case "start":
-		resp, err = tc.client.ServiceStart(ctx, args.ServiceName)
+		resp, err = h.Client.ServiceStart(ctx, args.ServiceName)
 	case "stop":
-		resp, err = tc.client.ServiceStop(ctx, args.ServiceName)
+		resp, err = h.Client.ServiceStop(ctx, args.ServiceName)
 	case "restart":
-		resp, err = tc.client.ServiceRestart(ctx, args.ServiceName)
+		resp, err = h.Client.ServiceRestart(ctx, args.ServiceName)
 	default:
 		return nil, nil, fmt.Errorf("unknown action %q: must be 'start', 'stop', or 'restart'", args.Action)
 	}
@@ -82,8 +60,8 @@ type RebootArgs struct {
 	Confirm bool     `json:"confirm" jsonschema:"REQUIRED: Must be explicitly set to true to confirm the reboot operation."`
 }
 
-// handleReboot implements the talos_reboot tool.
-func (tc *TalosClient) handleReboot(ctx context.Context, _ *mcp.CallToolRequest, args RebootArgs) (*mcp.CallToolResult, any, error) {
+// HandleReboot implements the talos_reboot tool.
+func (h *Handlers) HandleReboot(ctx context.Context, _ *mcp.CallToolRequest, args RebootArgs) (*mcp.CallToolResult, any, error) {
 	auditLog("talos_reboot", args, args.Nodes)
 
 	if !args.Confirm {
@@ -94,7 +72,7 @@ func (tc *TalosClient) handleReboot(ctx context.Context, _ *mcp.CallToolRequest,
 		return nil, nil, fmt.Errorf("reboot refused: nodes must be explicitly specified")
 	}
 
-	ctx = withNodes(ctx, args.Nodes)
+	ctx = talos.WithNodes(ctx, args.Nodes)
 
 	var opts []talosclient.RebootMode
 
@@ -107,7 +85,7 @@ func (tc *TalosClient) handleReboot(ctx context.Context, _ *mcp.CallToolRequest,
 		return nil, nil, fmt.Errorf("unknown mode %q: must be 'default' or 'powercycle'", args.Mode)
 	}
 
-	if err := tc.client.Reboot(ctx, opts...); err != nil {
+	if err := h.Client.Reboot(ctx, opts...); err != nil {
 		return nil, nil, fmt.Errorf("reboot: %w", err)
 	}
 
@@ -121,8 +99,8 @@ type UpgradeArgs struct {
 	Confirm bool     `json:"confirm" jsonschema:"REQUIRED: Must be explicitly set to true to confirm the upgrade."`
 }
 
-// handleUpgrade implements the talos_upgrade tool.
-func (tc *TalosClient) handleUpgrade(ctx context.Context, _ *mcp.CallToolRequest, args UpgradeArgs) (*mcp.CallToolResult, any, error) {
+// HandleUpgrade implements the talos_upgrade tool.
+func (h *Handlers) HandleUpgrade(ctx context.Context, _ *mcp.CallToolRequest, args UpgradeArgs) (*mcp.CallToolResult, any, error) {
 	auditLog("talos_upgrade", args, args.Nodes)
 
 	if !args.Confirm {
@@ -137,9 +115,9 @@ func (tc *TalosClient) handleUpgrade(ctx context.Context, _ *mcp.CallToolRequest
 		return nil, nil, fmt.Errorf("upgrade refused: image must be specified")
 	}
 
-	ctx = withNodes(ctx, args.Nodes)
+	ctx = talos.WithNodes(ctx, args.Nodes)
 
-	resp, err := tc.client.Upgrade(ctx, args.Image, false, false)
+	resp, err := h.Client.Upgrade(ctx, args.Image, false, false)
 	if err != nil {
 		return nil, nil, fmt.Errorf("upgrade: %w", err)
 	}
@@ -160,8 +138,8 @@ type PatchConfigArgs struct {
 	Nodes  []string `json:"nodes,omitempty" jsonschema:"Target node IPs or hostnames. Omit to use the default nodes from talosconfig."`
 }
 
-// handlePatchConfig implements the talos_patch_config tool.
-func (tc *TalosClient) handlePatchConfig(ctx context.Context, _ *mcp.CallToolRequest, args PatchConfigArgs) (*mcp.CallToolResult, any, error) {
+// HandlePatchConfig implements the talos_patch_config tool.
+func (h *Handlers) HandlePatchConfig(ctx context.Context, _ *mcp.CallToolRequest, args PatchConfigArgs) (*mcp.CallToolResult, any, error) {
 	// Log a redacted copy: the patch content may contain TLS keys, tokens, or registry passwords.
 	auditLog("talos_patch_config", struct {
 		Mode   string   `json:"mode,omitempty"`
@@ -175,7 +153,7 @@ func (tc *TalosClient) handlePatchConfig(ctx context.Context, _ *mcp.CallToolReq
 		Patch:  fmt.Sprintf("<redacted, %d bytes>", len(args.Patch)),
 	}, args.Nodes)
 
-	ctx = withNodes(ctx, args.Nodes)
+	ctx = talos.WithNodes(ctx, args.Nodes)
 
 	var mode machineapi.ApplyConfigurationRequest_Mode
 
@@ -202,7 +180,7 @@ func (tc *TalosClient) handlePatchConfig(ctx context.Context, _ *mcp.CallToolReq
 		DryRun: dryRun,
 	}
 
-	resp, err := tc.client.ApplyConfiguration(ctx, req)
+	resp, err := h.Client.ApplyConfiguration(ctx, req)
 	if err != nil {
 		return nil, nil, fmt.Errorf("apply configuration: %w", err)
 	}
@@ -213,10 +191,4 @@ func (tc *TalosClient) handlePatchConfig(ctx context.Context, _ *mcp.CallToolReq
 	}
 
 	return textResult(string(out)), nil, nil
-}
-
-// resolveDryRun returns true (dry-run mode) unless v is explicitly set to false.
-// A nil pointer means the caller did not provide the field, so we default to safe (dry-run).
-func resolveDryRun(v *bool) bool {
-	return v == nil || *v
 }

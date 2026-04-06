@@ -16,10 +16,10 @@ help: ## Show available targets
 		awk 'BEGIN {FS = ":.*?## "}; {printf "  %-12s %s\n", $$1, $$2}'
 
 build: ## Build the binary (CGO_ENABLED=0, version info injected)
-	CGO_ENABLED=0 go build -trimpath -ldflags "$(LDFLAGS)" -o $(BINARY) .
+	CGO_ENABLED=0 go build -trimpath -ldflags "$(LDFLAGS)" -o $(BINARY) ./cmd/talos-mcp
 
 test: ## Run tests with race detector and coverage report
-	go test -v -race -coverprofile=coverage.out ./...
+	go test -v -race -coverprofile=coverage.out -coverpkg=./... ./...
 	go tool cover -func=coverage.out
 
 lint: ## Run golangci-lint (install: curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin v2.11.4)

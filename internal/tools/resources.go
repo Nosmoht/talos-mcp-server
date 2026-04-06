@@ -1,4 +1,4 @@
-package main
+package tools
 
 import (
 	"context"
@@ -9,6 +9,8 @@ import (
 	"github.com/cosi-project/runtime/pkg/resource/meta"
 	"github.com/cosi-project/runtime/pkg/safe"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/Nosmoht/talos-mcp-server/internal/talos"
 )
 
 // GetResourceArgs defines input for talos_get.
@@ -19,14 +21,14 @@ type GetResourceArgs struct {
 	Nodes        []string `json:"nodes,omitempty" jsonschema:"Target node IPs or hostnames. Omit to use the default nodes from talosconfig."`
 }
 
-// handleGetResource implements the talos_get tool.
-func (tc *TalosClient) handleGetResource(ctx context.Context, _ *mcp.CallToolRequest, args GetResourceArgs) (*mcp.CallToolResult, any, error) {
-	ctx = withNodes(ctx, args.Nodes)
+// HandleGetResource implements the talos_get tool.
+func (h *Handlers) HandleGetResource(ctx context.Context, _ *mcp.CallToolRequest, args GetResourceArgs) (*mcp.CallToolResult, any, error) {
+	ctx = talos.WithNodes(ctx, args.Nodes)
 
 	ns := resource.Namespace(args.Namespace)
 
 	// Resolve the resource type (handles aliases like "ms" → "MachineStatus")
-	rd, err := tc.client.ResolveResourceKind(ctx, &ns, args.ResourceType)
+	rd, err := h.Client.ResolveResourceKind(ctx, &ns, args.ResourceType)
 	if err != nil {
 		return nil, nil, fmt.Errorf("resolve resource kind %q: %w", args.ResourceType, err)
 	}
@@ -37,7 +39,7 @@ func (tc *TalosClient) handleGetResource(ctx context.Context, _ *mcp.CallToolReq
 
 	if args.ResourceID != "" {
 		// Get a single specific resource
-		r, err := tc.client.COSI.Get(ctx,
+		r, err := h.Client.COSI.Get(ctx,
 			resource.NewMetadata(ns, resourceType, args.ResourceID, resource.VersionUndefined),
 		)
 		if err != nil {
@@ -52,7 +54,7 @@ func (tc *TalosClient) handleGetResource(ctx context.Context, _ *mcp.CallToolReq
 		results = []map[string]any{data}
 	} else {
 		// List all resources of this type
-		list, err := tc.client.COSI.List(ctx,
+		list, err := h.Client.COSI.List(ctx,
 			resource.NewMetadata(ns, resourceType, "", resource.VersionUndefined),
 		)
 		if err != nil {
@@ -81,9 +83,9 @@ func (tc *TalosClient) handleGetResource(ctx context.Context, _ *mcp.CallToolReq
 	}, nil, nil
 }
 
-// handleResourceDefinitions implements the talos_resource_definitions tool.
-func (tc *TalosClient) handleResourceDefinitions(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, any, error) {
-	list, err := safe.StateListAll[*meta.ResourceDefinition](ctx, tc.client.COSI)
+// HandleResourceDefinitions implements the talos_resource_definitions tool.
+func (h *Handlers) HandleResourceDefinitions(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, any, error) {
+	list, err := safe.StateListAll[*meta.ResourceDefinition](ctx, h.Client.COSI)
 	if err != nil {
 		return nil, nil, fmt.Errorf("list resource definitions: %w", err)
 	}

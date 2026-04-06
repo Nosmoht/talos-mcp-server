@@ -17,6 +17,9 @@ Environment variables (set in `.mcp.json` env block or shell):
 | `TALOSCONFIG` | `~/.talos/config` | Path to talosconfig file |
 | `TALOS_CONTEXT` | active context | Context name override |
 | `TALOS_ENDPOINTS` | from config | Comma-separated endpoint overrides |
+| `TALOS_MCP_READ_ONLY` | `false` | Set to `"true"` to disable all mutating tools |
+| `TALOS_MCP_HTTP_ADDR` | (unset) | If set (e.g. `:8080`), serve HTTP instead of stdio |
+| `TALOS_MCP_AUTH_TOKEN` | (unset) | Required bearer token when HTTP mode is active |
 
 ## Resources
 
@@ -83,6 +86,20 @@ Mutating tools (`talos_service_action`, `talos_reboot`, `talos_upgrade`, `talos_
 - `error` level: operational errors (after guard checks pass, on Talos gRPC failures)
 
 Delivery is best-effort — clients must call `logging/setLevel` to receive notifications. Server-side `log.Printf` audit lines are always written regardless of MCP client state.
+
+## HTTP Transport
+
+Set `TALOS_MCP_HTTP_ADDR=:8080` to start the server in Streamable HTTP mode (multi-session) instead of stdio.
+
+**Authentication** — `TALOS_MCP_AUTH_TOKEN` must be set; the server refuses to start without it. All requests must carry `Authorization: Bearer <token>`. Generate a token with:
+
+```
+openssl rand -hex 32
+```
+
+**TLS** — not terminated by the binary; use a reverse proxy (nginx, Caddy, Tailscale funnel). The reverse proxy must preserve the `Origin` request header.
+
+**MCP log notifications** (`notifications/message`) are only emitted in stdio mode. In HTTP mode, audit lines are written to the server's stderr only.
 
 ## Development
 

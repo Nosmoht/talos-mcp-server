@@ -272,7 +272,9 @@ func runServer(ctx context.Context, server *mcp.Server, addr, token string) erro
 	// Shutdown on context cancellation.
 	go func() { //nolint:gosec // G118: intentional — shutdown uses a fresh background context, not the cancelled one
 		<-ctx.Done()
-		_ = httpSrv.Shutdown(context.Background()) //nolint:contextcheck
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second) //nolint:contextcheck
+		defer cancel()
+		_ = httpSrv.Shutdown(shutdownCtx)
 	}()
 
 	log.Printf("HTTP transport listening on %s", addr) //nolint:gosec // G706: addr is operator-supplied config, not user input

@@ -81,11 +81,11 @@ Prompts are guided workflows that instruct the AI agent which tools to call and 
 
 ## Logging
 
-Mutating tools (`talos_service_action`, `talos_reboot`, `talos_upgrade`, `talos_patch_config`) emit `notifications/message` audit events to connected MCP clients:
+Mutating tools (`talos_service_action`, `talos_reboot`, `talos_upgrade`, `talos_patch_config`) emit `notifications/message` audit events to connected MCP clients in **stdio mode**:
 - `info` level: tool invocation with tool name, target nodes, and arguments summary
 - `error` level: operational errors (after guard checks pass, on Talos gRPC failures)
 
-Delivery is best-effort — clients must call `logging/setLevel` to receive notifications. Server-side `log.Printf` audit lines are always written regardless of MCP client state.
+Delivery is best-effort — clients must call `logging/setLevel` to receive notifications. In **HTTP mode**, audit lines are written to server stderr only (MCP notifications not emitted).
 
 ## HTTP Transport
 
@@ -98,6 +98,8 @@ openssl rand -hex 32
 ```
 
 **TLS** — not terminated by the binary; use a reverse proxy (nginx, Caddy, Tailscale funnel). The reverse proxy must preserve the `Origin` request header.
+
+`DisableLocalhostProtection` is enabled — the built-in DNS rebinding guard is inactive. The server must be behind a reverse proxy or on a trusted network. The reverse proxy must preserve the `Origin` request header — the SDK's cross-origin protection uses it to reject untrusted origins; stripping it will cause all MCP client connections to fail.
 
 **MCP log notifications** (`notifications/message`) are only emitted in stdio mode. In HTTP mode, audit lines are written to the server's stderr only.
 

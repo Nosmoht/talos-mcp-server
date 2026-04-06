@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -53,11 +54,17 @@ func TestBuildTokenVerifier(t *testing.T) {
 	if err == nil {
 		t.Error("expected error for wrong token")
 	}
+	if !errors.Is(err, auth.ErrInvalidToken) {
+		t.Errorf("expected auth.ErrInvalidToken for wrong token, got %v", err)
+	}
 
 	// empty token
 	_, err = verifier(context.Background(), "", nil)
 	if err == nil {
 		t.Error("expected error for empty token")
+	}
+	if !errors.Is(err, auth.ErrInvalidToken) {
+		t.Errorf("expected auth.ErrInvalidToken for empty token, got %v", err)
 	}
 }
 

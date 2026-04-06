@@ -40,6 +40,11 @@ jobs:
           go-version-file: go.mod
       - run: go test -v -race -coverprofile=coverage.out ./...
       - run: go tool cover -func=coverage.out
+      - uses: codecov/codecov-action@b9fd7d16f6d7d1b5d2bec1a2887e65ceed900238 # v4
+        with:
+          files: coverage.out
+          fail_ci_if_error: false
+          token: ${{ secrets.CODECOV_TOKEN }}
 
   build:
     runs-on: ubuntu-latest

@@ -68,14 +68,17 @@ gofmt -l .
 
 ## Release
 
-Tag and push to trigger GitHub Actions release workflow:
+Releases are fully automated via conventional commits:
 
-```bash
-git tag v0.1.0
-git push --tags
-```
+1. Merge to `main` triggers `auto-tag.yml`
+2. Conventional commit prefixes determine the version bump:
+   - `fix(scope):` → patch (0.0.x)
+   - `feat(scope):` → minor (0.x.0)
+   - `BREAKING CHANGE:` or `feat!:` → major (x.0.0)
+   - `docs:`, `ci:`, `chore:`, `refactor:`, `test:` → no tag, no release
+3. The created tag triggers `release.yml` → GoReleaser builds linux/darwin binaries (amd64/arm64), publishes a GitHub Release, and publishes npm packages
 
-GoReleaser builds linux/darwin binaries (amd64/arm64) and publishes a GitHub Release.
+The auto-tag workflow uses a GitHub App token (`RELEASE_APP_ID` / `RELEASE_APP_PRIVATE_KEY`) to push tags that trigger downstream workflows.
 
 ## MCP Development Setup
 

@@ -28,5 +28,5 @@ jobs:
         with:
           github_token: ${{ steps.app-token.outputs.token }}
           default_bump: false
-          initial_version: "0.1.0"
           tag_prefix: "v"
+          fetch_all_tags: true

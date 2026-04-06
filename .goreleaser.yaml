@@ -36,6 +36,9 @@ signs:
       - "--yes"
     artifacts: checksum
 
+sboms:
+  - artifacts: archive
+
 changelog:
   sort: asc
   filters:

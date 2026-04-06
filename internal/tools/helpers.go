@@ -22,12 +22,13 @@ import (
 // Handlers holds the Talos client and exposes MCP tool handler methods.
 type Handlers struct {
 	Client *talos.Client
+	// logger is the active slog.Logger for MCP log notifications.
+	// It is swapped atomically per session in stdio mode.
 	logger atomic.Pointer[slog.Logger]
 }
 
-// SetLogger installs the MCP-backed slog.Logger for this session.
-// Note: uses last-writer-wins semantics — intentional for single-session
-// stdio transport. Not safe for concurrent multi-client deployments.
+// SetLogger replaces the active logger used for MCP log notifications.
+// In stdio mode this is called once per session from InitializedHandler.
 func (h *Handlers) SetLogger(l *slog.Logger) {
 	h.logger.Store(l)
 }

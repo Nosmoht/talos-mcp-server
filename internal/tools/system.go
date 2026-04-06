@@ -99,7 +99,7 @@ func (h *Handlers) HandleProcesses(ctx context.Context, _ *mcp.CallToolRequest, 
 }
 
 // HandleHealth implements the talos_health tool.
-func (h *Handlers) HandleHealth(ctx context.Context, _ *mcp.CallToolRequest, args HealthArgs) (*mcp.CallToolResult, any, error) {
+func (h *Handlers) HandleHealth(ctx context.Context, req *mcp.CallToolRequest, args HealthArgs) (*mcp.CallToolResult, any, error) {
 	ctx = talos.WithNodes(ctx, args.Nodes)
 
 	waitTimeout := 2 * time.Minute
@@ -127,11 +127,16 @@ func (h *Handlers) HandleHealth(ctx context.Context, _ *mcp.CallToolRequest, arg
 
 	var messages []string
 
+	var i float64
+
 	for {
 		msg, err := stream.Recv()
 		if err != nil {
 			break
 		}
+
+		i++
+		notifyProgress(ctx, req, "checking cluster health", i, 0)
 
 		if msg.GetMessage() != "" {
 			messages = append(messages, msg.GetMessage())

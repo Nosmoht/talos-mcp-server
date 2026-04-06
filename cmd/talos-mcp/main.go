@@ -18,6 +18,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/Nosmoht/talos-mcp-server/internal/prompts"
 	"github.com/Nosmoht/talos-mcp-server/internal/resources"
 	"github.com/Nosmoht/talos-mcp-server/internal/talos"
 	"github.com/Nosmoht/talos-mcp-server/internal/tools"
@@ -178,6 +179,7 @@ func main() {
 	}
 
 	resources.Register(server, tc)
+	prompts.Register(server, readOnly)
 
 	if err := server.Run(ctx, &mcp.StdioTransport{}); err != nil {
 		log.Printf("server stopped: %v", err)

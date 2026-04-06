@@ -4,11 +4,35 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
+	"strings"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	machineapi "github.com/siderolabs/talos/pkg/machinery/api/machine"
 	talosclient "github.com/siderolabs/talos/pkg/machinery/client"
 )
+
+// auditLog emits a structured audit log entry for mutating tool invocations.
+// Output format: AUDIT timestamp=<RFC3339> tool=<name> args=<json> nodes=<list>
+func auditLog(tool string, args any, nodes []string) {
+	argsJSON, err := json.Marshal(args)
+	if err != nil {
+		argsJSON = []byte("<marshal error>")
+	}
+
+	nodeList := strings.Join(nodes, ",")
+	if nodeList == "" {
+		nodeList = "<default>"
+	}
+
+	log.Printf("AUDIT timestamp=%s tool=%s nodes=%s args=%s",
+		time.Now().UTC().Format(time.RFC3339),
+		tool,
+		nodeList,
+		argsJSON,
+	)
+}
 
 // ServiceActionArgs defines input for talos_service_action.
 type ServiceActionArgs struct {
@@ -19,6 +43,8 @@ type ServiceActionArgs struct {
 
 // handleServiceAction implements the talos_service_action tool.
 func (tc *TalosClient) handleServiceAction(ctx context.Context, _ *mcp.CallToolRequest, args ServiceActionArgs) (*mcp.CallToolResult, any, error) {
+	auditLog("talos_service_action", args, args.Nodes)
+
 	ctx = withNodes(ctx, args.Nodes)
 
 	var (
@@ -58,6 +84,8 @@ type RebootArgs struct {
 
 // handleReboot implements the talos_reboot tool.
 func (tc *TalosClient) handleReboot(ctx context.Context, _ *mcp.CallToolRequest, args RebootArgs) (*mcp.CallToolResult, any, error) {
+	auditLog("talos_reboot", args, args.Nodes)
+
 	if !args.Confirm {
 		return nil, nil, fmt.Errorf("reboot refused: confirm must be explicitly set to true")
 	}
@@ -95,6 +123,8 @@ type UpgradeArgs struct {
 
 // handleUpgrade implements the talos_upgrade tool.
 func (tc *TalosClient) handleUpgrade(ctx context.Context, _ *mcp.CallToolRequest, args UpgradeArgs) (*mcp.CallToolResult, any, error) {
+	auditLog("talos_upgrade", args, args.Nodes)
+
 	if !args.Confirm {
 		return nil, nil, fmt.Errorf("upgrade refused: confirm must be explicitly set to true")
 	}
@@ -132,6 +162,19 @@ type PatchConfigArgs struct {
 
 // handlePatchConfig implements the talos_patch_config tool.
 func (tc *TalosClient) handlePatchConfig(ctx context.Context, _ *mcp.CallToolRequest, args PatchConfigArgs) (*mcp.CallToolResult, any, error) {
+	// Log a redacted copy: the patch content may contain TLS keys, tokens, or registry passwords.
+	auditLog("talos_patch_config", struct {
+		Mode   string `json:"mode,omitempty"`
+		DryRun *bool  `json:"dry_run,omitempty"`
+		Nodes  []string `json:"nodes,omitempty"`
+		Patch  string `json:"patch"`
+	}{
+		Mode:   args.Mode,
+		DryRun: args.DryRun,
+		Nodes:  args.Nodes,
+		Patch:  fmt.Sprintf("<redacted, %d bytes>", len(args.Patch)),
+	}, args.Nodes)
+
 	ctx = withNodes(ctx, args.Nodes)
 
 	var mode machineapi.ApplyConfigurationRequest_Mode

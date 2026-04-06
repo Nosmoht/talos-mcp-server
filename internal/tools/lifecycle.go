@@ -61,7 +61,7 @@ type RebootArgs struct {
 }
 
 // HandleReboot implements the talos_reboot tool.
-func (h *Handlers) HandleReboot(ctx context.Context, _ *mcp.CallToolRequest, args RebootArgs) (*mcp.CallToolResult, any, error) {
+func (h *Handlers) HandleReboot(ctx context.Context, req *mcp.CallToolRequest, args RebootArgs) (*mcp.CallToolResult, any, error) {
 	auditLog("talos_reboot", args, args.Nodes)
 
 	if !args.Confirm {
@@ -89,6 +89,8 @@ func (h *Handlers) HandleReboot(ctx context.Context, _ *mcp.CallToolRequest, arg
 		return nil, nil, fmt.Errorf("reboot: %w", err)
 	}
 
+	notifyProgress(ctx, req, "Reboot initiated", 1, 1)
+
 	return textResult(fmt.Sprintf("Reboot initiated for nodes: %v", args.Nodes)), nil, nil
 }
 
@@ -100,7 +102,7 @@ type UpgradeArgs struct {
 }
 
 // HandleUpgrade implements the talos_upgrade tool.
-func (h *Handlers) HandleUpgrade(ctx context.Context, _ *mcp.CallToolRequest, args UpgradeArgs) (*mcp.CallToolResult, any, error) {
+func (h *Handlers) HandleUpgrade(ctx context.Context, req *mcp.CallToolRequest, args UpgradeArgs) (*mcp.CallToolResult, any, error) {
 	auditLog("talos_upgrade", args, args.Nodes)
 
 	if !args.Confirm {
@@ -117,10 +119,14 @@ func (h *Handlers) HandleUpgrade(ctx context.Context, _ *mcp.CallToolRequest, ar
 
 	ctx = talos.WithNodes(ctx, args.Nodes)
 
+	notifyProgress(ctx, req, "Initiating upgrade", 1, 2)
+
 	resp, err := h.Client.Upgrade(ctx, args.Image, false, false)
 	if err != nil {
 		return nil, nil, fmt.Errorf("upgrade: %w", err)
 	}
+
+	notifyProgress(ctx, req, "Upgrade complete", 2, 2)
 
 	out, err := json.MarshalIndent(resp, "", "  ")
 	if err != nil {
@@ -139,7 +145,7 @@ type PatchConfigArgs struct {
 }
 
 // HandlePatchConfig implements the talos_patch_config tool.
-func (h *Handlers) HandlePatchConfig(ctx context.Context, _ *mcp.CallToolRequest, args PatchConfigArgs) (*mcp.CallToolResult, any, error) {
+func (h *Handlers) HandlePatchConfig(ctx context.Context, req *mcp.CallToolRequest, args PatchConfigArgs) (*mcp.CallToolResult, any, error) {
 	// Log a redacted copy: the patch content may contain TLS keys, tokens, or registry passwords.
 	auditLog("talos_patch_config", struct {
 		Mode   string   `json:"mode,omitempty"`
@@ -174,16 +180,20 @@ func (h *Handlers) HandlePatchConfig(ctx context.Context, _ *mcp.CallToolRequest
 
 	dryRun := resolveDryRun(args.DryRun)
 
-	req := &machineapi.ApplyConfigurationRequest{
+	applyReq := &machineapi.ApplyConfigurationRequest{
 		Data:   []byte(args.Patch),
 		Mode:   mode,
 		DryRun: dryRun,
 	}
 
-	resp, err := h.Client.ApplyConfiguration(ctx, req)
+	notifyProgress(ctx, req, "Applying configuration", 1, 2)
+
+	resp, err := h.Client.ApplyConfiguration(ctx, applyReq)
 	if err != nil {
 		return nil, nil, fmt.Errorf("apply configuration: %w", err)
 	}
+
+	notifyProgress(ctx, req, "Configuration applied", 2, 2)
 
 	out, err := json.MarshalIndent(resp, "", "  ")
 	if err != nil {

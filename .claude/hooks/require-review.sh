@@ -99,9 +99,10 @@ CHANGE_ID=$(basename "$REVIEW_DIR")
 get_yaml_field() {
   local file="$1"
   local field="$2"
-  # Extract content between the first and second --- markers, then grep for field
+  # Extract content between the first and second --- markers, then grep for field.
+  # grep returns exit 1 on no-match; || true prevents pipefail from triggering ERR.
   awk '/^---$/{c++;next} c==1{print}' "$file" 2>/dev/null \
-    | grep -E "^${field}:" \
+    | (grep -E "^${field}:" || true) \
     | head -1 \
     | sed "s/^${field}:[[:space:]]*//" \
     | tr -d '[:space:]"'"'"
@@ -126,10 +127,11 @@ for artifact in plan-review.md impl-review.md final-approval.md; do
   fi
 done
 
-# Verify role separation: no artifact should have reviewer-role: senior-implementer
+# Verify role separation: no artifact should have reviewer_role: senior-implementer
+# Field name uses underscore (reviewer_role) matching artifact frontmatter convention.
 for artifact in plan-review.md impl-review.md final-approval.md; do
   FILE="$REVIEW_DIR/$artifact"
-  ROLE=$(get_yaml_field "$FILE" "reviewer-role")
+  ROLE=$(get_yaml_field "$FILE" "reviewer_role")
 
   if [ "$ROLE" = "senior-implementer" ]; then
     deny "BLOCKED: ${artifact} was produced by 'senior-implementer'. Role separation violated — implementer cannot self-review."

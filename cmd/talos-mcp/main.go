@@ -31,6 +31,7 @@ import (
 	"github.com/Nosmoht/talos-mcp-server/internal/resources"
 	"github.com/Nosmoht/talos-mcp-server/internal/talos"
 	"github.com/Nosmoht/talos-mcp-server/internal/tools"
+	talosversion "github.com/Nosmoht/talos-mcp-server/internal/version"
 )
 
 // Build info injected by GoReleaser via ldflags.
@@ -61,6 +62,18 @@ func main() {
 
 	log.Printf("talos-mcp version=%q commit=%q date=%q read_only=%v", version, commit, date, readOnly) //nolint:gosec // G706 false positive: version/commit/date are build-time ldflags constants injected by GoReleaser, not runtime user input
 
+	// Best-effort cluster version compatibility check. Non-fatal — the server
+	// starts regardless and operators can set TALOS_MCP_SKIP_VERSION_CHECK=true
+	// to suppress validation warnings.
+	if cv, err := tc.GetClusterVersion(ctx); err != nil {
+		log.Printf("WARNING: could not detect cluster Talos version: %v", err)
+	} else if !cv.InSupportedRange() {
+		log.Printf("WARNING: cluster Talos version %s is outside the tested range (%s – %s); some features may not work correctly",
+			cv, talosversion.MinSupported, talosversion.MaxTested)
+	} else {
+		log.Printf("cluster Talos version: %s (supported)", cv)
+	}
+
 	h := &tools.Handlers{Client: tc}
 
 	serverOpts := &mcp.ServerOptions{
@@ -78,11 +91,20 @@ func main() {
 		// Stdio is single-session: wire per-session MCP log notifications.
 		// HTTP mode omits this — multiple concurrent sessions would race on the
 		// shared atomic.Pointer[slog.Logger], misdirecting notifications.
-		serverOpts.InitializedHandler = func(_ context.Context, req *mcp.InitializedRequest) {
+		serverOpts.InitializedHandler = func(initCtx context.Context, req *mcp.InitializedRequest) {
 			logger := slog.New(mcp.NewLoggingHandler(req.Session, &mcp.LoggingHandlerOptions{
 				LoggerName: "talos-mcp",
 			}))
 			h.SetLogger(logger)
+
+			// Forward version compatibility warning to the connected MCP client.
+			if cv, err := tc.GetClusterVersion(initCtx); err == nil && !cv.InSupportedRange() {
+				logger.Warn("cluster Talos version is outside the tested range; some features may not work correctly",
+					"version", cv.String(),
+					"min_supported", talosversion.MinSupported.String(),
+					"max_tested", talosversion.MaxTested.String(),
+				)
+			}
 		}
 	}
 
@@ -90,7 +112,6 @@ func main() {
 		Name:    "talos",
 		Version: version,
 	}, serverOpts)
-
 
 	// All tools operate on a specific configured Talos cluster (closed world).
 	closedWorld := boolPtr(false)

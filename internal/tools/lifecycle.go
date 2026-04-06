@@ -4,12 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	machineapi "github.com/siderolabs/talos/pkg/machinery/api/machine"
 	talosclient "github.com/siderolabs/talos/pkg/machinery/client"
 
 	"github.com/Nosmoht/talos-mcp-server/internal/talos"
+	"github.com/Nosmoht/talos-mcp-server/internal/version"
 )
 
 // ServiceActionArgs defines input for talos_service_action.
@@ -121,6 +123,30 @@ func (h *Handlers) HandleUpgrade(ctx context.Context, req *mcp.CallToolRequest, 
 
 	ctx = talos.WithNodes(ctx, args.Nodes)
 
+	// Upgrade path validation — skipped when TALOS_MCP_SKIP_VERSION_CHECK=true.
+	// Decision matrix:
+	//   image tag unparseable (custom/factory/latest) → warn + proceed
+	//   image parseable, node version unfetchable      → warn + proceed
+	//   image parseable, node version fetched, path ok → proceed silently
+	//   image parseable, node version fetched, invalid → hard error (reject)
+	if os.Getenv("TALOS_MCP_SKIP_VERSION_CHECK") != "true" {
+		if len(args.Nodes) > 1 {
+			h.mcpLogWarn("talos_upgrade", "multiple nodes targeted; validating upgrade path against the first node only — upgrade nodes one at a time", fmt.Errorf("%d nodes", len(args.Nodes)))
+		}
+
+		targetVer, parseErr := version.ExtractFromImage(args.Image)
+		if parseErr != nil {
+			h.mcpLogWarn("talos_upgrade", "could not parse version from image tag, skipping upgrade path validation", parseErr)
+		} else {
+			currentVer, fetchErr := h.Client.GetNodeVersion(ctx, args.Nodes[0])
+			if fetchErr != nil {
+				h.mcpLogWarn("talos_upgrade", "could not detect current node version, skipping upgrade path validation", fetchErr)
+			} else if pathErr := version.ValidateUpgradePath(*currentVer, targetVer); pathErr != nil {
+				return nil, nil, fmt.Errorf("upgrade refused: %w (set TALOS_MCP_SKIP_VERSION_CHECK=true to override)", pathErr)
+			}
+		}
+	}
+
 	notifyProgress(ctx, req, "Initiating upgrade", 1, 2)
 
 	resp, err := h.Client.Upgrade(ctx, args.Image, false, false)
@@ -128,6 +154,9 @@ func (h *Handlers) HandleUpgrade(ctx context.Context, req *mcp.CallToolRequest, 
 		h.mcpLogError("talos_upgrade", err)
 		return nil, nil, fmt.Errorf("upgrade: %w", err)
 	}
+
+	// Invalidate the cached cluster version — the node is now on the new version.
+	h.Client.InvalidateVersionCache()
 
 	notifyProgress(ctx, req, "Upgrade complete", 2, 2)
 

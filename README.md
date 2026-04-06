@@ -4,6 +4,7 @@
 [![Release](https://img.shields.io/github/v/release/Nosmoht/talos-mcp-server?sort=semver)](https://github.com/Nosmoht/talos-mcp-server/releases)
 [![Go Reference](https://pkg.go.dev/badge/github.com/Nosmoht/talos-mcp-server.svg)](https://pkg.go.dev/github.com/Nosmoht/talos-mcp-server)
 [![codecov](https://codecov.io/gh/Nosmoht/talos-mcp-server/graph/badge.svg)](https://codecov.io/gh/Nosmoht/talos-mcp-server)
+[![Go Report Card](https://goreportcard.com/badge/github.com/Nosmoht/talos-mcp-server)](https://goreportcard.com/report/github.com/Nosmoht/talos-mcp-server)
 [![License](https://img.shields.io/github/license/Nosmoht/talos-mcp-server)](LICENSE)
 
 An MCP server that exposes Talos Linux cluster management to AI agents (Claude Code, OpenAI Codex, and any MCP-compatible client). Instead of pasting `talosctl` output into chat, the agent calls structured tools that return machine-readable JSON directly from the Talos gRPC API — zero token cost for intermediate output.

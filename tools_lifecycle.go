@@ -164,10 +164,10 @@ type PatchConfigArgs struct {
 func (tc *TalosClient) handlePatchConfig(ctx context.Context, _ *mcp.CallToolRequest, args PatchConfigArgs) (*mcp.CallToolResult, any, error) {
 	// Log a redacted copy: the patch content may contain TLS keys, tokens, or registry passwords.
 	auditLog("talos_patch_config", struct {
-		Mode   string `json:"mode,omitempty"`
-		DryRun *bool  `json:"dry_run,omitempty"`
+		Mode   string   `json:"mode,omitempty"`
+		DryRun *bool    `json:"dry_run,omitempty"`
 		Nodes  []string `json:"nodes,omitempty"`
-		Patch  string `json:"patch"`
+		Patch  string   `json:"patch"`
 	}{
 		Mode:   args.Mode,
 		DryRun: args.DryRun,

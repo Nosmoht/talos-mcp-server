@@ -3,17 +3,24 @@ package talos
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"strings"
+	"sync"
 
 	talosclient "github.com/siderolabs/talos/pkg/machinery/client"
 	clientconfig "github.com/siderolabs/talos/pkg/machinery/client/config"
+
+	"github.com/Nosmoht/talos-mcp-server/internal/version"
 )
 
 // Client wraps the Talos machinery client.
 // Client is safe for concurrent use by multiple goroutines.
 type Client struct {
 	*talosclient.Client
+
+	versionMu     sync.Mutex
+	versionCached *version.TalosVersion
 }
 
 // NewClient creates a new Talos client from the default or env-configured talosconfig.
@@ -44,7 +51,70 @@ func NewClient(ctx context.Context) (*Client, error) {
 		return nil, err
 	}
 
-	return &Client{c}, nil
+	return &Client{Client: c}, nil
+}
+
+// GetClusterVersion fetches and caches the Talos version from the default
+// cluster endpoint. Subsequent calls return the cached value. On fetch
+// failure the cache is not updated, allowing retry.
+//
+// This is suitable for informational use (startup log, prompts). For upgrade
+// path validation use GetNodeVersion to query a specific target node.
+func (c *Client) GetClusterVersion(ctx context.Context) (*version.TalosVersion, error) {
+	c.versionMu.Lock()
+	defer c.versionMu.Unlock()
+
+	if c.versionCached != nil {
+		return c.versionCached, nil
+	}
+
+	v, err := c.fetchVersion(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	c.versionCached = v
+
+	return v, nil
+}
+
+// GetNodeVersion fetches the Talos version from a specific node without caching.
+// Use this for upgrade path validation to ensure fresh per-node data.
+func (c *Client) GetNodeVersion(ctx context.Context, node string) (*version.TalosVersion, error) {
+	ctx = WithNodes(ctx, []string{node})
+
+	return c.fetchVersion(ctx)
+}
+
+// InvalidateVersionCache clears the cached cluster version.
+// Call this after a successful upgrade so the next GetClusterVersion call
+// fetches fresh data.
+func (c *Client) InvalidateVersionCache() {
+	c.versionMu.Lock()
+	defer c.versionMu.Unlock()
+
+	c.versionCached = nil
+}
+
+// fetchVersion calls the Talos Version gRPC method and parses the first response message.
+func (c *Client) fetchVersion(ctx context.Context) (*version.TalosVersion, error) {
+	resp, err := c.Version(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("fetch Talos version: %w", err)
+	}
+
+	if len(resp.Messages) == 0 {
+		return nil, fmt.Errorf("fetch Talos version: empty response")
+	}
+
+	tag := resp.Messages[0].Version.GetTag()
+
+	v, err := version.Parse(tag)
+	if err != nil {
+		return nil, fmt.Errorf("parse Talos version tag %q: %w", tag, err)
+	}
+
+	return &v, nil
 }
 
 // WithNodes returns a context targeting the given nodes.

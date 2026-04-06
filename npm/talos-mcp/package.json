@@ -1,0 +1,41 @@
+{
+  "name": "talos-mcp",
+  "version": "0.22.0",
+  "description": "MCP server for Talos Linux cluster management via native gRPC API",
+  "license": "MIT",
+  "author": "Thomas Krahn",
+  "homepage": "https://github.com/Nosmoht/talos-mcp-server#readme",
+  "bugs": {
+    "url": "https://github.com/Nosmoht/talos-mcp-server/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Nosmoht/talos-mcp-server"
+  },
+  "keywords": [
+    "mcp",
+    "talos",
+    "talos-linux",
+    "kubernetes",
+    "cluster-management",
+    "grpc",
+    "model-context-protocol",
+    "claude",
+    "ai-agent"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "bin": {
+    "talos-mcp": "bin/run.js"
+  },
+  "files": [
+    "bin/run.js"
+  ],
+  "optionalDependencies": {
+    "@talos-mcp/linux-x64": "0.22.0",
+    "@talos-mcp/linux-arm64": "0.22.0",
+    "@talos-mcp/darwin-x64": "0.22.0",
+    "@talos-mcp/darwin-arm64": "0.22.0"
+  }
+}

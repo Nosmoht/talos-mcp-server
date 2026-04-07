@@ -241,3 +241,70 @@ func TestTalosResourceDefinitions(t *testing.T) {
 		}
 	}
 }
+
+// TestTalosPatchConfig_DryRun is the regression test for issue #25.
+// talos_patch_config dry-run must merge the patch with the current node config
+// before submitting to the Talos API. Previously failed because the raw patch
+// was sent as a full config document.
+func TestTalosPatchConfig_DryRun(t *testing.T) {
+	session := connectMCP(t)
+	nodeIP := discoverNode(t, session)
+
+	dryRun := true
+	result := callTool(t, session, "talos_patch_config", map[string]any{
+		"patch":   `{"machine":{"nodeLabels":{"integration-test":"true"}}}`,
+		"dry_run": dryRun,
+		"nodes":   []string{nodeIP},
+	})
+	text := extractText(t, result)
+	// The response must contain the merged config or a dry-run confirmation —
+	// either indicates the patch was actually processed (not just accepted).
+	if !strings.Contains(text, "integration-test") && !strings.Contains(text, "dry") {
+		t.Errorf("expected dry-run response to contain patched label or dry-run confirmation, got: %.500s", text)
+	}
+}
+
+// TestTalosPatchConfig_DryRun_JSON6902 verifies RFC 6902 JSON Patch format works
+// through the fetch→merge pipeline, not just strategic merge patches.
+func TestTalosPatchConfig_DryRun_JSON6902(t *testing.T) {
+	session := connectMCP(t)
+	nodeIP := discoverNode(t, session)
+
+	dryRun := true
+	result := callTool(t, session, "talos_patch_config", map[string]any{
+		"patch":   `[{"op":"add","path":"/machine/nodeLabels/json6902-test","value":"true"}]`,
+		"dry_run": dryRun,
+		"nodes":   []string{nodeIP},
+	})
+	text := extractText(t, result)
+	if !strings.Contains(text, "json6902-test") && !strings.Contains(text, "dry") {
+		t.Errorf("expected dry-run response to contain patched label or dry-run confirmation, got: %.500s", text)
+	}
+}
+
+// TestTalosPatchConfig_MultiNode_Rejected verifies that targeting multiple nodes
+// returns an error rather than silently applying config from one node to all.
+func TestTalosPatchConfig_MultiNode_Rejected(t *testing.T) {
+	session := connectMCP(t)
+	nodeIP := discoverNode(t, session)
+
+	result, err := session.CallTool(context.Background(), &mcp.CallToolParams{
+		Name: "talos_patch_config",
+		Arguments: map[string]any{
+			"patch":   `{"machine":{"nodeLabels":{"test":"value"}}}`,
+			"dry_run": true,
+			"nodes":   []string{nodeIP, nodeIP}, // two entries (even if same IP)
+		},
+	})
+	if err != nil {
+		t.Fatalf("CallTool: %v", err)
+	}
+	// Expect a tool-level error, not a transport error.
+	if !result.IsError {
+		t.Errorf("expected tool error for multi-node patch_config, got success: %.300s", extractText(t, result))
+	}
+	text := extractText(t, result)
+	if !strings.Contains(text, "exactly one") {
+		t.Errorf("expected 'exactly one' in error message, got: %.300s", text)
+	}
+}

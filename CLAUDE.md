@@ -263,8 +263,8 @@ The `staff-reviewer` escalates when it identifies concrete risk. Default: do **n
 | `provenance` | `provenance-reviewer` | `go.mod` or `go.sum` modified, new external import |
 | `compatibility` | `compatibility-reviewer` | Tool/prompt/resource signature change, SDK version bump, tool removal |
 | `architecture` | `principal-architect-reviewer` | New package, >3 packages modified, structural refactor, API surface addition |
-| `security` | (via architect or dedicated) | Auth/mTLS/token handling, input validation, hook/enforcement logic |
-| `performance` | (via architect or dedicated) | gRPC streaming, goroutine lifecycle, hot-path caching |
+| `security` | `security-reviewer` | Auth/mTLS/token handling, input validation, hook/enforcement logic |
+| `performance` | `performance-reviewer` | gRPC streaming, goroutine lifecycle, hot-path caching |
 
 ### Change-id convention
 

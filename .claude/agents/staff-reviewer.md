@@ -107,7 +107,7 @@ Multiple escalation types may apply simultaneously.
   - Changes to TALOS_MCP_READ_ONLY enforcement or tool registration
   - Audit logging changes in mutating handlers
 
-→ security  (→ review-security.md, via principal-architect-reviewer or dedicated agent):
+→ security  (security-reviewer → review-security.md):
   - Auth, mTLS, token, or credential handling modified
   - Input validation or sanitization logic changed
   - Hook or enforcement mechanism modified
@@ -126,7 +126,7 @@ Multiple escalation types may apply simultaneously.
   - go.mod or go.sum modified
   - Any new external import path introduced
 
-→ performance  (→ review-performance.md, via principal-architect-reviewer or dedicated agent):
+→ performance  (performance-reviewer → review-performance.md):
   - gRPC connection handling or streaming logic
   - Goroutine lifecycle, concurrency, or synchronization
   - Caching logic (version cache, connection pooling)

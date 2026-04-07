@@ -40,7 +40,7 @@ Tested against Talos Linux v1.9.x – v1.12.x (machinery SDK v1.12.6). The serve
 - `talos://{node}/resource/{namespace}/{type}` — list all COSI resources of a given type in a namespace on a specific node
 - `talos://{node}/resource/{namespace}/{type}/{id}` — get a specific COSI resource by namespace, type, and ID on a specific node
 
-## Tools (16)
+## Tools (18)
 
 ### Read-only
 - `talos_resource_definitions` — list all resource types and aliases

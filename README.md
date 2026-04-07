@@ -128,7 +128,7 @@ The server speaks the [MCP protocol](https://modelcontextprotocol.io) over stdio
 | `talos_services` | List all Talos services and their current state (running, stopped, health). |
 | `talos_containers` | List containers in a namespace (default: `k8s.io` for Kubernetes containers). |
 | `talos_processes` | List running processes on target nodes. |
-| `talos_health` | Check cluster health (etcd, Kubernetes API, node readiness). |
+| `talos_health` | Check cluster health (etcd, Kubernetes API, node readiness). Supports `control_plane_nodes` / `worker_nodes` override. |
 | `talos_logs` | Fetch recent service logs (last N lines, no follow). |
 | `talos_dmesg` | Read kernel ring buffer messages. |
 | `talos_events` | Fetch recent Talos runtime events (service changes, config changes). |
@@ -142,9 +142,10 @@ These tools modify cluster state and have explicit safety guards.
 
 | Tool | Description | Guards |
 |---|---|---|
-| `talos_service_action` | Start, stop, or restart a Talos service. | — |
-| `talos_reboot` | Reboot target nodes. | `confirm=true` required; `nodes` must be explicit |
-| `talos_upgrade` | Upgrade Talos on target nodes. | `confirm=true` required; `nodes` and `image` required |
+| `talos_service_action` | Start, stop, or restart a Talos service (note: restarting `etcd` is not supported by the Talos API). | — |
+| `talos_reboot` | Reboot target nodes. Supports `mode`: `default`, `powercycle`, `force`. | `confirm=true` required; `nodes` must be explicit |
+| `talos_upgrade` | Upgrade Talos on target nodes. Supports `preserve` (default `true`), `stage`, `force`, `reboot_mode`. | `confirm=true` required; `nodes` and `image` required |
+| `talos_rollback` | Roll back the last upgrade on target nodes. | `confirm=true` required; `nodes` must be explicit |
 | `talos_patch_config` | Apply a machine config patch (JSON or YAML strategic merge). | `dry_run` defaults to `true`; set `dry_run=false` to apply |
 
 All tools accept an optional `nodes` field (list of node IPs or hostnames). When omitted, the active context from talosconfig is used.
@@ -175,7 +176,7 @@ MCP Client (Claude Code / Codex)
 | Tool | RBAC minimum |
 |---|---|
 | `talos_resource_definitions`, `talos_get`, `talos_version`, `talos_services`, `talos_containers`, `talos_processes`, `talos_health`, `talos_logs`, `talos_dmesg`, `talos_events`, `talos_list_files`, `talos_read_file` | `os:reader` |
-| `talos_etcd`, `talos_service_action`, `talos_reboot`, `talos_upgrade` | `os:operator` |
+| `talos_etcd`, `talos_service_action`, `talos_reboot`, `talos_upgrade`, `talos_rollback` | `os:operator` |
 | `talos_patch_config` | `os:admin` |
 
 ### Safety Mechanisms
@@ -184,9 +185,10 @@ MCP Client (Claude Code / Codex)
 |---|---|
 | Read-only mode | `TALOS_MCP_READ_ONLY=true` registers only read-only tools at startup; mutating tools are never exposed to the LLM |
 | Path allowlist | `TALOS_MCP_ALLOWED_PATHS=/etc,/proc` restricts `talos_read_file` and `talos_list_files` to specified prefixes |
-| Confirm gates | `talos_reboot` and `talos_upgrade` require `confirm=true` and explicit `nodes`; both fields are enforced server-side |
+| Confirm gates | `talos_reboot`, `talos_upgrade`, and `talos_rollback` require `confirm=true` and explicit `nodes`; both fields are enforced server-side |
+| Preserve default | `talos_upgrade` defaults `preserve` to `true` (keep EPHEMERAL partition) — differs from `talosctl` default of `false` |
 | Dry-run default | `talos_patch_config` defaults to `dry_run=true`; changes are only applied when `dry_run=false` is explicitly set |
-| Audit logging | All mutating tool calls emit a structured log line to stderr: `AUDIT timestamp=<RFC3339> tool=<name> nodes=<list> args=<json>` (patch content is redacted) |
+| Audit logging | All mutating tool calls (`talos_service_action`, `talos_reboot`, `talos_upgrade`, `talos_rollback`, `talos_patch_config`) emit a structured log line to stderr: `AUDIT timestamp=<RFC3339> tool=<name> nodes=<list> args=<json>` (patch content is redacted) |
 
 ### What Is Not in the Threat Model
 

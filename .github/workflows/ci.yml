@@ -9,7 +9,39 @@ permissions:
   contents: read
 
 jobs:
+  # Detect which files changed — pull_request only.
+  # On push to main, always run full CI (paths-filter uses git diff HEAD~1 on push,
+  # which is inaccurate for rebase merges; full CI on main is the safer default).
+  changes:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: read  # required by dorny/paths-filter to read PR file list
+    outputs:
+      go: ${{ steps.filter.outputs.go }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v4
+      - uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36 # v3.0.2
+        id: filter
+        with:
+          filters: |
+            go:
+              - '*.go'
+              - 'cmd/**'
+              - 'internal/**'
+              - 'go.mod'
+              - 'go.sum'
+              - 'Makefile'
+              - '.goreleaser.yaml'
+              - '.github/workflows/ci.yml'
+
   lint:
+    needs: changes
+    # Push to main: always run. Pull request: only when Go-relevant files changed.
+    # NOTE: keep Go path list in sync with the 'changes' job and auto-tag.yml.
+    if: >-
+      github.event_name == 'push' ||
+      needs.changes.outputs.go == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v4
@@ -21,6 +53,10 @@ jobs:
           version: v2.11
 
   verify:
+    needs: changes
+    if: >-
+      github.event_name == 'push' ||
+      needs.changes.outputs.go == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v4
@@ -32,6 +68,10 @@ jobs:
       - run: govulncheck ./...
 
   test:
+    needs: changes
+    if: >-
+      github.event_name == 'push' ||
+      needs.changes.outputs.go == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v4
@@ -47,6 +87,10 @@ jobs:
           token: ${{ secrets.CODECOV_TOKEN }}
 
   build:
+    needs: changes
+    if: >-
+      github.event_name == 'push' ||
+      needs.changes.outputs.go == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v4
@@ -54,3 +98,22 @@ jobs:
         with:
           go-version-file: go.mod
       - run: go build -o talos-mcp ./cmd/talos-mcp
+
+  # Single required status check: passes when all CI jobs pass or are legitimately skipped.
+  # Skipped = no Go-relevant files changed on this PR.
+  merge-guard:
+    if: always() && !cancelled()
+    needs: [lint, test, build, verify]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fail on CI failure or cancellation
+        if: >-
+          contains(needs.*.result, 'failure') ||
+          contains(needs.*.result, 'cancelled')
+        run: |
+          echo "CI failed: one or more jobs failed or were cancelled"
+          exit 1
+      - name: Report CI status
+        run: |
+          echo "All CI jobs passed or were skipped (no Go-relevant files changed)" \
+            | tee -a "$GITHUB_STEP_SUMMARY"

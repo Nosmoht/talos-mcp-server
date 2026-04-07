@@ -105,7 +105,7 @@ type UpgradeArgs struct {
 	Nodes      []string `json:"nodes" jsonschema:"REQUIRED: Target node IPs or hostnames to upgrade. Upgrade one node at a time."`
 	Image      string   `json:"image" jsonschema:"REQUIRED: Talos installer image reference (e.g. 'ghcr.io/siderolabs/installer:v1.12.6')."`
 	Confirm    bool     `json:"confirm" jsonschema:"REQUIRED: Must be explicitly set to true to confirm the upgrade."`
-	Preserve   *bool    `json:"preserve,omitempty" jsonschema:"Preserve the EPHEMERAL partition (kubelet state\\, local storage metadata such as DRBD/LINSTOR) across the upgrade. Defaults to true — differs from talosctl (which defaults to false) — to prevent accidental data loss when the field is omitted. Set to false only when you intend to wipe ephemeral data."`
+	Preserve   *bool    `json:"preserve,omitempty" jsonschema:"Preserve the EPHEMERAL partition (/var — etcd data\\, kubelet state\\, containerd cache\\, CNI state\\, logs) across the upgrade. Defaults to true — differs from talosctl (which defaults to false) — to prevent accidental data loss when the field is omitted. Set to false only when you intend to wipe ephemeral data."`
 	Stage      bool     `json:"stage,omitempty" jsonschema:"Stage the upgrade to be applied on next reboot instead of rebooting immediately. Defaults to false."`
 	Force      bool     `json:"force,omitempty" jsonschema:"Force the upgrade bypassing pre-upgrade safety checks. Dangerous — use only when the standard upgrade path is blocked. Defaults to false."`
 	RebootMode string   `json:"reboot_mode,omitempty" jsonschema:"Reboot mode after upgrade: 'default' or 'powercycle'. Defaults to 'default'."`

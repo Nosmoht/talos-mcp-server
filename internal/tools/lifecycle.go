@@ -6,9 +6,14 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/cosi-project/runtime/pkg/resource"
+	"github.com/cosi-project/runtime/pkg/resource/protobuf"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	machineapi "github.com/siderolabs/talos/pkg/machinery/api/machine"
 	talosclient "github.com/siderolabs/talos/pkg/machinery/client"
+	"github.com/siderolabs/talos/pkg/machinery/config/configpatcher"
+	talosconfig "github.com/siderolabs/talos/pkg/machinery/resources/config"
+	"go.yaml.in/yaml/v4"
 
 	"github.com/Nosmoht/talos-mcp-server/internal/talos"
 	"github.com/Nosmoht/talos-mcp-server/internal/version"
@@ -230,10 +235,10 @@ func (h *Handlers) HandleRollback(ctx context.Context, req *mcp.CallToolRequest,
 
 // PatchConfigArgs defines input for talos_patch_config.
 type PatchConfigArgs struct {
-	Patch  string   `json:"patch" jsonschema:"Machine config patch as a JSON or YAML string."`
+	Patch  string   `json:"patch" jsonschema:"Machine config patch as a JSON or YAML string (strategic merge patch or RFC 6902 JSON Patch array). Must target a single node — the tool fetches the current config\\, merges the patch\\, and submits the result."`
 	Mode   string   `json:"mode,omitempty" jsonschema:"Apply mode: 'auto' (default)\\, 'reboot'\\, 'no_reboot'\\, 'staged'\\, or 'try'."`
 	DryRun *bool    `json:"dry_run,omitempty" jsonschema:"Run in dry-run mode without applying changes. Defaults to true. Set explicitly to false to actually apply."`
-	Nodes  []string `json:"nodes,omitempty" jsonschema:"Target node IPs or hostnames. Omit to use the default nodes from talosconfig."`
+	Nodes  []string `json:"nodes,omitempty" jsonschema:"Target node IP or hostname (exactly one). Omit to use the default node from talosconfig."`
 }
 
 // HandlePatchConfig implements the talos_patch_config tool.
@@ -250,6 +255,14 @@ func (h *Handlers) HandlePatchConfig(ctx context.Context, req *mcp.CallToolReque
 		Nodes:  args.Nodes,
 		Patch:  fmt.Sprintf("<redacted, %d bytes>", len(args.Patch)),
 	}, args.Nodes)
+
+	// Require exactly one node: the fetch→merge path fetches the current config from
+	// the target node. Control-plane and worker nodes have different machine configs,
+	// so applying a config merged from node A to node B would be incorrect.
+	// Patch each node individually when multiple nodes need updating.
+	if len(args.Nodes) > 1 {
+		return nil, nil, fmt.Errorf("talos_patch_config requires exactly one target node (got %d); patch each node individually to ensure correct config merge", len(args.Nodes))
+	}
 
 	ctx = talos.WithNodes(ctx, args.Nodes)
 
@@ -280,13 +293,50 @@ func (h *Handlers) HandlePatchConfig(ctx context.Context, req *mcp.CallToolReque
 		doneMsg = "Configuration validated (dry run)"
 	}
 
+	// Step 1: parse the patch (supports strategic merge patches and RFC 6902 JSON Patches).
+	patch, err := configpatcher.LoadPatch([]byte(args.Patch))
+	if err != nil {
+		return nil, nil, fmt.Errorf("load patch: %w", err)
+	}
+
+	notifyProgress(ctx, req, "Fetching current machine config", 1, 3)
+
+	// Step 2: fetch the current MachineConfig from the node via COSI.
+	// talos.WithNodes already set the single-node context, so COSI.Get uses one-to-one proxying.
+	mc, err := h.Client.COSI.Get(ctx, resource.NewMetadata(
+		talosconfig.NamespaceName,
+		talosconfig.MachineConfigType,
+		talosconfig.ActiveID,
+		resource.VersionUndefined,
+	))
+	if err != nil {
+		return nil, nil, fmt.Errorf("get current machine config: %w", err)
+	}
+
+	// Step 3: extract the raw YAML body from the COSI resource envelope.
+	body, err := extractMachineConfigBody(mc)
+	if err != nil {
+		return nil, nil, fmt.Errorf("extract machine config body: %w", err)
+	}
+
+	// Step 4: apply the patch to the current config.
+	cfg, err := configpatcher.Apply(configpatcher.WithBytes(body), []configpatcher.Patch{patch})
+	if err != nil {
+		return nil, nil, fmt.Errorf("apply patch: %w", err)
+	}
+
+	patched, err := cfg.Bytes()
+	if err != nil {
+		return nil, nil, fmt.Errorf("marshal patched config: %w", err)
+	}
+
+	notifyProgress(ctx, req, applyMsg, 2, 3)
+
 	applyReq := &machineapi.ApplyConfigurationRequest{
-		Data:   []byte(args.Patch),
+		Data:   patched,
 		Mode:   mode,
 		DryRun: dryRun,
 	}
-
-	notifyProgress(ctx, req, applyMsg, 1, 2)
 
 	resp, err := h.Client.ApplyConfiguration(ctx, applyReq)
 	if err != nil {
@@ -294,7 +344,7 @@ func (h *Handlers) HandlePatchConfig(ctx context.Context, req *mcp.CallToolReque
 		return nil, nil, fmt.Errorf("apply configuration: %w", err)
 	}
 
-	notifyProgress(ctx, req, doneMsg, 2, 2)
+	notifyProgress(ctx, req, doneMsg, 3, 3)
 
 	out, err := json.MarshalIndent(resp, "", "  ")
 	if err != nil {
@@ -302,4 +352,38 @@ func (h *Handlers) HandlePatchConfig(ctx context.Context, req *mcp.CallToolReque
 	}
 
 	return textResult(string(out)), nil, nil
+}
+
+// extractMachineConfigBody extracts the raw YAML config bytes from a MachineConfig COSI resource.
+// Reimplemented from talosctl/cmd/talos/patch.go — handles both annotation-based (current Talos)
+// and legacy protobuf-based serialization (pre-annotation Talos versions).
+func extractMachineConfigBody(mc resource.Resource) ([]byte, error) {
+	if mc.Metadata().Annotations().Empty() {
+		// Legacy path: Talos versions that marshaled MachineConfig spec as a YAML document
+		// rather than a string. Use the protobuf path to extract the full multi-document body.
+		if pb, ok := mc.(*protobuf.Resource); ok {
+			p, err := pb.Marshal()
+			if err != nil {
+				return nil, fmt.Errorf("marshal protobuf resource: %w", err)
+			}
+
+			return []byte(p.GetSpec().GetYamlSpec()), nil
+		}
+
+		return yaml.Marshal(mc.Spec())
+	}
+
+	// Current path: spec is marshaled as a YAML string (not a YAML document).
+	// Unmarshal as string first to unwrap the envelope.
+	spec, err := yaml.Marshal(mc.Spec())
+	if err != nil {
+		return nil, err
+	}
+
+	var bodyStr string
+	if err = yaml.Unmarshal(spec, &bodyStr); err != nil {
+		return nil, err
+	}
+
+	return []byte(bodyStr), nil
 }

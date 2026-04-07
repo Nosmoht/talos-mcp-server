@@ -1,0 +1,71 @@
+name: Code Audit Finding
+description: Report a finding from a code review or security audit
+labels: ["audit"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this template for findings from code reviews, security audits, or automated analysis.
+        For security vulnerabilities, use [private reporting](https://github.com/Nosmoht/talos-mcp-server/security/advisories/new) instead.
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Severity
+      options:
+        - "P0 — critical"
+        - "P1 — high"
+        - "P2 — moderate"
+        - "P3 — low"
+    validations:
+      required: true
+  - type: dropdown
+    id: category
+    attributes:
+      label: Category
+      options:
+        - safety
+        - security
+        - reliability
+        - performance
+        - testing
+        - code quality
+        - documentation
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: "What is the finding?"
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence
+      description: "File paths, line numbers, code snippets demonstrating the issue"
+      render: go
+    validations:
+      required: true
+  - type: textarea
+    id: impact
+    attributes:
+      label: Impact
+      description: "What can go wrong if this is not addressed?"
+    validations:
+      required: true
+  - type: textarea
+    id: recommendation
+    attributes:
+      label: Recommended fix
+      description: "Suggested approach with estimated effort"
+    validations:
+      required: true
+  - type: input
+    id: audit-source
+    attributes:
+      label: Audit source
+      description: "Who or what identified this?"
+      placeholder: "Code review, CodeQL, manual audit, etc."
+    validations:
+      required: false

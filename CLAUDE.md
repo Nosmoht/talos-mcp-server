@@ -255,13 +255,16 @@ Review depth scales with change complexity (DAAO principle — difficulty-aware 
 
 ### Escalation criteria
 
-The `staff-reviewer` escalates when it identifies concrete risk for a production incident, security vulnerability, or architecture inconsistency:
+The `staff-reviewer` escalates when it identifies concrete risk. Default: do **not** escalate.
 
-- **→ architecture**: new package or public interface, >3 packages modified, new external dependency, API surface change (tools/prompts/resources)
-- **→ security**: auth/token/mTLS handling, new mutating tool or safety guard change, hook or enforcement logic
-- **→ performance**: gRPC streaming, goroutine lifecycle, caching in hot paths
-
-Default: do **not** escalate. Only escalate when a concrete risk is identified.
+| Type | Reviewer | Triggers |
+|---|---|---|
+| `operational-safety` | `operational-safety-reviewer` | Any new/modified mutating tool, guard logic change, audit logging change, read-only enforcement |
+| `provenance` | `provenance-reviewer` | `go.mod` or `go.sum` modified, new external import |
+| `compatibility` | `compatibility-reviewer` | Tool/prompt/resource signature change, SDK version bump, tool removal |
+| `architecture` | `principal-architect-reviewer` | New package, >3 packages modified, structural refactor, API surface addition |
+| `security` | (via architect or dedicated) | Auth/mTLS/token handling, input validation, hook/enforcement logic |
+| `performance` | (via architect or dedicated) | gRPC streaming, goroutine lifecycle, hot-path caching |
 
 ### Change-id convention
 

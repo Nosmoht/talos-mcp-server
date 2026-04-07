@@ -213,7 +213,10 @@ func main() {
 		mcp.AddTool(server, &mcp.Tool{
 			Name: "talos_reboot",
 			Description: "Reboot the specified nodes. Requires explicit nodes and confirm=true. " +
-				"Use mode='powercycle' for a full power cycle or mode='force' to skip graceful shutdown on stuck nodes.",
+				"All listed nodes are rebooted simultaneously — reboot one node at a time to avoid a full cluster outage. " +
+				"Use mode='powercycle' for a full power cycle or mode='force' to skip graceful shutdown on stuck nodes. " +
+				"Set wait=true to block until all node(s) complete reboot and are back up (verified via boot ID change). " +
+				"Use timeout to control max wait time (default: '5m').",
 			Annotations: &mcp.ToolAnnotations{DestructiveHint: destructive, OpenWorldHint: closedWorld},
 		}, h.HandleReboot)
 

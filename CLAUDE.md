@@ -59,7 +59,7 @@ Tested against Talos Linux v1.9.x – v1.12.x (machinery SDK v1.12.6). The serve
 
 ### Mutating (require explicit confirmation)
 - `talos_service_action` — start/stop/restart a service (note: restarting `etcd` is not supported by the Talos API)
-- `talos_reboot` — reboot nodes (requires `confirm=true` + explicit `nodes`); supports `mode`: `default`, `powercycle`, `force`
+- `talos_reboot` — reboot nodes (requires `confirm=true` + explicit `nodes`); supports `mode`: `default`, `powercycle`, `force`; supports `wait=true` + `timeout` to block until reboot completes (default: fire-and-forget); **all listed nodes are rebooted simultaneously — reboot one node at a time to avoid a full cluster outage**
 - `talos_upgrade` — upgrade Talos on nodes (requires `confirm=true` + `nodes` + `image`); supports `preserve` (default `true`), `stage`, `force`, `reboot_mode`
 - `talos_rollback` — roll back the last upgrade on nodes (requires `confirm=true` + explicit `nodes`)
 - `talos_patch_config` — apply machine config patch (defaults to `dry_run=true`)
@@ -87,6 +87,7 @@ Prompts are guided workflows that instruct the AI agent which tools to call and 
 ## Safety
 
 - `talos_reboot`, `talos_upgrade`, and `talos_rollback` require `confirm=true` and explicit `nodes` — will error without both.
+- `talos_reboot` reboots **all listed nodes simultaneously** — specify one node at a time to maintain cluster availability. Set `wait=true` to block until the reboot completes (verified via boot ID change); use `timeout` to control the deadline (default `5m`).
 - `talos_upgrade` `preserve` defaults to `true` (keep EPHEMERAL partition) — differs from `talosctl` default of `false`. Set `preserve=false` explicitly to wipe.
 - `talos_patch_config` defaults `dry_run=true` — you must explicitly pass `dry_run=false` to apply.
 

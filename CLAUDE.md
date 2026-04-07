@@ -218,8 +218,13 @@ Install the git hook (one-time per clone):
 cp .claude/hooks/pre-commit .git/hooks/pre-commit && chmod +x .git/hooks/pre-commit
 ```
 
+### Artifact storage
+
+Review artifacts (`.claude/reviews/`) and plan files (`.claude/plans/`) are **local-only** — gitignored and never committed. They exist on disk solely as process gates for the pre-commit hooks. The `[review:change-id]` tag in commit messages serves as the permanent audit trail.
+
 ### Known limitations (v1)
 
 - Hook enforcement covers Claude Code sessions (Bash tool, MCP GitHub tools) and git CLI via the pre-commit hook
 - Review artifacts are process guards, not cryptographically signed — trust is enforced by role separation and the principal-architect-reviewer gate
 - Post-review file modifications are not detected (tracked for v2: content hashing in artifact frontmatter)
+- Review artifacts are local-only (gitignored); fresh clones start without them

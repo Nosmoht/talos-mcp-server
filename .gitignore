@@ -6,3 +6,5 @@ node_modules/
 .env
 .envrc
 .claude/worktrees/
+.claude/reviews/
+.claude/plans/

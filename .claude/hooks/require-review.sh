@@ -69,7 +69,16 @@ fi
 
 # ── Commit detected: validate review artifacts ──────────────────────────────
 
-REVIEW_BASE=".claude/reviews"
+# Resolve main repo root — works from both main repo and git worktrees.
+# git rev-parse --git-common-dir returns ".git" (relative) in the main worktree
+# and an absolute path in linked worktrees.
+_GIT_COMMON=$(git rev-parse --git-common-dir 2>/dev/null || echo ".git")
+if [[ "$_GIT_COMMON" = /* ]]; then
+  _MAIN_REPO=$(cd "$_GIT_COMMON/.." && pwd)
+else
+  _MAIN_REPO=$(pwd)
+fi
+REVIEW_BASE="$_MAIN_REPO/.claude/reviews"
 
 if [ ! -d "$REVIEW_BASE" ]; then
   deny "BLOCKED: No .claude/reviews/ directory found. Create review artifacts before committing. See CLAUDE.md governance section."
@@ -132,6 +141,8 @@ if inline:
     if raw:
         for item in raw.split(','):
             item = item.strip().strip('"\'')
+            # Strip leading 'type:' prefix (LLM sometimes writes '- type: value')
+            item = re.sub(r'^type:\s*', '', item)
             if item:
                 print(item)
     sys.exit(0)
@@ -145,7 +156,11 @@ if ml:
     for line in ml.group(1).splitlines():
         m = re.match(r'[ \t]+-[ \t]+(\S.*)', line)
         if m:
-            print(m.group(1).strip().strip('"\''))
+            item = m.group(1).strip().strip('"\'')
+            # Strip leading 'type:' prefix (LLM sometimes writes '- type: value')
+            item = re.sub(r'^type:\s*', '', item)
+            if item:
+                print(item)
 PYEOF
 }
 

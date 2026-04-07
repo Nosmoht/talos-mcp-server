@@ -1,5 +1,6 @@
 #!/bin/bash
 # Native git pre-commit hook: require review artifacts before commits
+# Tiered validation: staff-reviewer primary artifact + on-demand escalation artifacts
 #
 # Defense-in-depth layer — catches ALL commit paths including those outside
 # Claude Code (terminal, scripts, other tools).
@@ -22,61 +23,180 @@ if [ ! -d "$REVIEW_BASE" ]; then
   error "No .claude/reviews/ directory found. Create review artifacts before committing. See CLAUDE.md governance section."
 fi
 
-# Find review directories
+# Find review directories, sorted lexicographically
 REVIEW_DIRS=()
 while IFS= read -r d; do REVIEW_DIRS+=("$d"); done \
   < <(find "$REVIEW_BASE" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | sort)
 
 if [ "${#REVIEW_DIRS[@]}" -eq 0 ]; then
-  error "No review directories in .claude/reviews/. Invoke senior-plan-reviewer, staff-reviewer, and principal-architect-reviewer first."
+  error "No review directories in .claude/reviews/. Invoke staff-reviewer first."
 fi
 
-# Use the last directory (lexicographically most recent)
-# Portable: ${REVIEW_DIRS[${#REVIEW_DIRS[@]}-1]} works on bash 3.2+ (no negative index)
+# Use the last directory (lexicographically most recent by slug)
 REVIEW_DIR="${REVIEW_DIRS[${#REVIEW_DIRS[@]}-1]}"
 CHANGE_ID=$(basename "$REVIEW_DIR")
 
-# Helper: extract a YAML frontmatter field value
+# Helper: extract a YAML frontmatter scalar field value
 get_yaml_field() {
   local file="$1"
   local field="$2"
   awk '/^---$/{c++;next} c==1{print}' "$file" 2>/dev/null \
-    | grep -E "^${field}:" \
+    | (grep -E "^${field}:" || true) \
     | head -1 \
     | sed "s/^${field}:[[:space:]]*//" \
     | tr -d '[:space:]"'"'"
 }
 
+# Helper: extract YAML list items from frontmatter
+# Handles inline: field: [a, b] and multiline: field:\n  - a\n  - b
+get_yaml_list() {
+  local file="$1"
+  local field="$2"
+  python3 - "$file" "$field" <<'PYEOF'
+import sys, re
+
+file_path = sys.argv[1]
+field = sys.argv[2]
+
+try:
+    with open(file_path) as f:
+        content = f.read()
+except Exception:
+    sys.exit(0)
+
+parts = content.split('---')
+if len(parts) < 3:
+    sys.exit(0)
+
+fm = parts[1]
+
+inline = re.search(rf'^{re.escape(field)}:\s*\[([^\]]*)\]', fm, re.MULTILINE)
+if inline:
+    raw = inline.group(1).strip()
+    if raw:
+        for item in raw.split(','):
+            item = item.strip().strip('"\'')
+            if item:
+                print(item)
+    sys.exit(0)
+
+ml = re.search(rf'^{re.escape(field)}:\s*\n((?:[ \t]+-[ \t]+\S.*\n?)+)', fm, re.MULTILINE)
+if ml:
+    for line in ml.group(1).splitlines():
+        m = re.match(r'[ \t]+-[ \t]+(\S.*)', line)
+        if m:
+            print(m.group(1).strip().strip('"\''))
+PYEOF
+}
+
 echo "Validating review artifacts for change: $CHANGE_ID"
 
-# Check required artifacts exist and are approved
-for artifact in plan-review.md impl-review.md final-approval.md; do
-  FILE="$REVIEW_DIR/$artifact"
+# ── Validate primary review.md ───────────────────────────────────────────────
 
-  if [ ! -f "$FILE" ]; then
-    error "Missing ${artifact} for change '${CHANGE_ID}'."
-  fi
+PRIMARY="$REVIEW_DIR/review.md"
 
-  STATUS=$(get_yaml_field "$FILE" "status")
+if [ ! -f "$PRIMARY" ]; then
+  error "Missing review.md for change '${CHANGE_ID}'. Invoke staff-reviewer to produce it."
+fi
 
-  if [ -z "$STATUS" ]; then
-    error "${artifact} for '${CHANGE_ID}' has no parseable 'status' field."
-  fi
+PRIMARY_STATUS=$(get_yaml_field "$PRIMARY" "status")
 
-  if [ "$STATUS" != "approved" ]; then
-    error "${artifact} for '${CHANGE_ID}' has status '${STATUS}', not 'approved'."
-  fi
+if [ -z "$PRIMARY_STATUS" ]; then
+  error "review.md for '${CHANGE_ID}' has no parseable 'status' field."
+fi
 
-  echo "  ✓ ${artifact}: approved"
-done
+case "$PRIMARY_STATUS" in
+  approved)
+    echo "  ✓ review.md: approved"
+    ;;
 
-# Verify role separation
-for artifact in plan-review.md impl-review.md final-approval.md; do
-  FILE="$REVIEW_DIR/$artifact"
-  ROLE=$(get_yaml_field "$FILE" "reviewer-role")
+  escalate)
+    echo "  ~ review.md: escalate — checking escalation artifacts"
+    ESCALATIONS=$(get_yaml_list "$PRIMARY" "escalations")
 
+    if [ -z "$ESCALATIONS" ]; then
+      error "review.md for '${CHANGE_ID}' has status 'escalate' but empty escalations list."
+    fi
+
+    while IFS= read -r esc_type; do
+      [ -z "$esc_type" ] && continue
+
+      ESC_FILE="$REVIEW_DIR/review-${esc_type}.md"
+
+      if [ ! -f "$ESC_FILE" ]; then
+        error "Escalation artifact 'review-${esc_type}.md' missing for change '${CHANGE_ID}'. Invoke the ${esc_type} reviewer."
+      fi
+
+      ESC_STATUS=$(get_yaml_field "$ESC_FILE" "status")
+
+      if [ -z "$ESC_STATUS" ]; then
+        error "review-${esc_type}.md for '${CHANGE_ID}' has no parseable 'status' field."
+      fi
+
+      case "$ESC_STATUS" in
+        approved)
+          echo "  ✓ review-${esc_type}.md: approved"
+          ;;
+
+        escalate)
+          echo "  ~ review-${esc_type}.md: escalate — checking nested escalation artifacts"
+          NESTED_ESCS=$(get_yaml_list "$ESC_FILE" "escalations")
+
+          if [ -z "$NESTED_ESCS" ]; then
+            error "review-${esc_type}.md for '${CHANGE_ID}' has status 'escalate' but empty escalations list."
+          fi
+
+          while IFS= read -r nested_type; do
+            [ -z "$nested_type" ] && continue
+
+            NESTED_FILE="$REVIEW_DIR/review-${nested_type}.md"
+
+            if [ ! -f "$NESTED_FILE" ]; then
+              error "Nested escalation artifact 'review-${nested_type}.md' missing for change '${CHANGE_ID}'."
+            fi
+
+            NESTED_STATUS=$(get_yaml_field "$NESTED_FILE" "status")
+
+            if [ -z "$NESTED_STATUS" ]; then
+              error "review-${nested_type}.md for '${CHANGE_ID}' has no parseable 'status' field."
+            fi
+
+            if [ "$NESTED_STATUS" != "approved" ]; then
+              error "review-${nested_type}.md for '${CHANGE_ID}' has status '${NESTED_STATUS}', not 'approved'."
+            fi
+
+            echo "  ✓ review-${nested_type}.md: approved"
+          done <<< "$NESTED_ESCS"
+          ;;
+
+        changes-requested)
+          error "review-${esc_type}.md for '${CHANGE_ID}' has status 'changes-requested'. Resolve findings before committing."
+          ;;
+
+        *)
+          error "review-${esc_type}.md for '${CHANGE_ID}' has unknown status '${ESC_STATUS}'."
+          ;;
+      esac
+    done <<< "$ESCALATIONS"
+    ;;
+
+  changes-requested)
+    error "review.md for '${CHANGE_ID}' has status 'changes-requested'. Resolve all findings before committing."
+    ;;
+
+  *)
+    error "review.md for '${CHANGE_ID}' has unknown status '${PRIMARY_STATUS}'. Valid values: approved, escalate, changes-requested."
+    ;;
+esac
+
+# ── Role separation check ────────────────────────────────────────────────────
+
+for review_file in "$REVIEW_DIR"/*.md; do
+  [ -f "$review_file" ] || continue
+  ROLE=$(get_yaml_field "$review_file" "reviewer-role")
   if [ "$ROLE" = "senior-implementer" ]; then
-    error "${artifact} was produced by 'senior-implementer'. Role separation violated."
+    artifact=$(basename "$review_file")
+    error "${artifact} was produced by 'senior-implementer'. Role separation violated — implementer cannot self-review."
   fi
 done
 

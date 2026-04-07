@@ -134,6 +134,53 @@ go vet ./...
 gofmt -l .
 ```
 
+## Development Workflow
+
+Every code change (features, fixes, refactors) is developed in an isolated git worktree to keep the main working directory clean and allow parallel work.
+
+### Worktree setup
+
+```bash
+# Create a new worktree for a feature or fix (slug = change-id)
+git worktree add -b feat/<slug> .claude/worktrees/<slug> main
+# or: git worktree add -b fix/<slug> .claude/worktrees/<slug> main
+```
+
+Work inside `.claude/worktrees/<slug>/` for the full lifecycle of the change.
+
+### When to use a worktree
+
+- **Always**: any change that will result in a commit (code, docs, config, CI)
+- **Not needed**: exploration, research, reading files, running tests without changes
+
+### Branch naming
+
+Match the branch name to the change-id: `feat/<change-id>` or `fix/<change-id>`.
+
+### Rebase before push
+
+Always rebase onto the latest main before pushing:
+
+```bash
+git fetch origin main && git rebase origin/main
+```
+
+### Cleanup after merge
+
+```bash
+git worktree remove .claude/worktrees/<slug>
+git branch -d feat/<slug>
+```
+
+### Workflow summary
+
+1. Create worktree: `git worktree add -b feat/<slug> .claude/worktrees/<slug> main`
+2. Work in `.claude/worktrees/<slug>/`
+3. Run reviews (see Change Governance below)
+4. Rebase: `git fetch origin main && git rebase origin/main`
+5. Push branch and open PR
+6. After merge: remove worktree and delete local branch
+
 ## Release
 
 Releases are fully automated via conventional commits:
@@ -179,19 +226,42 @@ The token value uses `${GITHUB_PERSONAL_ACCESS_TOKEN}` — Claude Code expands t
 
 ## Change Governance
 
-Every change to tracked files requires review before commit. No exceptions for size, type, or perceived risk.
+Every change to tracked files requires review before commit.
 
 ### What constitutes a change
 
 Any modification to Go source, tests, documentation, CI config, prompts, or generated output.
 
+### Review depth model
+
+Review depth scales with change complexity (DAAO principle — difficulty-aware routing):
+
+| Change type | Required review |
+|---|---|
+| `docs` / `chore` / `ci` | `staff-reviewer` → `review.md` with `status: approved` |
+| Code — simple | `staff-reviewer` → `review.md` with `status: approved` |
+| Code — complex | `staff-reviewer` → `review.md` with `status: escalate` → escalation reviewer(s) |
+
 ### Required review flow
 
-1. **Plan** → invoke `senior-plan-reviewer` agent. Artifact: `.claude/reviews/<change-id>/plan-review.md`
-2. **Implement** → invoke `senior-implementer` agent (or implement manually)
-3. **Code + doc review** → invoke `staff-reviewer` agent. Artifact: `.claude/reviews/<change-id>/impl-review.md`
-4. **Final approval** → invoke `principal-architect-reviewer` agent. Artifact: `.claude/reviews/<change-id>/final-approval.md`
-5. **Commit** → only after all three artifacts show `status: approved` with zero findings
+1. **Implement** → invoke `senior-implementer` agent (or implement manually)
+2. **Review** → invoke `staff-reviewer` agent. Artifact: `.claude/reviews/<change-id>/review.md`
+   - If `status: approved`: proceed to commit
+   - If `status: escalate`: invoke each listed escalation reviewer
+3. **Escalation review** (if needed) → invoke the appropriate domain reviewer. Artifact: `.claude/reviews/<change-id>/review-<type>.md`
+4. **Commit** → once all required artifacts show `status: approved`
+
+**Plan review** (optional, recommended for complex changes): invoke `senior-plan-reviewer` before implementing. Artifact: `.claude/reviews/<change-id>/plan-review.md`
+
+### Escalation criteria
+
+The `staff-reviewer` escalates when it identifies concrete risk for a production incident, security vulnerability, or architecture inconsistency:
+
+- **→ architecture**: new package or public interface, >3 packages modified, new external dependency, API surface change (tools/prompts/resources)
+- **→ security**: auth/token/mTLS handling, new mutating tool or safety guard change, hook or enforcement logic
+- **→ performance**: gRPC streaming, goroutine lifecycle, caching in hot paths
+
+Default: do **not** escalate. Only escalate when a concrete risk is identified.
 
 ### Change-id convention
 
@@ -203,7 +273,7 @@ feat(etcd): add defrag tool [review:add-etcd-defrag-tool]
 
 ### Role separation
 
-The implementing agent/person must not serve as reviewer for the same change. The `principal-architect-reviewer` verifies this mechanically.
+The implementing agent/person must not serve as reviewer for the same change.
 
 ### Research
 
@@ -224,9 +294,10 @@ cp .claude/hooks/pre-commit .git/hooks/pre-commit && chmod +x .git/hooks/pre-com
 
 Review artifacts (`.claude/reviews/`) and plan files (`.claude/plans/`) are **local-only** — gitignored and never committed. They exist on disk solely as process gates for the pre-commit hooks. The `[review:change-id]` tag in commit messages serves as the permanent audit trail.
 
-### Known limitations (v1)
+### Known limitations
 
 - Hook enforcement covers Claude Code sessions (Bash tool, MCP GitHub tools) and git CLI via the pre-commit hook
-- Review artifacts are process guards, not cryptographically signed — trust is enforced by role separation and the principal-architect-reviewer gate
-- Post-review file modifications are not detected (tracked for v2: content hashing in artifact frontmatter)
+- Review artifacts are process guards, not cryptographically signed — trust is enforced by role separation
+- Post-review file modifications are not detected (tracked for future: content hashing in artifact frontmatter)
 - Review artifacts are local-only (gitignored); fresh clones start without them
+- The hook uses the lexicographically last review directory — ensure change-id slugs sort to the correct change

@@ -40,7 +40,7 @@ Tested against Talos Linux v1.9.x – v1.12.x (machinery SDK v1.12.6). The serve
 - `talos://{node}/resource/{namespace}/{type}` — list all COSI resources of a given type in a namespace on a specific node
 - `talos://{node}/resource/{namespace}/{type}/{id}` — get a specific COSI resource by namespace, type, and ID on a specific node
 
-## Tools (15)
+## Tools (16)
 
 ### Read-only
 - `talos_resource_definitions` — list all resource types and aliases
@@ -49,7 +49,7 @@ Tested against Talos Linux v1.9.x – v1.12.x (machinery SDK v1.12.6). The serve
 - `talos_services` — service list with state
 - `talos_containers` — CRI container list (default namespace: `k8s.io`)
 - `talos_processes` — running process list
-- `talos_health` — cluster health check (etcd, k8s API, node readiness)
+- `talos_health` — cluster health check (etcd, k8s API, node readiness); supports `control_plane_nodes` / `worker_nodes` override
 - `talos_logs` — recent service logs
 - `talos_dmesg` — kernel ring buffer messages
 - `talos_events` — recent Talos runtime events
@@ -58,9 +58,10 @@ Tested against Talos Linux v1.9.x – v1.12.x (machinery SDK v1.12.6). The serve
 - `talos_read_file` — read file contents from node filesystem
 
 ### Mutating (require explicit confirmation)
-- `talos_service_action` — start/stop/restart a service
-- `talos_reboot` — reboot nodes (requires `confirm=true` + explicit `nodes`)
-- `talos_upgrade` — upgrade Talos on nodes (requires `confirm=true` + `nodes` + `image`)
+- `talos_service_action` — start/stop/restart a service (note: restarting `etcd` is not supported by the Talos API)
+- `talos_reboot` — reboot nodes (requires `confirm=true` + explicit `nodes`); supports `mode`: `default`, `powercycle`, `force`
+- `talos_upgrade` — upgrade Talos on nodes (requires `confirm=true` + `nodes` + `image`); supports `preserve` (default `true`), `stage`, `force`, `reboot_mode`
+- `talos_rollback` — roll back the last upgrade on nodes (requires `confirm=true` + explicit `nodes`)
 - `talos_patch_config` — apply machine config patch (defaults to `dry_run=true`)
 
 ## Prompts (5)
@@ -85,12 +86,13 @@ Prompts are guided workflows that instruct the AI agent which tools to call and 
 
 ## Safety
 
-- `talos_reboot` and `talos_upgrade` require `confirm=true` and explicit `nodes` — will error without both.
+- `talos_reboot`, `talos_upgrade`, and `talos_rollback` require `confirm=true` and explicit `nodes` — will error without both.
+- `talos_upgrade` `preserve` defaults to `true` (keep EPHEMERAL partition) — differs from `talosctl` default of `false`. Set `preserve=false` explicitly to wipe.
 - `talos_patch_config` defaults `dry_run=true` — you must explicitly pass `dry_run=false` to apply.
 
 ## Logging
 
-Mutating tools (`talos_service_action`, `talos_reboot`, `talos_upgrade`, `talos_patch_config`) emit `notifications/message` audit events to connected MCP clients in **stdio mode**:
+Mutating tools (`talos_service_action`, `talos_reboot`, `talos_upgrade`, `talos_rollback`, `talos_patch_config`) emit `notifications/message` audit events to connected MCP clients in **stdio mode**:
 - `info` level: tool invocation with tool name, target nodes, and arguments summary
 - `error` level: operational errors (after guard checks pass, on Talos gRPC failures)
 

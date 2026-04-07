@@ -70,7 +70,13 @@ List services using talos_services. Confirm kubelet, containerd, and etcd (on co
 Gate 6 — Running containers
 Check containers using talos_containers with namespace="k8s.io". Confirm critical system pods (kube-apiserver, kube-controller-manager, kube-scheduler, coredns) have running containers.
 
-Final report: state whether the cluster PASSES or FAILS the pre-upgrade checklist. List any failed gates with details. If all gates pass, confirm it is safe to proceed with upgrading one node at a time using talos_upgrade, starting with control plane nodes, targeting Talos %s.`, targetVersion, nodeClause, targetVersion, targetVersion)
+Final report: state whether the cluster PASSES or FAILS the pre-upgrade checklist. List any failed gates with details. If all gates pass, confirm it is safe to proceed with upgrading one node at a time using talos_upgrade (starting with workers, then control plane nodes) targeting Talos %s.
+
+When invoking talos_upgrade:
+- Set preserve=true (the default) for nodes with local storage (DRBD, LINSTOR, local PVs) to avoid wiping the EPHEMERAL partition.
+- Set preserve=false only when you explicitly intend to reset ephemeral data on that node.
+- Use stage=true to defer the reboot if you need to coordinate rolling restarts manually.
+- After each node upgrade completes, run talos_health before proceeding to the next node.`, targetVersion, nodeClause, targetVersion, targetVersion)
 
 	return textMsg(msg), nil
 }

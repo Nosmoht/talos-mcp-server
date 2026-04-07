@@ -59,7 +59,7 @@ func (h *Handlers) HandleServiceAction(ctx context.Context, _ *mcp.CallToolReque
 // RebootArgs defines input for talos_reboot.
 type RebootArgs struct {
 	Nodes   []string `json:"nodes" jsonschema:"REQUIRED: Target node IPs or hostnames to reboot. Must be explicitly specified."`
-	Mode    string   `json:"mode,omitempty" jsonschema:"Reboot mode: 'default' or 'powercycle'. Defaults to 'default'."`
+	Mode    string   `json:"mode,omitempty" jsonschema:"Reboot mode: 'default'\\, 'powercycle'\\, or 'force' (skips graceful shutdown — kube-drain and etcd leave — for stuck nodes). Defaults to 'default'."`
 	Confirm bool     `json:"confirm" jsonschema:"REQUIRED: Must be explicitly set to true to confirm the reboot operation."`
 }
 
@@ -82,10 +82,12 @@ func (h *Handlers) HandleReboot(ctx context.Context, req *mcp.CallToolRequest, a
 	switch args.Mode {
 	case "powercycle":
 		opts = append(opts, talosclient.WithPowerCycle)
+	case "force":
+		opts = append(opts, talosclient.WithForce)
 	case "default", "":
 		// no extra opts
 	default:
-		return nil, nil, fmt.Errorf("unknown mode %q: must be 'default' or 'powercycle'", args.Mode)
+		return nil, nil, fmt.Errorf("unknown mode %q: must be 'default', 'powercycle', or 'force'", args.Mode)
 	}
 
 	if err := h.Client.Reboot(ctx, opts...); err != nil {
@@ -100,9 +102,13 @@ func (h *Handlers) HandleReboot(ctx context.Context, req *mcp.CallToolRequest, a
 
 // UpgradeArgs defines input for talos_upgrade.
 type UpgradeArgs struct {
-	Nodes   []string `json:"nodes" jsonschema:"REQUIRED: Target node IPs or hostnames to upgrade."`
-	Image   string   `json:"image" jsonschema:"REQUIRED: Talos installer image reference (e.g. 'ghcr.io/siderolabs/installer:v1.12.6')."`
-	Confirm bool     `json:"confirm" jsonschema:"REQUIRED: Must be explicitly set to true to confirm the upgrade."`
+	Nodes      []string `json:"nodes" jsonschema:"REQUIRED: Target node IPs or hostnames to upgrade. Upgrade one node at a time."`
+	Image      string   `json:"image" jsonschema:"REQUIRED: Talos installer image reference (e.g. 'ghcr.io/siderolabs/installer:v1.12.6')."`
+	Confirm    bool     `json:"confirm" jsonschema:"REQUIRED: Must be explicitly set to true to confirm the upgrade."`
+	Preserve   *bool    `json:"preserve,omitempty" jsonschema:"Preserve the EPHEMERAL partition (kubelet state\\, local storage metadata such as DRBD/LINSTOR) across the upgrade. Defaults to true — differs from talosctl (which defaults to false) — to prevent accidental data loss when the field is omitted. Set to false only when you intend to wipe ephemeral data."`
+	Stage      bool     `json:"stage,omitempty" jsonschema:"Stage the upgrade to be applied on next reboot instead of rebooting immediately. Defaults to false."`
+	Force      bool     `json:"force,omitempty" jsonschema:"Force the upgrade bypassing pre-upgrade safety checks. Dangerous — use only when the standard upgrade path is blocked. Defaults to false."`
+	RebootMode string   `json:"reboot_mode,omitempty" jsonschema:"Reboot mode after upgrade: 'default' or 'powercycle'. Defaults to 'default'."`
 }
 
 // HandleUpgrade implements the talos_upgrade tool.
@@ -119,6 +125,17 @@ func (h *Handlers) HandleUpgrade(ctx context.Context, req *mcp.CallToolRequest, 
 
 	if args.Image == "" {
 		return nil, nil, fmt.Errorf("upgrade refused: image must be specified")
+	}
+
+	// Validate reboot_mode before touching the gRPC client.
+	var upgradeRebootMode machineapi.UpgradeRequest_RebootMode
+	switch args.RebootMode {
+	case "powercycle":
+		upgradeRebootMode = machineapi.UpgradeRequest_POWERCYCLE
+	case "default", "":
+		upgradeRebootMode = machineapi.UpgradeRequest_DEFAULT
+	default:
+		return nil, nil, fmt.Errorf("unknown reboot_mode %q: must be 'default' or 'powercycle'", args.RebootMode)
 	}
 
 	ctx = talos.WithNodes(ctx, args.Nodes)
@@ -149,7 +166,15 @@ func (h *Handlers) HandleUpgrade(ctx context.Context, req *mcp.CallToolRequest, 
 
 	notifyProgress(ctx, req, "Initiating upgrade", 1, 2)
 
-	resp, err := h.Client.Upgrade(ctx, args.Image, false, false)
+	upgradeOpts := []talosclient.UpgradeOption{
+		talosclient.WithUpgradeImage(args.Image),
+		talosclient.WithUpgradePreserve(resolvePreserve(args.Preserve)),
+		talosclient.WithUpgradeStage(args.Stage),
+		talosclient.WithUpgradeForce(args.Force),
+		talosclient.WithUpgradeRebootMode(upgradeRebootMode),
+	}
+
+	resp, err := h.Client.UpgradeWithOptions(ctx, upgradeOpts...)
 	if err != nil {
 		h.mcpLogError("talos_upgrade", err)
 		return nil, nil, fmt.Errorf("upgrade: %w", err)
@@ -166,6 +191,41 @@ func (h *Handlers) HandleUpgrade(ctx context.Context, req *mcp.CallToolRequest, 
 	}
 
 	return textResult(string(out)), nil, nil
+}
+
+// RollbackArgs defines input for talos_rollback.
+type RollbackArgs struct {
+	Nodes   []string `json:"nodes" jsonschema:"REQUIRED: Target node IPs or hostnames to roll back. Must be explicitly specified."`
+	Confirm bool     `json:"confirm" jsonschema:"REQUIRED: Must be explicitly set to true to confirm the rollback."`
+}
+
+// HandleRollback implements the talos_rollback tool.
+func (h *Handlers) HandleRollback(ctx context.Context, req *mcp.CallToolRequest, args RollbackArgs) (*mcp.CallToolResult, any, error) {
+	h.auditLog("talos_rollback", args, args.Nodes)
+
+	if !args.Confirm {
+		return nil, nil, fmt.Errorf("rollback refused: confirm must be explicitly set to true")
+	}
+
+	if len(args.Nodes) == 0 {
+		return nil, nil, fmt.Errorf("rollback refused: nodes must be explicitly specified")
+	}
+
+	ctx = talos.WithNodes(ctx, args.Nodes)
+
+	notifyProgress(ctx, req, "Initiating rollback", 1, 2)
+
+	if err := h.Client.Rollback(ctx); err != nil {
+		h.mcpLogError("talos_rollback", err)
+		return nil, nil, fmt.Errorf("rollback: %w", err)
+	}
+
+	// Invalidate the cached cluster version — the node is now on the previous version.
+	h.Client.InvalidateVersionCache()
+
+	notifyProgress(ctx, req, "Rollback initiated", 2, 2)
+
+	return textResult(fmt.Sprintf("Rollback initiated for nodes: %v", args.Nodes)), nil, nil
 }
 
 // PatchConfigArgs defines input for talos_patch_config.

@@ -146,6 +146,120 @@ func TestNotifyProgress_NoToken(_ *testing.T) {
 	notifyProgress(context.Background(), req, "test", 1, 1)
 }
 
+// TestHandleReboot_InvalidMode verifies that unknown reboot modes are rejected.
+func TestHandleReboot_InvalidMode(t *testing.T) {
+	h := safeH()
+	ctx := context.Background()
+
+	tests := []struct {
+		name    string
+		args    RebootArgs
+		wantErr string
+	}{
+		{
+			name:    "unknown mode",
+			args:    RebootArgs{Nodes: []string{"192.168.2.61"}, Mode: "turbo", Confirm: true},
+			wantErr: "unknown mode",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, err := h.HandleReboot(ctx, nil, tt.args)
+			if err == nil {
+				t.Fatal("expected error, got nil")
+			}
+			if !strings.Contains(err.Error(), tt.wantErr) {
+				t.Errorf("error %q does not contain %q", err.Error(), tt.wantErr)
+			}
+		})
+	}
+}
+
+// TestHandleUpgrade_InvalidRebootMode verifies that unknown reboot_mode values are rejected.
+func TestHandleUpgrade_InvalidRebootMode(t *testing.T) {
+	h := safeH()
+	ctx := context.Background()
+
+	_, _, err := h.HandleUpgrade(ctx, nil, UpgradeArgs{
+		Nodes:      []string{"192.168.2.61"},
+		Image:      "ghcr.io/siderolabs/installer:v1.12.6",
+		Confirm:    true,
+		RebootMode: "warp-drive",
+	})
+	if err == nil {
+		t.Fatal("expected error for unknown reboot_mode, got nil")
+	}
+	if !strings.Contains(err.Error(), "unknown reboot_mode") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+// TestHandleRollback_Guards verifies that rollback is rejected without confirm or nodes.
+func TestHandleRollback_Guards(t *testing.T) {
+	h := safeH()
+	ctx := context.Background()
+
+	tests := []struct {
+		name    string
+		args    RollbackArgs
+		wantErr string
+	}{
+		{
+			name:    "no confirm",
+			args:    RollbackArgs{Nodes: []string{"192.168.2.61"}, Confirm: false},
+			wantErr: "confirm must be explicitly set to true",
+		},
+		{
+			name:    "no nodes",
+			args:    RollbackArgs{Nodes: nil, Confirm: true},
+			wantErr: "nodes must be explicitly specified",
+		},
+		{
+			name:    "empty nodes",
+			args:    RollbackArgs{Nodes: []string{}, Confirm: true},
+			wantErr: "nodes must be explicitly specified",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, err := h.HandleRollback(ctx, nil, tt.args)
+			if err == nil {
+				t.Fatal("expected error, got nil")
+			}
+			if !strings.Contains(err.Error(), tt.wantErr) {
+				t.Errorf("error %q does not contain %q", err.Error(), tt.wantErr)
+			}
+		})
+	}
+}
+
+// TestResolvePreserve verifies the preserve default behaviour.
+func TestResolvePreserve(t *testing.T) {
+	f := false
+	tr := true
+
+	tests := []struct {
+		name string
+		in   *bool
+		want bool
+	}{
+		{"nil means preserve", nil, true},
+		{"explicit true preserves", &tr, true},
+		{"explicit false wipes", &f, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := resolvePreserve(tt.in)
+			if got != tt.want {
+				t.Errorf("resolvePreserve(%v) = %v, want %v", tt.in, got, tt.want)
+			}
+		})
+	}
+}
+
 // TestResolveDryRun verifies the dry_run default behaviour.
 func TestResolveDryRun(t *testing.T) {
 	f := false

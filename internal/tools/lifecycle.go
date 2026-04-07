@@ -4,7 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
+	"strings"
+	"time"
 
 	"github.com/cosi-project/runtime/pkg/resource"
 	"github.com/cosi-project/runtime/pkg/resource/protobuf"
@@ -63,9 +66,35 @@ func (h *Handlers) HandleServiceAction(ctx context.Context, _ *mcp.CallToolReque
 
 // RebootArgs defines input for talos_reboot.
 type RebootArgs struct {
-	Nodes   []string `json:"nodes" jsonschema:"REQUIRED: Target node IPs or hostnames to reboot. Must be explicitly specified."`
+	Nodes   []string `json:"nodes" jsonschema:"REQUIRED: Target node IPs or hostnames to reboot. Must be explicitly specified. All listed nodes are rebooted simultaneously — reboot one node at a time to avoid a full cluster outage."`
 	Mode    string   `json:"mode,omitempty" jsonschema:"Reboot mode: 'default'\\, 'powercycle'\\, or 'force' (skips graceful shutdown — kube-drain and etcd leave — for stuck nodes). Defaults to 'default'."`
 	Confirm bool     `json:"confirm" jsonschema:"REQUIRED: Must be explicitly set to true to confirm the reboot operation."`
+	Wait    bool     `json:"wait,omitempty" jsonschema:"Block until all node(s) complete the reboot and are back up (verified via boot ID change). Default: false (fire-and-forget)."`
+	Timeout string   `json:"timeout,omitempty" jsonschema:"Maximum time to wait for reboot completion (e.g. '5m'\\, '10m'). Only used when wait=true. Default: '5m'. Powercycle reboots on bare-metal hardware may take longer than the default — use '10m' or more when mode='powercycle'."`
+}
+
+// rebootResult holds the per-node outcome when wait=true.
+type rebootResult struct {
+	Node      string `json:"node"`
+	OldBootID string `json:"old_boot_id"`
+	NewBootID string `json:"new_boot_id"`
+	Duration  string `json:"duration"`
+	Status    string `json:"status"`
+}
+
+// parseRebootTimeout parses a duration string for reboot wait timeout.
+// Returns the default of 5 minutes when s is empty.
+func parseRebootTimeout(s string) (time.Duration, error) {
+	if s == "" {
+		return 5 * time.Minute, nil
+	}
+
+	d, err := time.ParseDuration(s)
+	if err != nil {
+		return 0, fmt.Errorf("invalid timeout %q: %w", s, err)
+	}
+
+	return d, nil
 }
 
 // HandleReboot implements the talos_reboot tool.
@@ -80,8 +109,6 @@ func (h *Handlers) HandleReboot(ctx context.Context, req *mcp.CallToolRequest, a
 		return nil, nil, fmt.Errorf("reboot refused: nodes must be explicitly specified")
 	}
 
-	ctx = talos.WithNodes(ctx, args.Nodes)
-
 	var opts []talosclient.RebootMode
 
 	switch args.Mode {
@@ -95,14 +122,198 @@ func (h *Handlers) HandleReboot(ctx context.Context, req *mcp.CallToolRequest, a
 		return nil, nil, fmt.Errorf("unknown mode %q: must be 'default', 'powercycle', or 'force'", args.Mode)
 	}
 
-	if err := h.Client.Reboot(ctx, opts...); err != nil {
+	// Validate timeout early — before issuing the reboot — so a typo does not
+	// trigger a reboot that we then cannot track.
+	if args.Wait {
+		if _, err := parseRebootTimeout(args.Timeout); err != nil {
+			return nil, nil, err
+		}
+	}
+
+	nodeCtx := talos.WithNodes(ctx, args.Nodes)
+
+	if !args.Wait {
+		if err := h.Client.Reboot(nodeCtx, opts...); err != nil {
+			h.mcpLogError("talos_reboot", err)
+			return nil, nil, fmt.Errorf("reboot: %w", err)
+		}
+
+		notifyProgress(ctx, req, "Reboot initiated", 1, 1)
+
+		return textResult(fmt.Sprintf("Reboot initiated for nodes: %v", args.Nodes)), nil, nil
+	}
+
+	// wait=true path -----------------------------------------------------------
+
+	timeout, _ := parseRebootTimeout(args.Timeout) // already validated above
+
+	notifyProgress(ctx, req, "Reading pre-reboot boot IDs", 1, 4)
+
+	// Read boot IDs before issuing the reboot so we can verify they changed.
+	preBootIDs := make(map[string]string, len(args.Nodes))
+
+	for _, node := range args.Nodes {
+		id, err := h.readBootID(ctx, node)
+		if err != nil {
+			return nil, nil, fmt.Errorf("pre-reboot boot ID for %s: %w", node, err)
+		}
+
+		preBootIDs[node] = id
+	}
+
+	notifyProgress(ctx, req, fmt.Sprintf("Rebooting %d node(s)", len(args.Nodes)), 2, 4)
+
+	if err := h.Client.Reboot(nodeCtx, opts...); err != nil {
 		h.mcpLogError("talos_reboot", err)
 		return nil, nil, fmt.Errorf("reboot: %w", err)
 	}
 
-	notifyProgress(ctx, req, "Reboot initiated", 1, 1)
+	notifyProgress(ctx, req, "Waiting for node(s) to complete reboot", 3, 4)
 
-	return textResult(fmt.Sprintf("Reboot initiated for nodes: %v", args.Nodes)), nil, nil
+	timeoutCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	startTime := time.Now()
+
+	type nodeOutcome struct {
+		result *rebootResult
+		err    error
+	}
+
+	outCh := make(chan nodeOutcome, len(args.Nodes))
+
+	for _, node := range args.Nodes {
+		node := node
+		preID := preBootIDs[node]
+
+		go func() {
+			res, err := h.waitForNodeReboot(timeoutCtx, req, node, preID, startTime)
+			outCh <- nodeOutcome{result: res, err: err}
+		}()
+	}
+
+	var (
+		results []rebootResult
+		errs    []string
+	)
+
+	for range args.Nodes {
+		o := <-outCh
+		if o.err != nil {
+			errs = append(errs, o.err.Error())
+		} else {
+			results = append(results, *o.result)
+		}
+	}
+
+	if len(errs) > 0 {
+		combined := strings.Join(errs, "; ")
+		if len(results) > 0 {
+			// Some nodes succeeded — include partial results in the error message.
+			partial, _ := json.Marshal(results)
+			return nil, nil, fmt.Errorf("wait failed for %d/%d node(s): %s (succeeded: %s)", len(errs), len(args.Nodes), combined, partial)
+		}
+
+		return nil, nil, fmt.Errorf("wait failed for all nodes: %s", combined)
+	}
+
+	notifyProgress(ctx, req, "All node(s) rebooted successfully", 4, 4)
+
+	out, err := json.MarshalIndent(results, "", "  ")
+	if err != nil {
+		return nil, nil, fmt.Errorf("marshal JSON: %w", err)
+	}
+
+	return textResult(string(out)), nil, nil
+}
+
+// readBootID reads /proc/sys/kernel/random/boot_id from the given node.
+func (h *Handlers) readBootID(ctx context.Context, node string) (string, error) {
+	nodeCtx := talos.WithNodes(ctx, []string{node})
+
+	r, err := h.Client.Read(nodeCtx, "/proc/sys/kernel/random/boot_id")
+	if err != nil {
+		return "", fmt.Errorf("read boot_id: %w", err)
+	}
+
+	defer r.Close() //nolint:errcheck
+
+	data, err := io.ReadAll(r)
+	if err != nil {
+		return "", fmt.Errorf("read boot_id content: %w", err)
+	}
+
+	return strings.TrimSpace(string(data)), nil
+}
+
+// waitForNodeReboot polls until the given node has completed its reboot.
+// It returns an error if the context deadline is exceeded or if the boot ID
+// did not change (indicating no actual reboot occurred).
+func (h *Handlers) waitForNodeReboot(ctx context.Context, req *mcp.CallToolRequest, node, preBootID string, startTime time.Time) (*rebootResult, error) {
+	// Phase 1: wait for the node to become unreachable (reboot starting).
+	notifyProgress(ctx, req, fmt.Sprintf("Node %s: waiting for reboot to start...", node), 0, 0)
+
+	for {
+		callCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		_, vErr := h.Client.GetNodeVersion(callCtx, node)
+		cancel()
+
+		if vErr != nil {
+			// Node is unreachable — reboot has started.
+			break
+		}
+
+		select {
+		case <-ctx.Done():
+			return nil, fmt.Errorf("timed out waiting for node to go down: %w", ctx.Err())
+		case <-time.After(2 * time.Second):
+		}
+	}
+
+	// Phase 2: wait for the node to become reachable again (reboot complete).
+	notifyProgress(ctx, req, fmt.Sprintf("Node %s: rebooting, waiting for node to come back...", node), 0, 0)
+
+	for {
+		callCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		_, vErr := h.Client.GetNodeVersion(callCtx, node)
+		cancel()
+
+		if vErr == nil {
+			break
+		}
+
+		select {
+		case <-ctx.Done():
+			return nil, fmt.Errorf("timed out waiting for node to come back: %w", ctx.Err())
+		case <-time.After(3 * time.Second):
+		}
+	}
+
+	// Phase 3: verify boot ID changed to confirm an actual reboot occurred.
+	newBootID, err := h.readBootID(ctx, node)
+	if err != nil {
+		// Boot ID read failure after a successful Version() call is unexpected but
+		// not fatal — report it in the result rather than failing the whole wait.
+		return &rebootResult{
+			Node:      node,
+			OldBootID: preBootID,
+			NewBootID: "<unreadable: " + err.Error() + ">",
+			Duration:  time.Since(startTime).Round(time.Second).String(),
+			Status:    "rebooted (boot ID verification failed)",
+		}, nil
+	}
+
+	if newBootID == preBootID {
+		return nil, fmt.Errorf("node responded but boot ID did not change (%s) — reboot may not have occurred", preBootID)
+	}
+
+	return &rebootResult{
+		Node:      node,
+		OldBootID: preBootID,
+		NewBootID: newBootID,
+		Duration:  time.Since(startTime).Round(time.Second).String(),
+		Status:    "rebooted successfully",
+	}, nil
 }
 
 // UpgradeArgs defines input for talos_upgrade.

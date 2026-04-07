@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -144,6 +145,86 @@ func TestNotifyProgress_NoToken(_ *testing.T) {
 	}
 	// Token is nil — must not panic or call NotifyProgress.
 	notifyProgress(context.Background(), req, "test", 1, 1)
+}
+
+// TestParseRebootTimeout verifies default, valid, and invalid duration strings.
+func TestParseRebootTimeout(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		want    time.Duration
+		wantErr bool
+	}{
+		{"empty uses default", "", 5 * time.Minute, false},
+		{"valid 10m", "10m", 10 * time.Minute, false},
+		{"valid 30s", "30s", 30 * time.Second, false},
+		{"invalid string", "not-a-duration", 0, true},
+		{"invalid number only", "300", 0, true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := parseRebootTimeout(tt.input)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got != tt.want {
+				t.Errorf("parseRebootTimeout(%q) = %v, want %v", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestHandleReboot_InvalidTimeout verifies that wait=true with a bad timeout
+// string is rejected before the reboot is issued.
+func TestHandleReboot_InvalidTimeout(t *testing.T) {
+	h := safeH()
+	ctx := context.Background()
+
+	_, _, err := h.HandleReboot(ctx, nil, RebootArgs{
+		Nodes:   []string{"192.168.2.61"},
+		Confirm: true,
+		Wait:    true,
+		Timeout: "not-a-duration",
+	})
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "invalid timeout") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+// TestHandleReboot_WaitFalseIgnoresTimeout verifies that the fire-and-forget path
+// does not parse or validate the timeout field. The call uses an invalid mode so
+// it returns a "unknown mode" error before reaching the gRPC layer — proving that
+// if an "invalid timeout" error were generated, it would appear first.
+func TestHandleReboot_WaitFalseIgnoresTimeout(t *testing.T) {
+	h := safeH()
+	ctx := context.Background()
+
+	_, _, err := h.HandleReboot(ctx, nil, RebootArgs{
+		Nodes:   []string{"192.168.2.61"},
+		Confirm: true,
+		Wait:    false,
+		Timeout: "not-a-duration",
+		Mode:    "bad-mode",
+	})
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if strings.Contains(err.Error(), "invalid timeout") {
+		t.Errorf("wait=false should not validate timeout, but got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "unknown mode") {
+		t.Errorf("expected 'unknown mode' error, got: %v", err)
+	}
 }
 
 // TestHandleReboot_InvalidMode verifies that unknown reboot modes are rejected.

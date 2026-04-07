@@ -186,13 +186,15 @@ git branch -d feat/<slug>
 
 Releases are fully automated via conventional commits:
 
-1. Merge to `main` triggers `auto-tag.yml`
+1. Merge to `main` triggers `auto-tag.yml` — **only when server code changes** (path-filtered to `*.go`, `cmd/**`, `internal/**`, `go.mod`, `go.sum`, `Makefile`, `.goreleaser.yaml`)
 2. Conventional commit prefixes determine the version bump:
    - `fix(scope):` → patch (0.0.x)
    - `feat(scope):` → minor (0.x.0)
    - `BREAKING CHANGE:` or `feat!:` → major (x.0.0)
    - `docs:`, `ci:`, `chore:`, `refactor:`, `test:` → no tag, no release
 3. The created tag triggers `release.yml` → GoReleaser builds linux/darwin binaries (amd64/arm64), publishes a GitHub Release, and publishes npm packages
+
+Changes to `.claude/`, docs, or CI config alone do **not** trigger a release regardless of commit prefix. Use `chore:` or `ci:` prefixes for such changes as a convention (advisory — path filter is the enforcement gate).
 
 The auto-tag workflow uses a GitHub App token (`RELEASE_APP_ID` / `RELEASE_APP_PRIVATE_KEY`) to push tags that trigger downstream workflows.
 
@@ -202,6 +204,22 @@ The auto-tag workflow uses a GitHub App token (`RELEASE_APP_ID` / `RELEASE_APP_P
 - Do **not** set `registry-url` in `actions/setup-node` — it writes `.npmrc` with `_authToken=${NODE_AUTH_TOKEN}` placeholder that blocks the OIDC token exchange (causes 404)
 - Keep `--provenance` on all `npm publish` calls — provenance is not auto-generated despite what the docs say; the flag is harmless with OIDC and required with tokens
 - Trusted Publishers must be configured per-package on npmjs.com before OIDC works (one-time setup per package at `https://www.npmjs.com/package/<name>/access`)
+
+## CI
+
+GitHub Actions workflows:
+
+| Workflow | Trigger | Purpose |
+|---|---|---|
+| `ci.yml` | push to main, all PRs | Go lint, test, build, vulnerability check |
+| `auto-tag.yml` | push to main (server paths only) | Create semver tag on server code change |
+| `release.yml` | tag push (`v*`) | GoReleaser builds + npm publish |
+| `codeql.yml` | push to main, all PRs, weekly | Go static analysis |
+| `scorecard.yml` | push to main, weekly | OpenSSF security posture |
+
+**Merge-guard pattern:** `ci.yml` uses a `changes` job (dorny/paths-filter) to skip Go jobs on PRs that don't touch server code. A `merge-guard` job always runs and is the sole required status check. On `push` to main, CI always runs in full (no path filter on push — safer for the default branch).
+
+**Path list maintenance:** Go-relevant paths are duplicated between `ci.yml` (`changes` job) and `auto-tag.yml`. Keep them in sync when adding new Go packages or build files.
 
 ## MCP Development Setup
 

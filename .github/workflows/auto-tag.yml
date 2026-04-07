@@ -3,6 +3,17 @@ name: auto-tag
 on:
   push:
     branches: [main]
+    # Only tag when server code changes. npm/ is excluded intentionally: npm wrapper
+    # changes cannot alter the compiled binary and should not trigger a release without
+    # Go CI validation. NOTE: keep this path list in sync with ci.yml 'changes' job.
+    paths:
+      - '*.go'
+      - 'cmd/**'
+      - 'internal/**'
+      - 'go.mod'
+      - 'go.sum'
+      - 'Makefile'
+      - '.goreleaser.yaml'
 
 permissions:
   contents: read

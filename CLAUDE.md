@@ -182,6 +182,14 @@ git branch -d feat/<slug>
 5. Push branch and open PR
 6. After merge: remove worktree and delete local branch
 
+## Project Management
+
+Issue lifecycle and multi-agent coordination conventions are documented in [AGENTS.md](./AGENTS.md).
+
+- Issues are triaged with `status: ready` and claimed by agents using the two-phase claim protocol in AGENTS.md
+- Label groups: `status:`, `priority:`, `area:`, `size:` — see AGENTS.md for the full taxonomy
+- Run `scripts/setup-project.sh` once per clone to create all labels and the Projects v2 board
+
 ## Release
 
 Releases are fully automated via conventional commits:

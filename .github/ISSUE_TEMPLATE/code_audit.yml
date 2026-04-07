@@ -1,6 +1,6 @@
 name: Code Audit Finding
 description: Report a finding from a code review or security audit
-labels: ["audit"]
+labels: ["audit", "status: ready"]
 body:
   - type: markdown
     attributes:

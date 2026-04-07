@@ -203,22 +203,38 @@ func main() {
 		destructive := boolPtr(true)
 
 		mcp.AddTool(server, &mcp.Tool{
-			Name:        "talos_service_action",
-			Description: "Start, stop, or restart a Talos service on the target nodes.",
+			Name: "talos_service_action",
+			Description: "Start, stop, or restart a Talos service on the target nodes. " +
+				"NOTE: restarting 'etcd' is not supported by the Talos API and will return an error; " +
+				"use talos_reboot or the investigate-etcd prompt to recover etcd.",
 			Annotations: &mcp.ToolAnnotations{DestructiveHint: destructive, OpenWorldHint: closedWorld},
 		}, h.HandleServiceAction)
 
 		mcp.AddTool(server, &mcp.Tool{
-			Name:        "talos_reboot",
-			Description: "Reboot the specified nodes. Requires explicit nodes and confirm=true. Use mode='powercycle' for a full power cycle.",
+			Name: "talos_reboot",
+			Description: "Reboot the specified nodes. Requires explicit nodes and confirm=true. " +
+				"Use mode='powercycle' for a full power cycle or mode='force' to skip graceful shutdown on stuck nodes.",
 			Annotations: &mcp.ToolAnnotations{DestructiveHint: destructive, OpenWorldHint: closedWorld},
 		}, h.HandleReboot)
 
 		mcp.AddTool(server, &mcp.Tool{
-			Name:        "talos_upgrade",
-			Description: "Upgrade Talos on the specified nodes. Requires explicit nodes, an installer image reference, and confirm=true.",
+			Name: "talos_upgrade",
+			Description: "Upgrade Talos on the specified nodes. Requires explicit nodes, an installer image reference, and confirm=true. " +
+				"Set preserve=true (default) to keep the EPHEMERAL partition intact. " +
+				"Use stage=true to defer the upgrade to the next reboot. " +
+				"Use reboot_mode='powercycle' for a full power cycle after upgrade. " +
+				"Use talos_health after upgrade to verify cluster state.",
 			Annotations: &mcp.ToolAnnotations{DestructiveHint: destructive, OpenWorldHint: closedWorld},
 		}, h.HandleUpgrade)
+
+		mcp.AddTool(server, &mcp.Tool{
+			Name: "talos_rollback",
+			Description: "Roll back the last Talos upgrade on the specified nodes, reverting to the previous boot asset. " +
+				"Requires explicit nodes and confirm=true. " +
+				"Only works if the previous installation is still intact (i.e. no second upgrade was performed). " +
+				"Use talos_health after rollback to verify cluster state.",
+			Annotations: &mcp.ToolAnnotations{DestructiveHint: destructive, OpenWorldHint: closedWorld},
+		}, h.HandleRollback)
 
 		mcp.AddTool(server, &mcp.Tool{
 			Name: "talos_patch_config",

@@ -21,8 +21,10 @@ type ContainersArgs struct {
 
 // HealthArgs defines input for talos_health.
 type HealthArgs struct {
-	WaitTimeout string   `json:"wait_timeout,omitempty" jsonschema:"How long to wait for cluster health (e.g. '2m'\\, '30s'). Defaults to 2 minutes."`
-	Nodes       []string `json:"nodes,omitempty" jsonschema:"Target node IPs or hostnames. Omit to use the default nodes from talosconfig."`
+	WaitTimeout       string   `json:"wait_timeout,omitempty" jsonschema:"How long to wait for cluster health (e.g. '2m'\\, '30s'). Defaults to 2 minutes."`
+	Nodes             []string `json:"nodes,omitempty" jsonschema:"Target node IPs or hostnames. Omit to use the default nodes from talosconfig."`
+	ControlPlaneNodes []string `json:"control_plane_nodes,omitempty" jsonschema:"Explicit list of control plane node IPs. Overrides auto-detection from cluster discovery. Use when discovery is misconfigured or nodes have not yet joined."`
+	WorkerNodes       []string `json:"worker_nodes,omitempty" jsonschema:"Explicit list of worker node IPs. Overrides auto-detection from cluster discovery. Use when discovery is misconfigured or nodes have not yet joined."`
 }
 
 // HandleVersion implements the talos_version tool.
@@ -120,7 +122,10 @@ func (h *Handlers) HandleHealth(ctx context.Context, req *mcp.CallToolRequest, a
 	timeoutCtx, cancel = context.WithTimeout(ctx, waitTimeout+10*time.Second)
 	defer cancel()
 
-	stream, err := h.Client.ClusterHealthCheck(timeoutCtx, waitTimeout, &clusterapi.ClusterInfo{})
+	stream, err := h.Client.ClusterHealthCheck(timeoutCtx, waitTimeout, &clusterapi.ClusterInfo{
+		ControlPlaneNodes: args.ControlPlaneNodes,
+		WorkerNodes:       args.WorkerNodes,
+	})
 	if err != nil {
 		return nil, nil, fmt.Errorf("health check: %w", err)
 	}

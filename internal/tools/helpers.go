@@ -117,6 +117,13 @@ func resolveDryRun(v *bool) bool {
 	return v == nil || *v
 }
 
+// resolvePreserve returns true (preserve EPHEMERAL partition) unless v is explicitly set to false.
+// Defaults to true — diverges from talosctl (which defaults to false) — because AI agents that
+// omit the field should not accidentally wipe user data.
+func resolvePreserve(v *bool) bool {
+	return v == nil || *v
+}
+
 // MarshalResource converts a COSI resource to a JSON-serializable map.
 // It uses the same path as talosctl get --output json:
 //

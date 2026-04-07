@@ -119,10 +119,15 @@ func (c *Client) fetchVersion(ctx context.Context) (*version.TalosVersion, error
 
 // WithNodes returns a context targeting the given nodes.
 // If nodes is empty, the context is returned unchanged (uses config default).
+// A single node uses WithNode (singular, "node" gRPC metadata key) to enable
+// one-to-one proxying, which is required for COSI State methods that do not
+// support the one-to-many fan-out used by the "nodes" key.
 func WithNodes(ctx context.Context, nodes []string) context.Context {
 	if len(nodes) == 0 {
 		return ctx
 	}
-
+	if len(nodes) == 1 {
+		return talosclient.WithNode(ctx, nodes[0])
+	}
 	return talosclient.WithNodes(ctx, nodes...)
 }

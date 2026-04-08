@@ -55,13 +55,13 @@ func main() {
 
 	if err := validateHTTPConfig(httpAddr, authToken); err != nil {
 		stop()
-		log.Fatalf("%v", err)
+		log.Fatalf("%v", err) //nolint:gocritic // exitAfterDefer: stop() called explicitly above
 	}
 
 	tc, err := talos.NewClient(ctx)
 	if err != nil {
 		stop()
-		log.Fatalf("failed to create Talos client: %v", err)
+		log.Fatalf("failed to create Talos client: %v", err) //nolint:gocritic // exitAfterDefer: stop() called explicitly above
 	}
 	defer tc.Close() //nolint:errcheck
 

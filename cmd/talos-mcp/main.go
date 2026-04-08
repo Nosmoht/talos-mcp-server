@@ -243,6 +243,7 @@ func main() {
 			Name: "talos_patch_config",
 			Description: "Apply a machine config patch to the target nodes. " +
 				"Defaults to dry_run=true — set dry_run=false to actually apply. " +
+				"Requires confirm=true when dry_run=false. " +
 				"Patch can be a JSON or YAML strategic merge patch.",
 			Annotations: &mcp.ToolAnnotations{DestructiveHint: destructive, OpenWorldHint: closedWorld},
 		}, h.HandlePatchConfig)

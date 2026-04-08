@@ -131,6 +131,95 @@ func TestHandlePatchConfig_InvalidMode(t *testing.T) {
 	}
 }
 
+// TestHandlePatchConfig_ConfirmGuard verifies that non-dry-run patches require
+// explicit confirmation, while dry-run patches do not.
+func TestHandlePatchConfig_ConfirmGuard(t *testing.T) {
+	h := safeH()
+	ctx := context.Background()
+	dryRunFalse := false
+	dryRunTrue := true
+
+	tests := []struct {
+		name    string
+		args    PatchConfigArgs
+		wantErr string
+	}{
+		{
+			name: "dry_run=false without confirm is rejected",
+			args: PatchConfigArgs{
+				Patch:   `{}`,
+				DryRun:  &dryRunFalse,
+				Confirm: false,
+			},
+			wantErr: "confirm must be explicitly set to true when dry_run is false",
+		},
+		{
+			name: "dry_run=false with confirm=true is accepted",
+			args: PatchConfigArgs{
+				Patch:   `{}`,
+				DryRun:  &dryRunFalse,
+				Confirm: true,
+			},
+			// No confirm error — will fail later on gRPC call (nil client),
+			// which is expected and proves the guard passed.
+			wantErr: "",
+		},
+		{
+			name: "dry_run=true without confirm is accepted",
+			args: PatchConfigArgs{
+				Patch:   `{}`,
+				DryRun:  &dryRunTrue,
+				Confirm: false,
+			},
+			wantErr: "",
+		},
+		{
+			name: "dry_run omitted (defaults to true) without confirm is accepted",
+			args: PatchConfigArgs{
+				Patch:   `{}`,
+				Confirm: false,
+			},
+			wantErr: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, err := h.HandlePatchConfig(ctx, nil, tt.args)
+			if tt.wantErr == "" {
+				// Guard should pass; any error is from downstream (nil client), not the guard.
+				if err != nil && strings.Contains(err.Error(), "confirm") {
+					t.Errorf("unexpected confirm guard error: %v", err)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatal("expected error, got nil")
+			}
+			if !strings.Contains(err.Error(), tt.wantErr) {
+				t.Errorf("expected error containing %q, got: %v", tt.wantErr, err)
+			}
+		})
+	}
+}
+
+// TestHandlePatchConfig_MultiNodeRejected verifies that more than one node is rejected.
+func TestHandlePatchConfig_MultiNodeRejected(t *testing.T) {
+	h := safeH()
+	ctx := context.Background()
+
+	_, _, err := h.HandlePatchConfig(ctx, nil, PatchConfigArgs{
+		Patch: `{}`,
+		Nodes: []string{"10.0.0.1", "10.0.0.2"},
+	})
+	if err == nil {
+		t.Fatal("expected error for multi-node, got nil")
+	}
+	if !strings.Contains(err.Error(), "exactly one target node") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
 // TestNotifyProgress_NilReq verifies that notifyProgress is a no-op when req is nil.
 func TestNotifyProgress_NilReq(_ *testing.T) {
 	// Must not panic.

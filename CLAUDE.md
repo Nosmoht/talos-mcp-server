@@ -184,11 +184,17 @@ git branch -d feat/<slug>
 
 ## Project Management
 
-Issue lifecycle and multi-agent coordination conventions are documented in [AGENTS.md](./AGENTS.md).
+Issue lifecycle, coding conventions, and multi-agent coordination are documented in [AGENTS.md](./AGENTS.md).
 
-- Issues are triaged with `status: ready` and claimed by agents using the two-phase claim protocol in AGENTS.md
+Find ready issues:
+
+```
+repo:Nosmoht/talos-mcp-server is:issue is:open label:"status: ready" sort:created-asc
+```
+
+- Issues are triaged with `status: ready` and claimed via the two-phase protocol in AGENTS.md
 - Label groups: `status:`, `priority:`, `area:`, `size:` — see AGENTS.md for the full taxonomy
-- Run `scripts/setup-project.sh` once per clone to create all labels and the Projects v2 board
+- Run `scripts/setup-project.sh` once per repo to create all labels and the Projects v2 board
 
 ## Release
 

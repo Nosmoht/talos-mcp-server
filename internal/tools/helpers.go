@@ -33,6 +33,18 @@ func (h *Handlers) SetLogger(l *slog.Logger) {
 	h.logger.Store(l)
 }
 
+// defaultToolTimeout is the maximum time a read-only tool call may take before
+// being cancelled. This prevents indefinite hangs when a Talos node is
+// unresponsive. Tools with their own timeout logic (HandleHealth, HandleEvents)
+// do not use this.
+const defaultToolTimeout = 30 * time.Second
+
+// withToolTimeout returns a context with defaultToolTimeout applied.
+// The caller must defer cancel().
+func withToolTimeout(ctx context.Context) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(ctx, defaultToolTimeout)
+}
+
 // NodesOnlyArgs is a common base for tools that only target nodes.
 type NodesOnlyArgs struct {
 	Nodes []string `json:"nodes,omitempty" jsonschema:"Target node IPs or hostnames. Omit to use the default nodes from talosconfig."`

@@ -23,6 +23,9 @@ type GetResourceArgs struct {
 
 // HandleGetResource implements the talos_get tool.
 func (h *Handlers) HandleGetResource(ctx context.Context, _ *mcp.CallToolRequest, args GetResourceArgs) (*mcp.CallToolResult, any, error) {
+	ctx, cancel := withToolTimeout(ctx)
+	defer cancel()
+
 	ctx = talos.WithNodes(ctx, args.Nodes)
 
 	ns := resource.Namespace(args.Namespace)
@@ -85,6 +88,9 @@ func (h *Handlers) HandleGetResource(ctx context.Context, _ *mcp.CallToolRequest
 
 // HandleResourceDefinitions implements the talos_resource_definitions tool.
 func (h *Handlers) HandleResourceDefinitions(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, any, error) {
+	ctx, cancel := withToolTimeout(ctx)
+	defer cancel()
+
 	list, err := safe.StateListAll[*meta.ResourceDefinition](ctx, h.Client.COSI)
 	if err != nil {
 		return nil, nil, fmt.Errorf("list resource definitions: %w", err)

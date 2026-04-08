@@ -32,6 +32,9 @@ type ReadFileArgs struct {
 
 // HandleListFiles implements the talos_list_files tool.
 func (h *Handlers) HandleListFiles(ctx context.Context, _ *mcp.CallToolRequest, args ListFilesArgs) (*mcp.CallToolResult, any, error) {
+	ctx, cancel := withToolTimeout(ctx)
+	defer cancel()
+
 	listPath := args.Path
 	if listPath == "" {
 		listPath = "/"
@@ -97,6 +100,9 @@ func (h *Handlers) HandleListFiles(ctx context.Context, _ *mcp.CallToolRequest, 
 
 // HandleReadFile implements the talos_read_file tool.
 func (h *Handlers) HandleReadFile(ctx context.Context, _ *mcp.CallToolRequest, args ReadFileArgs) (*mcp.CallToolResult, any, error) {
+	ctx, cancel := withToolTimeout(ctx)
+	defer cancel()
+
 	if err := checkPathAllowed(args.Path, allowedPaths()); err != nil {
 		return nil, nil, err
 	}

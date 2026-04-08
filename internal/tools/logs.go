@@ -23,6 +23,9 @@ type LogsArgs struct {
 
 // HandleLogs implements the talos_logs tool.
 func (h *Handlers) HandleLogs(ctx context.Context, _ *mcp.CallToolRequest, args LogsArgs) (*mcp.CallToolResult, any, error) {
+	ctx, cancel := withToolTimeout(ctx)
+	defer cancel()
+
 	ctx = talos.WithNodes(ctx, args.Nodes)
 
 	tailLines := args.TailLines
@@ -65,6 +68,9 @@ type DmesgArgs struct {
 
 // HandleDmesg implements the talos_dmesg tool.
 func (h *Handlers) HandleDmesg(ctx context.Context, _ *mcp.CallToolRequest, args DmesgArgs) (*mcp.CallToolResult, any, error) {
+	ctx, cancel := withToolTimeout(ctx)
+	defer cancel()
+
 	ctx = talos.WithNodes(ctx, args.Nodes)
 
 	maxLines := args.MaxLines

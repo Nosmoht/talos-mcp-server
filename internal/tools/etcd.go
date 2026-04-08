@@ -19,6 +19,9 @@ type EtcdArgs struct {
 
 // HandleEtcd implements the talos_etcd tool.
 func (h *Handlers) HandleEtcd(ctx context.Context, _ *mcp.CallToolRequest, args EtcdArgs) (*mcp.CallToolResult, any, error) {
+	ctx, cancel := withToolTimeout(ctx)
+	defer cancel()
+
 	ctx = talos.WithNodes(ctx, args.Nodes)
 
 	switch args.Subcommand {

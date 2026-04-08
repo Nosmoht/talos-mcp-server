@@ -31,6 +31,9 @@ type HealthArgs struct {
 
 // HandleVersion implements the talos_version tool.
 func (h *Handlers) HandleVersion(ctx context.Context, _ *mcp.CallToolRequest, args NodesOnlyArgs) (*mcp.CallToolResult, any, error) {
+	ctx, cancel := withToolTimeout(ctx)
+	defer cancel()
+
 	ctx = talos.WithNodes(ctx, args.Nodes)
 
 	resp, err := h.Client.Version(ctx)
@@ -48,6 +51,9 @@ func (h *Handlers) HandleVersion(ctx context.Context, _ *mcp.CallToolRequest, ar
 
 // HandleServices implements the talos_services tool.
 func (h *Handlers) HandleServices(ctx context.Context, _ *mcp.CallToolRequest, args NodesOnlyArgs) (*mcp.CallToolResult, any, error) {
+	ctx, cancel := withToolTimeout(ctx)
+	defer cancel()
+
 	ctx = talos.WithNodes(ctx, args.Nodes)
 
 	resp, err := h.Client.ServiceList(ctx)
@@ -65,6 +71,9 @@ func (h *Handlers) HandleServices(ctx context.Context, _ *mcp.CallToolRequest, a
 
 // HandleContainers implements the talos_containers tool.
 func (h *Handlers) HandleContainers(ctx context.Context, _ *mcp.CallToolRequest, args ContainersArgs) (*mcp.CallToolResult, any, error) {
+	ctx, cancel := withToolTimeout(ctx)
+	defer cancel()
+
 	ctx = talos.WithNodes(ctx, args.Nodes)
 
 	ns := args.Namespace
@@ -87,6 +96,9 @@ func (h *Handlers) HandleContainers(ctx context.Context, _ *mcp.CallToolRequest,
 
 // HandleProcesses implements the talos_processes tool.
 func (h *Handlers) HandleProcesses(ctx context.Context, _ *mcp.CallToolRequest, args NodesOnlyArgs) (*mcp.CallToolResult, any, error) {
+	ctx, cancel := withToolTimeout(ctx)
+	defer cancel()
+
 	ctx = talos.WithNodes(ctx, args.Nodes)
 
 	resp, err := h.Client.Processes(ctx)

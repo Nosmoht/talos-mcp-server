@@ -2,6 +2,7 @@ package main
 
 import (
 	"log"
+	"math"
 	"net/http"
 	"os"
 	"strconv"
@@ -26,7 +27,7 @@ type httpTransportConfig struct {
 //   - TALOS_MCP_MAX_CONCURRENT int64 concurrent POSTs  default 20
 func newHTTPTransportConfig() httpTransportConfig {
 	rateLimit := envFloat64("TALOS_MCP_RATE_LIMIT", 10.0)
-	rateBurst := int(envInt64("TALOS_MCP_RATE_BURST", 20))
+	rateBurst := envInt("TALOS_MCP_RATE_BURST", 20)
 	maxBody := envInt64("TALOS_MCP_MAX_BODY_SIZE", 4*1024*1024)
 	maxConc := envInt64("TALOS_MCP_MAX_CONCURRENT", 20)
 	return httpTransportConfig{
@@ -102,6 +103,18 @@ func envInt64(key string, fallback int64) int64 {
 		return fallback
 	}
 	return n
+}
+
+// envInt reads an integer environment variable and safely converts it to int,
+// returning fallback when the variable is unset, unparseable, or outside the
+// valid int range (guards against CWE-190 on 32-bit platforms).
+func envInt(key string, fallback int) int {
+	n := envInt64(key, int64(fallback))
+	if n < math.MinInt || n > math.MaxInt {
+		log.Printf("WARNING: %s=%d out of int range [%d, %d]; using default %d", key, n, math.MinInt, math.MaxInt, fallback) //nolint:gosec // G706: key is a hardcoded constant; n is operator-supplied config, not user input
+		return fallback
+	}
+	return int(n)
 }
 
 // envFloat64 reads a float environment variable, returning fallback on parse

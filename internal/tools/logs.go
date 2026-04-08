@@ -2,8 +2,8 @@ package tools
 
 import (
 	"context"
-	"fmt"
 	"errors"
+	"fmt"
 	"io"
 	"strings"
 	"time"
@@ -28,7 +28,10 @@ func (h *Handlers) HandleLogs(ctx context.Context, _ *mcp.CallToolRequest, args 
 	ctx, cancel := withToolTimeout(ctx)
 	defer cancel()
 
-	ctx = talos.WithNodes(ctx, args.Nodes)
+	ctx, err := talos.WithNodes(ctx, args.Nodes, h.AllowedNodes)
+	if err != nil {
+		return nil, nil, err
+	}
 
 	tailLines := args.TailLines
 	if tailLines <= 0 {
@@ -83,7 +86,10 @@ func (h *Handlers) HandleDmesg(ctx context.Context, _ *mcp.CallToolRequest, args
 	ctx, cancel := withToolTimeout(ctx)
 	defer cancel()
 
-	ctx = talos.WithNodes(ctx, args.Nodes)
+	ctx, err := talos.WithNodes(ctx, args.Nodes, h.AllowedNodes)
+	if err != nil {
+		return nil, nil, err
+	}
 
 	maxLines := args.MaxLines
 	if maxLines <= 0 {
@@ -151,7 +157,11 @@ func (h *Handlers) HandleEvents(ctx context.Context, _ *mcp.CallToolRequest, arg
 	}
 
 	// Use a cancellable child context so we can stop after collecting enough events.
-	collectCtx, cancel := context.WithTimeout(talos.WithNodes(ctx, args.Nodes), 5*time.Second)
+	nodesCtx, err := talos.WithNodes(ctx, args.Nodes, h.AllowedNodes)
+	if err != nil {
+		return nil, nil, err
+	}
+	collectCtx, cancel := context.WithTimeout(nodesCtx, 5*time.Second)
 	defer cancel()
 
 	type eventEntry struct {

@@ -33,12 +33,15 @@ type ServiceActionArgs struct {
 func (h *Handlers) HandleServiceAction(ctx context.Context, _ *mcp.CallToolRequest, args ServiceActionArgs) (*mcp.CallToolResult, any, error) {
 	h.auditLog("talos_service_action", args, args.Nodes)
 
-	ctx = talos.WithNodes(ctx, args.Nodes)
-
 	var (
 		resp any
 		err  error
 	)
+
+	ctx, err = talos.WithNodes(ctx, args.Nodes, h.AllowedNodes)
+	if err != nil {
+		return nil, nil, err
+	}
 
 	switch args.Action {
 	case "start":
@@ -130,7 +133,10 @@ func (h *Handlers) HandleReboot(ctx context.Context, req *mcp.CallToolRequest, a
 		}
 	}
 
-	nodeCtx := talos.WithNodes(ctx, args.Nodes)
+	nodeCtx, err := talos.WithNodes(ctx, args.Nodes, h.AllowedNodes)
+	if err != nil {
+		return nil, nil, err
+	}
 
 	if !args.Wait {
 		if err := h.Client.Reboot(nodeCtx, opts...); err != nil {
@@ -229,7 +235,11 @@ func (h *Handlers) HandleReboot(ctx context.Context, req *mcp.CallToolRequest, a
 
 // readBootID reads /proc/sys/kernel/random/boot_id from the given node.
 func (h *Handlers) readBootID(ctx context.Context, node string) (string, error) {
-	nodeCtx := talos.WithNodes(ctx, []string{node})
+	// nil allowlist: nodes were already validated in HandleReboot before the reboot was issued.
+	nodeCtx, err := talos.WithNodes(ctx, []string{node}, nil)
+	if err != nil {
+		return "", err
+	}
 
 	r, err := h.Client.Read(nodeCtx, "/proc/sys/kernel/random/boot_id")
 	if err != nil {
@@ -354,7 +364,10 @@ func (h *Handlers) HandleUpgrade(ctx context.Context, req *mcp.CallToolRequest, 
 		return nil, nil, fmt.Errorf("unknown reboot_mode %q: must be 'default' or 'powercycle'", args.RebootMode)
 	}
 
-	ctx = talos.WithNodes(ctx, args.Nodes)
+	ctx, err := talos.WithNodes(ctx, args.Nodes, h.AllowedNodes)
+	if err != nil {
+		return nil, nil, err
+	}
 
 	// Upgrade path validation — skipped when TALOS_MCP_SKIP_VERSION_CHECK=true.
 	// Decision matrix:
@@ -427,7 +440,10 @@ func (h *Handlers) HandleRollback(ctx context.Context, req *mcp.CallToolRequest,
 		return nil, nil, fmt.Errorf("rollback refused: nodes must be explicitly specified")
 	}
 
-	ctx = talos.WithNodes(ctx, args.Nodes)
+	ctx, err := talos.WithNodes(ctx, args.Nodes, h.AllowedNodes)
+	if err != nil {
+		return nil, nil, err
+	}
 
 	notifyProgress(ctx, req, "Initiating rollback", 1, 2)
 
@@ -484,7 +500,10 @@ func (h *Handlers) HandlePatchConfig(ctx context.Context, req *mcp.CallToolReque
 		return nil, nil, fmt.Errorf("patch_config refused: confirm must be explicitly set to true when dry_run is false")
 	}
 
-	ctx = talos.WithNodes(ctx, args.Nodes)
+	ctx, err := talos.WithNodes(ctx, args.Nodes, h.AllowedNodes)
+	if err != nil {
+		return nil, nil, err
+	}
 
 	var mode machineapi.ApplyConfigurationRequest_Mode
 

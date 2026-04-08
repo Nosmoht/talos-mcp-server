@@ -3,8 +3,8 @@ package tools
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"errors"
+	"fmt"
 	"io"
 	"time"
 
@@ -34,7 +34,10 @@ func (h *Handlers) HandleVersion(ctx context.Context, _ *mcp.CallToolRequest, ar
 	ctx, cancel := withToolTimeout(ctx)
 	defer cancel()
 
-	ctx = talos.WithNodes(ctx, args.Nodes)
+	ctx, err := talos.WithNodes(ctx, args.Nodes, h.AllowedNodes)
+	if err != nil {
+		return nil, nil, err
+	}
 
 	resp, err := h.Client.Version(ctx)
 	if err != nil {
@@ -54,7 +57,10 @@ func (h *Handlers) HandleServices(ctx context.Context, _ *mcp.CallToolRequest, a
 	ctx, cancel := withToolTimeout(ctx)
 	defer cancel()
 
-	ctx = talos.WithNodes(ctx, args.Nodes)
+	ctx, err := talos.WithNodes(ctx, args.Nodes, h.AllowedNodes)
+	if err != nil {
+		return nil, nil, err
+	}
 
 	resp, err := h.Client.ServiceList(ctx)
 	if err != nil {
@@ -74,7 +80,10 @@ func (h *Handlers) HandleContainers(ctx context.Context, _ *mcp.CallToolRequest,
 	ctx, cancel := withToolTimeout(ctx)
 	defer cancel()
 
-	ctx = talos.WithNodes(ctx, args.Nodes)
+	ctx, err := talos.WithNodes(ctx, args.Nodes, h.AllowedNodes)
+	if err != nil {
+		return nil, nil, err
+	}
 
 	ns := args.Namespace
 	if ns == "" {
@@ -99,7 +108,10 @@ func (h *Handlers) HandleProcesses(ctx context.Context, _ *mcp.CallToolRequest, 
 	ctx, cancel := withToolTimeout(ctx)
 	defer cancel()
 
-	ctx = talos.WithNodes(ctx, args.Nodes)
+	ctx, err := talos.WithNodes(ctx, args.Nodes, h.AllowedNodes)
+	if err != nil {
+		return nil, nil, err
+	}
 
 	resp, err := h.Client.Processes(ctx)
 	if err != nil {
@@ -116,7 +128,17 @@ func (h *Handlers) HandleProcesses(ctx context.Context, _ *mcp.CallToolRequest, 
 
 // HandleHealth implements the talos_health tool.
 func (h *Handlers) HandleHealth(ctx context.Context, req *mcp.CallToolRequest, args HealthArgs) (*mcp.CallToolResult, any, error) {
-	ctx = talos.WithNodes(ctx, args.Nodes)
+	if err := h.AllowedNodes.CheckNodes(args.ControlPlaneNodes); err != nil {
+		return nil, nil, fmt.Errorf("control_plane_nodes: %w", err)
+	}
+	if err := h.AllowedNodes.CheckNodes(args.WorkerNodes); err != nil {
+		return nil, nil, fmt.Errorf("worker_nodes: %w", err)
+	}
+
+	ctx, err := talos.WithNodes(ctx, args.Nodes, h.AllowedNodes)
+	if err != nil {
+		return nil, nil, err
+	}
 
 	waitTimeout := 2 * time.Minute
 

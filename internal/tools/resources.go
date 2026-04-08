@@ -26,7 +26,10 @@ func (h *Handlers) HandleGetResource(ctx context.Context, _ *mcp.CallToolRequest
 	ctx, cancel := withToolTimeout(ctx)
 	defer cancel()
 
-	ctx = talos.WithNodes(ctx, args.Nodes)
+	ctx, err := talos.WithNodes(ctx, args.Nodes, h.AllowedNodes)
+	if err != nil {
+		return nil, nil, err
+	}
 
 	ns := resource.Namespace(args.Namespace)
 

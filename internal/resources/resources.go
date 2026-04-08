@@ -14,12 +14,13 @@ import (
 
 // Handlers holds the Talos client and exposes MCP resource handler methods.
 type Handlers struct {
-	Client *talos.Client
+	Client       *talos.Client
+	AllowedNodes *talos.NodeAllowlist
 }
 
 // Register registers all static MCP resources and resource templates on server.
-func Register(server *mcp.Server, client *talos.Client) {
-	h := &Handlers{Client: client}
+func Register(server *mcp.Server, client *talos.Client, allowedNodes *talos.NodeAllowlist) {
+	h := &Handlers{Client: client, AllowedNodes: allowedNodes}
 
 	server.AddResource(&mcp.Resource{
 		URI:         "talos://cluster/version",

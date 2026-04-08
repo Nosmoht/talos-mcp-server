@@ -22,6 +22,8 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/auth"
@@ -44,19 +46,22 @@ var (
 )
 
 func main() {
-	ctx := context.Background()
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
 
 	readOnly := os.Getenv("TALOS_MCP_READ_ONLY") == "true"
 	httpAddr := os.Getenv("TALOS_MCP_HTTP_ADDR")
 	authToken := os.Getenv("TALOS_MCP_AUTH_TOKEN")
 
 	if err := validateHTTPConfig(httpAddr, authToken); err != nil {
-		log.Fatalf("%v", err)
+		stop()
+		log.Fatalf("%v", err) //nolint:gocritic // exitAfterDefer: stop() called explicitly above
 	}
 
 	tc, err := talos.NewClient(ctx)
 	if err != nil {
-		log.Fatalf("failed to create Talos client: %v", err)
+		stop()
+		log.Fatalf("failed to create Talos client: %v", err) //nolint:gocritic // exitAfterDefer: stop() called explicitly above
 	}
 	defer tc.Close() //nolint:errcheck
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"errors"
 	"io"
 	"time"
 
@@ -140,7 +141,7 @@ func (h *Handlers) HandleHealth(ctx context.Context, req *mcp.CallToolRequest, a
 	for {
 		msg, err := stream.Recv()
 		if err != nil {
-			if err != io.EOF {
+			if !errors.Is(err, io.EOF) {
 				streamErr = err
 			}
 

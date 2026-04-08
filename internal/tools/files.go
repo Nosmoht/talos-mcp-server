@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -68,7 +69,7 @@ func (h *Handlers) HandleListFiles(ctx context.Context, _ *mcp.CallToolRequest, 
 	for {
 		info, err := stream.Recv()
 		if err != nil {
-			if err != io.EOF {
+			if !errors.Is(err, io.EOF) {
 				streamErr = err
 			}
 

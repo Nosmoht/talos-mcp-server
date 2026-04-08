@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"fmt"
+	"errors"
 	"io"
 	"strings"
 	"time"
@@ -49,7 +50,7 @@ func (h *Handlers) HandleLogs(ctx context.Context, _ *mcp.CallToolRequest, args 
 	for {
 		msg, err := stream.Recv()
 		if err != nil {
-			if err != io.EOF {
+			if !errors.Is(err, io.EOF) {
 				streamErr = err
 			}
 
@@ -96,7 +97,7 @@ func (h *Handlers) HandleDmesg(ctx context.Context, _ *mcp.CallToolRequest, args
 	for {
 		msg, err := stream.Recv()
 		if err != nil {
-			if err != io.EOF {
+			if !errors.Is(err, io.EOF) {
 				streamErr = err
 			}
 

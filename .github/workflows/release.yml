@@ -114,3 +114,31 @@ jobs:
         run: |
           cd npm/talos-mcp
           npm publish --access public --provenance
+
+  # NOTE: Registry publish runs after npm-publish so the registry can verify
+  # the npm package (with mcpName) exists before accepting the server entry.
+  # continue-on-error: registry outages must not fail the primary release artifacts.
+  mcp-registry-publish:
+    needs: npm-publish
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v4
+
+      - name: Install mcp-publisher
+        run: |
+          curl -fsSL "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_linux_amd64.tar.gz" | tar xz mcp-publisher
+
+      - name: Set version in server.json
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          jq --arg v "$VERSION" '.version = $v | .packages[0].version = $v' server.json > server.tmp && mv server.tmp server.json
+
+      - name: Authenticate to MCP Registry
+        run: ./mcp-publisher login github-oidc
+
+      - name: Publish to MCP Registry
+        run: ./mcp-publisher publish

@@ -42,6 +42,22 @@ func (h *Handlers) HandleXxx(ctx context.Context, req *mcp.CallToolRequest, args
 - Use pointer types (`*bool`) when nil must be distinguished from false (e.g. `DryRun *bool`, `Preserve *bool`)
 - Return responses via `textResult()` or `jsonMarshal()` helpers (never construct `mcp.CallToolResult` inline)
 
+### Tool and prompt inventory maintenance
+
+When adding, removing, or renaming a **tool**, **prompt**, or **resource**, update **all** surfaces that reference them:
+
+| Surface | What to update |
+|---------|----------------|
+| `CLAUDE.md` | Tools, Prompts, or Resources section — add/remove entry; update count in the section heading (e.g. `## Tools (18)`) |
+| `server.json` | `description` field — remove or rephrase if it references specific capabilities |
+| `README.md` | Feature list or tool table (if present) |
+
+Run a repo-wide search for the old tool/prompt name before committing to catch stale references:
+
+```bash
+grep -r "old_tool_name" --include="*.go" --include="*.md" --include="*.json" .
+```
+
 ### Mutating tool safety pattern
 
 All mutating handlers follow this strict order — no exceptions:
@@ -243,6 +259,27 @@ without also removing conflicting labels in the same call.
 1. Remove `status: blocked`.
 2. Restore the prior status label.
 3. Post: `<!-- agent-unblock: {session-id} -->\nBlocker resolved: {description}.`
+
+---
+
+## Commit Signing
+
+The `main` branch requires verified commit signatures. Commits pushed to `main` must be signed — either by the committer's local key or by GitHub when merging via the web UI.
+
+**For AI agents committing locally:** Configure SSH signing before committing:
+
+```bash
+# One-time setup (if not already configured globally)
+git config --global gpg.format ssh
+git config --global user.signingkey ~/.ssh/id_ed25519.pub
+git config --global commit.gpgsign true
+```
+
+Then commit normally — git will sign automatically.
+
+**For merging PRs:** Use **Squash and merge** via the GitHub web UI. GitHub signs the resulting commit automatically, satisfying the branch protection rule. Do **not** merge locally or via API without a signing key configured.
+
+**Do not bypass signing** (`--no-gpg-sign`, `-c commit.gpgsign=false`) — the branch protection will block the merge.
 
 ---
 

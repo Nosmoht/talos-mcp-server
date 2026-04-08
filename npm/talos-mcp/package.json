@@ -1,5 +1,6 @@
 {
   "name": "talos-mcp",
+  "mcpName": "io.github.Nosmoht/talos-mcp-server",
   "version": "0.22.0",
   "description": "MCP server for Talos Linux cluster management via native gRPC API",
   "license": "MIT",

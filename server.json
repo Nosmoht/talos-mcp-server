@@ -2,16 +2,18 @@
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.Nosmoht/talos-mcp-server",
   "title": "Talos Linux MCP Server",
-  "description": "Manage Talos Linux clusters via the native gRPC API. 15 tools for resources, services, logs, health, config patching, and lifecycle operations.",
-  "version": "0.1.0",
+  "description": "Manage Talos Linux clusters via the native gRPC API. Tools for resources, services, logs, health checks, config patching, and lifecycle operations.",
+  "version": "0.0.0",
   "repository": {
     "url": "https://github.com/Nosmoht/talos-mcp-server",
-    "source": "https://github.com/Nosmoht/talos-mcp-server"
+    "source": "github"
   },
   "packages": [
     {
-      "registryType": "mcpb",
-      "identifier": "Nosmoht/talos-mcp-server",
+      "registryType": "npm",
+      "identifier": "talos-mcp",
+      "version": "0.0.0",
+      "runtimeHint": "npx",
       "transport": {
         "type": "stdio"
       },

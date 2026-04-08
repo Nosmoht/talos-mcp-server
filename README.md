@@ -146,7 +146,7 @@ These tools modify cluster state and have explicit safety guards.
 | `talos_reboot` | Reboot target nodes. Supports `mode`: `default`, `powercycle`, `force`. | `confirm=true` required; `nodes` must be explicit |
 | `talos_upgrade` | Upgrade Talos on target nodes. Supports `preserve` (default `true`), `stage`, `force`, `reboot_mode`. | `confirm=true` required; `nodes` and `image` required |
 | `talos_rollback` | Roll back the last upgrade on target nodes. | `confirm=true` required; `nodes` must be explicit |
-| `talos_patch_config` | Apply a machine config patch (JSON or YAML strategic merge). | `dry_run` defaults to `true`; set `dry_run=false` to apply |
+| `talos_patch_config` | Apply a machine config patch (JSON or YAML strategic merge). | `dry_run` defaults to `true`; `confirm=true` required when `dry_run=false` |
 
 All tools accept an optional `nodes` field (list of node IPs or hostnames). When omitted, the active context from talosconfig is used.
 
@@ -185,9 +185,9 @@ MCP Client (Claude Code / Codex)
 |---|---|
 | Read-only mode | `TALOS_MCP_READ_ONLY=true` registers only read-only tools at startup; mutating tools are never exposed to the LLM |
 | Path allowlist | `TALOS_MCP_ALLOWED_PATHS=/etc,/proc` restricts `talos_read_file` and `talos_list_files` to specified prefixes |
-| Confirm gates | `talos_reboot`, `talos_upgrade`, and `talos_rollback` require `confirm=true` and explicit `nodes`; both fields are enforced server-side |
+| Confirm gates | `talos_reboot`, `talos_upgrade`, `talos_rollback`, and `talos_patch_config` (when `dry_run=false`) require `confirm=true`; enforced server-side |
 | Preserve default | `talos_upgrade` defaults `preserve` to `true` (keep EPHEMERAL partition) — differs from `talosctl` default of `false` |
-| Dry-run default | `talos_patch_config` defaults to `dry_run=true`; changes are only applied when `dry_run=false` is explicitly set |
+| Dry-run default | `talos_patch_config` defaults to `dry_run=true`; applying requires both `dry_run=false` and `confirm=true` |
 | Audit logging | All mutating tool calls (`talos_service_action`, `talos_reboot`, `talos_upgrade`, `talos_rollback`, `talos_patch_config`) emit a structured log line to stderr: `AUDIT timestamp=<RFC3339> tool=<name> nodes=<list> args=<json>` (patch content is redacted) |
 
 ### What Is Not in the Threat Model

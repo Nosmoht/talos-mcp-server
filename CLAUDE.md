@@ -62,7 +62,7 @@ Tested against Talos Linux v1.9.x – v1.12.x (machinery SDK v1.12.6). The serve
 - `talos_reboot` — reboot nodes (requires `confirm=true` + explicit `nodes`); supports `mode`: `default`, `powercycle`, `force`; supports `wait=true` + `timeout` to block until reboot completes (default: fire-and-forget); **all listed nodes are rebooted simultaneously — reboot one node at a time to avoid a full cluster outage**
 - `talos_upgrade` — upgrade Talos on nodes (requires `confirm=true` + `nodes` + `image`); supports `preserve` (default `true`), `stage`, `force`, `reboot_mode`
 - `talos_rollback` — roll back the last upgrade on nodes (requires `confirm=true` + explicit `nodes`)
-- `talos_patch_config` — apply machine config patch (defaults to `dry_run=true`)
+- `talos_patch_config` — apply machine config patch (defaults to `dry_run=true`; requires `confirm=true` when `dry_run=false`)
 
 ## Prompts (5)
 

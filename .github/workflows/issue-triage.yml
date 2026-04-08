@@ -1,0 +1,66 @@
+name: issue-triage
+
+on:
+  issues:
+    types: [opened]
+
+# Required GitHub App permissions (RELEASE_APP_ID / RELEASE_APP_PRIVATE_KEY):
+#   issues: write — to apply priority and triage labels
+permissions:
+  contents: read
+
+jobs:
+  triage-audit:
+    runs-on: ubuntu-latest
+    # Only process issues that carry the 'audit' label
+    if: >-
+      contains(
+        toJSON(github.event.issue.labels.*.name),
+        'audit'
+      )
+    steps:
+      - uses: actions/create-github-app-token@f8d387b68d61c58ab83c6c016672934102569859 # v3
+        id: app-token
+        with:
+          app-id: ${{ vars.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+
+      - uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7
+        with:
+          github-token: ${{ steps.app-token.outputs.token }}
+          script: |
+            const body = context.payload.issue.body || '';
+            const issueNumber = context.payload.issue.number;
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+
+            // Parse severity from the Code Audit Finding template field:
+            //   ### Severity
+            //   P0 — critical
+            const match = body.match(/###\s*Severity\s*\n\s*(P[0-3])/);
+
+            let labelToAdd;
+            if (match) {
+              const severity = match[1]; // P0, P1, P2, or P3
+              const severityToLabel = {
+                P0: 'priority: P0',
+                P1: 'priority: P1',
+                P2: 'priority: P2',
+                P3: 'priority: P3',
+              };
+              labelToAdd = severityToLabel[severity];
+            }
+
+            if (!labelToAdd) {
+              core.info('No severity match found. Applying needs: triage.');
+              labelToAdd = 'needs: triage';
+            }
+
+            await github.rest.issues.addLabels({
+              owner,
+              repo,
+              issue_number: issueNumber,
+              labels: [labelToAdd],
+            });
+
+            core.info(`Applied label: ${labelToAdd}`);

@@ -1,0 +1,167 @@
+name: project-sync
+
+on:
+  issues:
+    types: [opened, labeled, unlabeled, closed, reopened]
+
+# Required GitHub App permissions (RELEASE_APP_ID / RELEASE_APP_PRIVATE_KEY):
+#   issues: read    — to read issue labels and state
+#   projects: write — to add items and update fields on the Projects v2 board
+permissions:
+  contents: read
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/create-github-app-token@f8d387b68d61c58ab83c6c016672934102569859 # v3
+        id: app-token
+        with:
+          app-id: ${{ vars.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+
+      - uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          PROJECT_NUMBER: ${{ vars.PROJECT_NUMBER }}
+        with:
+          github-token: ${{ steps.app-token.outputs.token }}
+          script: |
+            const projectNumber = parseInt(process.env.PROJECT_NUMBER || '');
+            if (!projectNumber) {
+              core.warning('PROJECT_NUMBER variable is not set. Skipping project sync.');
+              return;
+            }
+
+            const issueNodeId = context.payload.issue.node_id;
+            const issueLabels = (context.payload.issue.labels || []).map(l => l.name);
+            const isClosed = context.payload.issue.state === 'closed';
+
+            // Query project node ID and field definitions
+            const projectQuery = await github.graphql(`
+              query($login: String!, $number: Int!) {
+                user(login: $login) {
+                  projectV2(number: $number) {
+                    id
+                    fields(first: 20) {
+                      nodes {
+                        id
+                        name
+                        ... on ProjectV2SingleSelectField {
+                          options {
+                            id
+                            name
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            `, {
+              login: 'Nosmoht',
+              number: projectNumber,
+            });
+
+            const project = projectQuery.user.projectV2;
+            if (!project) {
+              core.warning(`Project number ${projectNumber} not found. Skipping.`);
+              return;
+            }
+
+            const projectId = project.id;
+            const fields = project.fields.nodes;
+
+            // Helper: find field by name
+            const findField = (name) => fields.find(f => f.name === name);
+            // Helper: find option ID by name within a field
+            const findOption = (field, optionName) =>
+              (field?.options || []).find(o => o.name === optionName)?.id;
+
+            // Add issue to project (idempotent — addProjectV2ItemById deduplicates)
+            const addResult = await github.graphql(`
+              mutation($projectId: ID!, $contentId: ID!) {
+                addProjectV2ItemById(input: { projectId: $projectId, contentId: $contentId }) {
+                  item {
+                    id
+                  }
+                }
+              }
+            `, { projectId, contentId: issueNodeId });
+
+            const itemId = addResult.addProjectV2ItemById.item.id;
+
+            // Helper: update a single-select field
+            const updateField = async (fieldName, optionName) => {
+              const field = findField(fieldName);
+              if (!field) {
+                core.warning(`Field "${fieldName}" not found in project. Skipping.`);
+                return;
+              }
+              const optionId = findOption(field, optionName);
+              if (!optionId) {
+                core.warning(`Option "${optionName}" not found in field "${fieldName}". Skipping.`);
+                return;
+              }
+              await github.graphql(`
+                mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!, $optionId: String!) {
+                  updateProjectV2ItemFieldValue(input: {
+                    projectId: $projectId
+                    itemId: $itemId
+                    fieldId: $fieldId
+                    value: { singleSelectOptionId: $optionId }
+                  }) {
+                    projectV2Item { id }
+                  }
+                }
+              `, { projectId, itemId, fieldId: field.id, optionId });
+              core.info(`Set ${fieldName} = ${optionName}`);
+            };
+
+            // --- Status field ---
+            if (isClosed) {
+              await updateField('Status', 'Done');
+            } else {
+              const statusMap = {
+                'status: ready':          'Ready',
+                'status: assigned':       'Assigned',
+                'status: in-progress':    'In Progress',
+                'status: review-pending': 'Review Pending',
+                'status: blocked':        'Blocked',
+              };
+              for (const [label, option] of Object.entries(statusMap)) {
+                if (issueLabels.includes(label)) {
+                  await updateField('Status', option);
+                  break;
+                }
+              }
+            }
+
+            // --- Priority field ---
+            const priorityMap = {
+              'priority: P0': 'P0',
+              'priority: P1': 'P1',
+              'priority: P2': 'P2',
+              'priority: P3': 'P3',
+            };
+            for (const [label, option] of Object.entries(priorityMap)) {
+              if (issueLabels.includes(label)) {
+                await updateField('Priority', option);
+                break;
+              }
+            }
+
+            // --- Size field ---
+            const sizeMap = {
+              'size: XS': 'XS',
+              'size: S':  'S',
+              'size: M':  'M',
+              'size: L':  'L',
+              'size: XL': 'XL',
+            };
+            for (const [label, option] of Object.entries(sizeMap)) {
+              if (issueLabels.includes(label)) {
+                await updateField('Size', option);
+                break;
+              }
+            }

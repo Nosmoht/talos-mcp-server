@@ -1,5 +1,9 @@
 ## What does this PR do?
 
+Closes #<!-- issue number -->
+
+**Change ID:** <!-- e.g. add-etcd-defrag-tool -->
+
 <!-- Brief description -->
 
 ## Checklist

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -134,9 +135,15 @@ func (h *Handlers) HandleHealth(ctx context.Context, req *mcp.CallToolRequest, a
 
 	var i float64
 
+	var streamErr error
+
 	for {
 		msg, err := stream.Recv()
 		if err != nil {
+			if err != io.EOF {
+				streamErr = err
+			}
+
 			break
 		}
 
@@ -152,6 +159,15 @@ func (h *Handlers) HandleHealth(ctx context.Context, req *mcp.CallToolRequest, a
 		if msg.GetMessage() != "" {
 			messages = append(messages, msg.GetMessage())
 		}
+	}
+
+	// Propagate stream errors — this is the safety-critical path.
+	// A failed health check (e.g., etcd unhealthy, node not ready) arrives as
+	// a gRPC error from the final Recv(), not as io.EOF. Swallowing it would
+	// make HandleHealth always report success, undermining its role as a gate
+	// for upgrades and config patches.
+	if streamErr != nil {
+		return nil, nil, fmt.Errorf("health check failed: %w", streamErr)
 	}
 
 	type healthResult struct {

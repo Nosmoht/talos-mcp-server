@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"fmt"
+	"io"
 	"strings"
 	"time"
 
@@ -43,15 +44,25 @@ func (h *Handlers) HandleLogs(ctx context.Context, _ *mcp.CallToolRequest, args 
 
 	var lines []string
 
+	var streamErr error
+
 	for {
 		msg, err := stream.Recv()
 		if err != nil {
+			if err != io.EOF {
+				streamErr = err
+			}
+
 			break
 		}
 
 		if msg.GetBytes() != nil {
 			lines = append(lines, strings.TrimRight(string(msg.GetBytes()), "\n"))
 		}
+	}
+
+	if streamErr != nil {
+		return nil, nil, fmt.Errorf("logs stream for %q: %w", args.ServiceName, streamErr)
 	}
 
 	return textResult(strings.Join(lines, "\n")), nil, nil
@@ -80,9 +91,15 @@ func (h *Handlers) HandleDmesg(ctx context.Context, _ *mcp.CallToolRequest, args
 
 	var lines []string
 
+	var streamErr error
+
 	for {
 		msg, err := stream.Recv()
 		if err != nil {
+			if err != io.EOF {
+				streamErr = err
+			}
+
 			break
 		}
 
@@ -93,6 +110,10 @@ func (h *Handlers) HandleDmesg(ctx context.Context, _ *mcp.CallToolRequest, args
 				}
 			}
 		}
+	}
+
+	if streamErr != nil {
+		return nil, nil, fmt.Errorf("dmesg stream: %w", streamErr)
 	}
 
 	// Truncate to max_lines from the end (most recent)

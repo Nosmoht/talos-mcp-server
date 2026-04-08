@@ -99,11 +99,18 @@ jobs:
           go-version-file: go.mod
       - run: go build -o talos-mcp ./cmd/talos-mcp
 
+  validate-config:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v4
+      - name: Validate .claude/settings.json
+        run: jq empty .claude/settings.json
+
   # Single required status check: passes when all CI jobs pass or are legitimately skipped.
   # Skipped = no Go-relevant files changed on this PR.
   merge-guard:
     if: always() && !cancelled()
-    needs: [lint, test, build, verify]
+    needs: [lint, test, build, verify, validate-config]
     runs-on: ubuntu-latest
     steps:
       - name: Fail on CI failure or cancellation

@@ -271,7 +271,7 @@ Issues are created via `gh` CLI. Use `--body-file` for issue bodies containing b
 ```bash
 gh issue create \
   --title "fix(tools): describe the fix" \
-  --label "type/bug,priority/P2,origin/audit" \
+  --label "type: bug,priority: P2,origin: audit,needs: triage" \
   --body-file /tmp/issue-body.md
 ```
 
@@ -323,14 +323,7 @@ How this was found.
 
 ### Labels
 
-Every issue gets **one type**, **one priority**, and optionally **area** and **origin** labels. See [AGENTS.md](./AGENTS.md) for the full label taxonomy and state machine.
-
-| Category | Examples |
-|---|---|
-| Type | `type/bug`, `type/enhancement`, `type/chore`, `type/docs`, `type/test` |
-| Priority | `priority/P0` (critical), `priority/P1` (significant), `priority/P2` (moderate), `priority/P3` (nice to have) |
-| Area | `area/safety`, `area/security`, `area/streaming`, `area/testing`, `area/transport` |
-| Origin | `origin/audit` (from code review or security audit) |
+See [AGENTS.md § Label Rules](./AGENTS.md) for the full taxonomy, cardinality rules, and state machine. New issues require at minimum: one `type:`, one `priority:`, and `needs: triage` (so the triage pass can assign `size:`, `area:`, and `status: ready`).
 
 ### Referencing commits
 

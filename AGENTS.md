@@ -184,8 +184,10 @@ Use the two-phase claim protocol to prevent race conditions between concurrent a
 |---|---|---|---|
 | Status | Exactly one | `status:` | `ready`, `assigned`, `in-progress`, `review-pending`, `blocked` |
 | Priority | Exactly one | `priority:` | `P0` (critical), `P1` (high), `P2` (medium), `P3` (low) |
+| Type | Exactly one | `type:` | `bug`, `enhancement`, `chore`, `docs`, `test` |
 | Area | One or more | `area:` | `tools`, `resources`, `prompts`, `transport`, `client`, `version`, `ci`, `npm`, `docs`, `governance` |
 | Size | Exactly one | `size:` | `XS` (<30 min), `S` (1–2 h), `M` (half day), `L` (full day), `XL` (multi-day) |
+| Origin | Zero or one | `origin:` | `audit` (finding from code review or security audit) |
 | Coordination | Zero or more | `agent:`, `needs:` | `agent: claimed`, `needs: triage`, `needs: decomposition`, `needs: clarification` |
 
 When updating labels, always write the **complete desired set** — never append individual labels

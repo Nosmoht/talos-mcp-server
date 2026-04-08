@@ -19,6 +19,15 @@ gh label create "status: review-pending" --color "D93F0B" --description "PR open
 gh label create "status: blocked"        --color "B60205" --description "Blocked on dependency or question"                  --repo "${OWNER}/${REPO}" --force
 
 # ---------------------------------------------------------------------------
+# Type labels (mutually exclusive)
+# ---------------------------------------------------------------------------
+gh label create "type: bug"         --color "D73A4A" --description "Something isn't working"              --repo "${OWNER}/${REPO}" --force
+gh label create "type: enhancement" --color "A2EEEF" --description "New feature or request"               --repo "${OWNER}/${REPO}" --force
+gh label create "type: chore"       --color "C5DEF5" --description "Tech debt, code cleanup, refactoring" --repo "${OWNER}/${REPO}" --force
+gh label create "type: docs"        --color "0075CA" --description "Documentation only"                   --repo "${OWNER}/${REPO}" --force
+gh label create "type: test"        --color "0E8A16" --description "Test coverage or test infrastructure"  --repo "${OWNER}/${REPO}" --force
+
+# ---------------------------------------------------------------------------
 # Priority labels (mutually exclusive)
 # ---------------------------------------------------------------------------
 gh label create "priority: P0" --color "B60205" --description "Critical - drop everything" --repo "${OWNER}/${REPO}" --force
@@ -50,12 +59,17 @@ gh label create "size: L"  --color "EDEDED" --description "Large - full day, cro
 gh label create "size: XL" --color "EDEDED" --description "Extra large - multi-day, architectural" --repo "${OWNER}/${REPO}" --force
 
 # ---------------------------------------------------------------------------
+# Origin labels (zero or one)
+# ---------------------------------------------------------------------------
+gh label create "origin: audit" --color "BFDADC" --description "Finding from a code review or security audit" --repo "${OWNER}/${REPO}" --force
+
+# ---------------------------------------------------------------------------
 # Coordination labels
 # ---------------------------------------------------------------------------
 gh label create "agent: claimed"       --color "006B75" --description "An agent has claimed this issue"    --repo "${OWNER}/${REPO}" --force
 gh label create "needs: decomposition" --color "D4C5F9" --description "Too large, needs sub-issues"       --repo "${OWNER}/${REPO}" --force
 gh label create "needs: clarification" --color "D4C5F9" --description "Requirements unclear"              --repo "${OWNER}/${REPO}" --force
-gh label create "needs: triage"        --color "D4C5F9" --description "Needs priority/area assignment"   --repo "${OWNER}/${REPO}" --force
+gh label create "needs: triage"        --color "D4C5F9" --description "Needs priority/area assignment"    --repo "${OWNER}/${REPO}" --force
 gh label create "duplicate"            --color "CFD3D7" --description "Duplicate issue"                   --repo "${OWNER}/${REPO}" --force
 gh label create "wontfix"              --color "CFD3D7" --description "Will not address"                  --repo "${OWNER}/${REPO}" --force
 

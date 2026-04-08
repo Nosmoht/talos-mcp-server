@@ -20,6 +20,7 @@ Environment variables (set in `.mcp.json` env block or shell):
 | `TALOS_MCP_READ_ONLY` | `false` | Set to `"true"` to disable all mutating tools |
 | `TALOS_MCP_HTTP_ADDR` | (unset) | If set (e.g. `:8080`), serve HTTP instead of stdio |
 | `TALOS_MCP_AUTH_TOKEN` | (unset) | Required bearer token when HTTP mode is active |
+| `TALOS_MCP_ALLOWED_NODES` | (unset) | Comma-separated IPs, hostnames, and CIDR ranges permitted as tool targets. Unset or empty allows all nodes. |
 | `TALOS_MCP_SKIP_VERSION_CHECK` | `false` | Set to `"true"` to bypass upgrade path validation |
 
 ## Compatibility

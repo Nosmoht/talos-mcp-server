@@ -124,5 +124,5 @@ func TestRegister_NoPanic(t *testing.T) {
 			t.Fatalf("Register panicked: %v", r)
 		}
 	}()
-	Register(server, nil)
+	Register(server, nil, nil)
 }

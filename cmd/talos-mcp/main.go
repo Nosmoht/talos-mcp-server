@@ -11,6 +11,9 @@
 //   - TALOS_MCP_READ_ONLY: set to "true" to disable all mutating tools
 //   - TALOS_MCP_HTTP_ADDR: if set (e.g. ":8080"), serve HTTP instead of stdio
 //   - TALOS_MCP_AUTH_TOKEN: required bearer token when HTTP mode is active
+//   - TALOS_MCP_ALLOWED_NODES: comma-separated list of permitted node IPs, hostnames,
+//     and CIDR ranges (e.g. "10.0.0.1,10.0.0.2" or "10.0.0.0/24"). When set, any tool
+//     call targeting a node not in this list is rejected. Unset or empty allows all nodes.
 package main
 
 import (
@@ -54,6 +57,12 @@ func main() {
 	authToken := os.Getenv("TALOS_MCP_AUTH_TOKEN")
 	os.Unsetenv("TALOS_MCP_AUTH_TOKEN") //nolint:errcheck // remove token from /proc/<pid>/environ
 
+	allowedNodes, err := talos.ParseNodeAllowlist(os.Getenv("TALOS_MCP_ALLOWED_NODES"))
+	if err != nil {
+		stop()
+		log.Fatalf("invalid TALOS_MCP_ALLOWED_NODES: %v", err) //nolint:gocritic // exitAfterDefer: stop() called explicitly above
+	}
+
 	if err := validateHTTPConfig(httpAddr, authToken); err != nil {
 		stop()
 		log.Fatalf("%v", err) //nolint:gocritic // exitAfterDefer: stop() called explicitly above
@@ -80,7 +89,13 @@ func main() {
 		log.Printf("cluster Talos version: %s (supported)", cv)
 	}
 
-	h := &tools.Handlers{Client: tc}
+	if allowedNodes != nil {
+		log.Printf("node allowlist: active (%d entries)", allowedNodes.Len()) //nolint:gosec // G706: entry count is an integer, not user-controlled string input
+	} else {
+		log.Printf("node allowlist: disabled (all nodes allowed)")
+	}
+
+	h := &tools.Handlers{Client: tc, AllowedNodes: allowedNodes}
 
 	serverOpts := &mcp.ServerOptions{
 		Instructions: "Talos Linux cluster management server. " +
@@ -255,7 +270,7 @@ func main() {
 		}, h.HandlePatchConfig)
 	}
 
-	resources.Register(server, tc)
+	resources.Register(server, tc, allowedNodes)
 	prompts.Register(server, readOnly)
 
 	if err := runServer(ctx, server, httpAddr, authToken); err != nil {

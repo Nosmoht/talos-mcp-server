@@ -22,7 +22,10 @@ func (h *Handlers) HandleEtcd(ctx context.Context, _ *mcp.CallToolRequest, args 
 	ctx, cancel := withToolTimeout(ctx)
 	defer cancel()
 
-	ctx = talos.WithNodes(ctx, args.Nodes)
+	ctx, err := talos.WithNodes(ctx, args.Nodes, h.AllowedNodes)
+	if err != nil {
+		return nil, nil, err
+	}
 
 	switch args.Subcommand {
 	case "", "members":

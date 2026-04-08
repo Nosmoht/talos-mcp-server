@@ -45,7 +45,10 @@ func (h *Handlers) HandleListFiles(ctx context.Context, _ *mcp.CallToolRequest, 
 		return nil, nil, err
 	}
 
-	ctx = talos.WithNodes(ctx, args.Nodes)
+	ctx, err := talos.WithNodes(ctx, args.Nodes, h.AllowedNodes)
+	if err != nil {
+		return nil, nil, err
+	}
 
 	path := listPath
 
@@ -133,7 +136,10 @@ func (h *Handlers) HandleReadFile(ctx context.Context, _ *mcp.CallToolRequest, a
 		return nil, nil, err
 	}
 
-	ctx = talos.WithNodes(ctx, args.Nodes)
+	ctx, err := talos.WithNodes(ctx, args.Nodes, h.AllowedNodes)
+	if err != nil {
+		return nil, nil, err
+	}
 
 	maxBytes := args.MaxBytes
 	if maxBytes <= 0 {

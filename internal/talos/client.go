@@ -81,7 +81,11 @@ func (c *Client) GetClusterVersion(ctx context.Context) (*version.TalosVersion, 
 // GetNodeVersion fetches the Talos version from a specific node without caching.
 // Use this for upgrade path validation to ensure fresh per-node data.
 func (c *Client) GetNodeVersion(ctx context.Context, node string) (*version.TalosVersion, error) {
-	ctx = WithNodes(ctx, []string{node})
+	// nil allowlist: node was already validated by the calling tool handler.
+	ctx, err := WithNodes(ctx, []string{node}, nil)
+	if err != nil {
+		return nil, err
+	}
 
 	return c.fetchVersion(ctx)
 }
@@ -117,17 +121,21 @@ func (c *Client) fetchVersion(ctx context.Context) (*version.TalosVersion, error
 	return &v, nil
 }
 
-// WithNodes returns a context targeting the given nodes.
-// If nodes is empty, the context is returned unchanged (uses config default).
+// WithNodes returns a context targeting the given nodes after validating them
+// against allow. If allow is nil, all nodes are permitted. If nodes is empty,
+// the context is returned unchanged (uses config default).
 // A single node uses WithNode (singular, "node" gRPC metadata key) to enable
 // one-to-one proxying, which is required for COSI State methods that do not
 // support the one-to-many fan-out used by the "nodes" key.
-func WithNodes(ctx context.Context, nodes []string) context.Context {
+func WithNodes(ctx context.Context, nodes []string, allow *NodeAllowlist) (context.Context, error) {
 	if len(nodes) == 0 {
-		return ctx
+		return ctx, nil
+	}
+	if err := allow.CheckNodes(nodes); err != nil {
+		return ctx, err
 	}
 	if len(nodes) == 1 {
-		return talosclient.WithNode(ctx, nodes[0])
+		return talosclient.WithNode(ctx, nodes[0]), nil
 	}
-	return talosclient.WithNodes(ctx, nodes...)
+	return talosclient.WithNodes(ctx, nodes...), nil
 }

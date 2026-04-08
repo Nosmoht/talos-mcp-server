@@ -405,6 +405,60 @@ func TestHandleRollback_Guards(t *testing.T) {
 	}
 }
 
+// TestHandleApplyConfig_Guards verifies that talos_apply_config rejects invalid inputs
+// before reaching the gRPC layer.
+func TestHandleApplyConfig_Guards(t *testing.T) {
+	h := safeH()
+	ctx := context.Background()
+	dryRunFalse := false
+
+	tests := []struct {
+		name    string
+		args    ApplyConfigArgs
+		wantErr string
+	}{
+		{
+			name:    "empty config rejected",
+			args:    ApplyConfigArgs{Config: "", Nodes: []string{"10.0.0.1"}},
+			wantErr: "requires a non-empty config",
+		},
+		{
+			name:    "multi-node rejected",
+			args:    ApplyConfigArgs{Config: "machine: {}", Nodes: []string{"10.0.0.1", "10.0.0.2"}},
+			wantErr: "exactly one target node",
+		},
+		{
+			name: "dry_run=false without confirm rejected",
+			args: ApplyConfigArgs{
+				Config:  "machine: {}",
+				DryRun:  &dryRunFalse,
+				Confirm: false,
+			},
+			wantErr: "confirm must be explicitly set to true when dry_run is false",
+		},
+		{
+			name: "unknown mode rejected",
+			args: ApplyConfigArgs{
+				Config: "machine: {}",
+				Mode:   "turbo",
+			},
+			wantErr: "unknown mode",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, err := h.HandleApplyConfig(ctx, nil, tt.args)
+			if err == nil {
+				t.Fatal("expected error, got nil")
+			}
+			if !strings.Contains(err.Error(), tt.wantErr) {
+				t.Errorf("expected error containing %q, got: %v", tt.wantErr, err)
+			}
+		})
+	}
+}
+
 // TestResolvePreserve verifies the preserve default behaviour.
 func TestResolvePreserve(t *testing.T) {
 	f := false

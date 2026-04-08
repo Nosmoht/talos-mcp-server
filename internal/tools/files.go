@@ -65,9 +65,13 @@ func (h *Handlers) HandleListFiles(ctx context.Context, _ *mcp.CallToolRequest, 
 		Mode         string `json:"mode,omitempty"`
 	}
 
+	const maxListEntries = 10000
+
 	var files []fileEntry
 
 	var streamErr error
+
+	truncated := false
 
 	for {
 		info, err := stream.Recv()
@@ -81,6 +85,12 @@ func (h *Handlers) HandleListFiles(ctx context.Context, _ *mcp.CallToolRequest, 
 
 		if info.GetName() == "" {
 			continue
+		}
+
+		if len(files) >= maxListEntries {
+			truncated = true
+
+			break
 		}
 
 		entry := fileEntry{
@@ -106,7 +116,12 @@ func (h *Handlers) HandleListFiles(ctx context.Context, _ *mcp.CallToolRequest, 
 		return nil, nil, fmt.Errorf("marshal JSON: %w", err)
 	}
 
-	return textResult(string(out)), nil, nil
+	result := string(out)
+	if truncated {
+		result += fmt.Sprintf("\n\n[truncated at %d entries]", maxListEntries)
+	}
+
+	return textResult(result), nil, nil
 }
 
 // HandleReadFile implements the talos_read_file tool.

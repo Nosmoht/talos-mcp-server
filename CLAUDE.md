@@ -89,7 +89,7 @@ Prompts are guided workflows that instruct the AI agent which tools to call and 
 - `talos_reboot`, `talos_upgrade`, and `talos_rollback` require `confirm=true` and explicit `nodes` — will error without both.
 - `talos_reboot` reboots **all listed nodes simultaneously** — specify one node at a time to maintain cluster availability. Set `wait=true` to block until the reboot completes (verified via boot ID change); use `timeout` to control the deadline (default `5m`).
 - `talos_upgrade` `preserve` defaults to `true` (keep EPHEMERAL partition) — differs from `talosctl` default of `false`. Set `preserve=false` explicitly to wipe.
-- `talos_patch_config` defaults `dry_run=true` — you must explicitly pass `dry_run=false` to apply.
+- `talos_patch_config` defaults `dry_run=true` — you must explicitly pass `dry_run=false` to apply. When `dry_run=false`, `confirm=true` is also required.
 
 ## Logging
 

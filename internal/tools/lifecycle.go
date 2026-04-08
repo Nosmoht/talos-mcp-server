@@ -446,25 +446,28 @@ func (h *Handlers) HandleRollback(ctx context.Context, req *mcp.CallToolRequest,
 
 // PatchConfigArgs defines input for talos_patch_config.
 type PatchConfigArgs struct {
-	Patch  string   `json:"patch" jsonschema:"Machine config patch as a JSON or YAML string (strategic merge patch or RFC 6902 JSON Patch array). Must target a single node — the tool fetches the current config\\, merges the patch\\, and submits the result."`
-	Mode   string   `json:"mode,omitempty" jsonschema:"Apply mode: 'auto' (default)\\, 'reboot'\\, 'no_reboot'\\, 'staged'\\, or 'try'."`
-	DryRun *bool    `json:"dry_run,omitempty" jsonschema:"Run in dry-run mode without applying changes. Defaults to true. Set explicitly to false to actually apply."`
-	Nodes  []string `json:"nodes,omitempty" jsonschema:"Target node IP or hostname (exactly one). Omit to use the default node from talosconfig."`
+	Patch   string   `json:"patch" jsonschema:"Machine config patch as a JSON or YAML string (strategic merge patch or RFC 6902 JSON Patch array). Must target a single node — the tool fetches the current config\\, merges the patch\\, and submits the result."`
+	Mode    string   `json:"mode,omitempty" jsonschema:"Apply mode: 'auto' (default)\\, 'reboot'\\, 'no_reboot'\\, 'staged'\\, or 'try'."`
+	DryRun  *bool    `json:"dry_run,omitempty" jsonschema:"Run in dry-run mode without applying changes. Defaults to true. Set explicitly to false to actually apply."`
+	Confirm bool     `json:"confirm" jsonschema:"REQUIRED when dry_run is false: Must be explicitly set to true to confirm applying the patch. Not required for dry-run mode."`
+	Nodes   []string `json:"nodes,omitempty" jsonschema:"Target node IP or hostname (exactly one). Omit to use the default node from talosconfig."`
 }
 
 // HandlePatchConfig implements the talos_patch_config tool.
 func (h *Handlers) HandlePatchConfig(ctx context.Context, req *mcp.CallToolRequest, args PatchConfigArgs) (*mcp.CallToolResult, any, error) {
 	// Log a redacted copy: the patch content may contain TLS keys, tokens, or registry passwords.
 	h.auditLog("talos_patch_config", struct {
-		Mode   string   `json:"mode,omitempty"`
-		DryRun *bool    `json:"dry_run,omitempty"`
-		Nodes  []string `json:"nodes,omitempty"`
-		Patch  string   `json:"patch"`
+		Mode    string   `json:"mode,omitempty"`
+		DryRun  *bool    `json:"dry_run,omitempty"`
+		Confirm bool     `json:"confirm"`
+		Nodes   []string `json:"nodes,omitempty"`
+		Patch   string   `json:"patch"`
 	}{
-		Mode:   args.Mode,
-		DryRun: args.DryRun,
-		Nodes:  args.Nodes,
-		Patch:  fmt.Sprintf("<redacted, %d bytes>", len(args.Patch)),
+		Mode:    args.Mode,
+		DryRun:  args.DryRun,
+		Confirm: args.Confirm,
+		Nodes:   args.Nodes,
+		Patch:   fmt.Sprintf("<redacted, %d bytes>", len(args.Patch)),
 	}, args.Nodes)
 
 	// Require exactly one node: the fetch→merge path fetches the current config from
@@ -473,6 +476,12 @@ func (h *Handlers) HandlePatchConfig(ctx context.Context, req *mcp.CallToolReque
 	// Patch each node individually when multiple nodes need updating.
 	if len(args.Nodes) > 1 {
 		return nil, nil, fmt.Errorf("talos_patch_config requires exactly one target node (got %d); patch each node individually to ensure correct config merge", len(args.Nodes))
+	}
+
+	// Confirm guard: require explicit confirmation for non-dry-run patches.
+	// Dry-run mode (the default) does not require confirmation.
+	if !resolveDryRun(args.DryRun) && !args.Confirm {
+		return nil, nil, fmt.Errorf("patch_config refused: confirm must be explicitly set to true when dry_run is false")
 	}
 
 	ctx = talos.WithNodes(ctx, args.Nodes)

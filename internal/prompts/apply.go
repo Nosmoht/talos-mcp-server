@@ -61,7 +61,7 @@ Show the user:
 Then ask: "The dry-run succeeded. Do you want to apply this config patch to %s with mode=%s? Reply 'yes' to confirm."
 
 Step 4 — Apply (only after explicit user confirmation)
-Only if the user explicitly confirms with "yes", apply the patch using talos_patch_config with dry_run=false targeting node %s with mode=%s.
+Only if the user explicitly confirms with "yes", apply the patch using talos_patch_config with dry_run=false and confirm=true targeting node %s with mode=%s.
 
 Report the apply output. If mode is "try", remind the user that the config will revert after 60 seconds unless a follow-up apply is issued to confirm it permanently.`,
 		node, mode, patch,

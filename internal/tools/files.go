@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -63,9 +64,15 @@ func (h *Handlers) HandleListFiles(ctx context.Context, _ *mcp.CallToolRequest, 
 
 	var files []fileEntry
 
+	var streamErr error
+
 	for {
 		info, err := stream.Recv()
 		if err != nil {
+			if !errors.Is(err, io.EOF) {
+				streamErr = err
+			}
+
 			break
 		}
 
@@ -85,6 +92,10 @@ func (h *Handlers) HandleListFiles(ctx context.Context, _ *mcp.CallToolRequest, 
 		}
 
 		files = append(files, entry)
+	}
+
+	if streamErr != nil {
+		return nil, nil, fmt.Errorf("list files %q: %w", listPath, streamErr)
 	}
 
 	out, err := json.MarshalIndent(files, "", "  ")

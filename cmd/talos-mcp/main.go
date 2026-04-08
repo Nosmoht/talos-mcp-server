@@ -49,6 +49,7 @@ func main() {
 	readOnly := os.Getenv("TALOS_MCP_READ_ONLY") == "true"
 	httpAddr := os.Getenv("TALOS_MCP_HTTP_ADDR")
 	authToken := os.Getenv("TALOS_MCP_AUTH_TOKEN")
+	os.Unsetenv("TALOS_MCP_AUTH_TOKEN") //nolint:errcheck // remove token from /proc/<pid>/environ
 
 	if err := validateHTTPConfig(httpAddr, authToken); err != nil {
 		log.Fatalf("%v", err)

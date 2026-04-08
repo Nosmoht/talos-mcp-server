@@ -54,11 +54,13 @@ func main() {
 	authToken := os.Getenv("TALOS_MCP_AUTH_TOKEN")
 
 	if err := validateHTTPConfig(httpAddr, authToken); err != nil {
+		stop()
 		log.Fatalf("%v", err)
 	}
 
 	tc, err := talos.NewClient(ctx)
 	if err != nil {
+		stop()
 		log.Fatalf("failed to create Talos client: %v", err)
 	}
 	defer tc.Close() //nolint:errcheck

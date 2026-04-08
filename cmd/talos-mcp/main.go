@@ -14,6 +14,10 @@
 //   - TALOS_MCP_ALLOWED_NODES: comma-separated list of permitted node IPs, hostnames,
 //     and CIDR ranges (e.g. "10.0.0.1,10.0.0.2" or "10.0.0.0/24"). When set, any tool
 //     call targeting a node not in this list is rejected. Unset or empty allows all nodes.
+//   - TALOS_MCP_RATE_LIMIT: HTTP mode requests/second (float, default 10)
+//   - TALOS_MCP_RATE_BURST: HTTP mode burst capacity (int, default 20)
+//   - TALOS_MCP_MAX_BODY_SIZE: HTTP mode max POST body bytes (int, default 4194304)
+//   - TALOS_MCP_MAX_CONCURRENT: HTTP mode max concurrent POST handlers (int, default 20)
 package main
 
 import (
@@ -273,7 +277,7 @@ func main() {
 	resources.Register(server, tc, allowedNodes)
 	prompts.Register(server, readOnly)
 
-	if err := runServer(ctx, server, httpAddr, authToken); err != nil {
+	if err := runServer(ctx, server, httpAddr, authToken, newHTTPTransportConfig()); err != nil {
 		log.Printf("server stopped: %v", err)
 	}
 }
@@ -306,7 +310,7 @@ func buildTokenVerifier(token string) auth.TokenVerifier {
 }
 
 // runServer starts the server in either stdio or HTTP mode.
-func runServer(ctx context.Context, server *mcp.Server, addr, token string) error {
+func runServer(ctx context.Context, server *mcp.Server, addr, token string, hc httpTransportConfig) error {
 	if addr == "" {
 		// stdio mode — unchanged behaviour
 		return server.Run(ctx, &mcp.StdioTransport{})
@@ -322,12 +326,21 @@ func runServer(ctx context.Context, server *mcp.Server, addr, token string) erro
 		Logger:                     slog.Default(),
 	})
 
+	// Middleware chain (outermost → innermost):
+	//   RateLimit → LimitRequestBody → auth → LimitConcurrency → mcpHandler
+	//
+	// Rate limiting and body limiting run before auth to prevent unauthenticated
+	// floods from consuming auth resources. Concurrency limiting runs after auth
+	// so only authenticated requests consume semaphore slots.
 	verifier := buildTokenVerifier(token)
-	authedHandler := auth.RequireBearerToken(verifier, nil)(mcpHandler)
+	handler := LimitConcurrency(hc.sem)(mcpHandler)
+	handler = auth.RequireBearerToken(verifier, nil)(handler)
+	handler = LimitRequestBody(hc.maxBody)(handler)
+	handler = RateLimit(hc.limiter)(handler)
 
 	httpSrv := &http.Server{
 		Addr:              addr,
-		Handler:           authedHandler,
+		Handler:           handler,
 		ReadHeaderTimeout: 30 * time.Second,
 	}
 

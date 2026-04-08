@@ -593,6 +593,105 @@ func (h *Handlers) HandlePatchConfig(ctx context.Context, req *mcp.CallToolReque
 	return textResult(string(out)), nil, nil
 }
 
+// ApplyConfigArgs defines input for talos_apply_config.
+type ApplyConfigArgs struct {
+	Config  string   `json:"config" jsonschema:"Full machine config content to apply (YAML or JSON). Must target a single node — each node has a unique machine config. May contain TLS keys or secrets; content is redacted in audit logs."`
+	Mode    string   `json:"mode,omitempty" jsonschema:"Apply mode: 'auto' (default)\\, 'reboot'\\, 'no_reboot'\\, 'staged'\\, or 'try'."`
+	DryRun  *bool    `json:"dry_run,omitempty" jsonschema:"Run in dry-run mode without applying changes. Defaults to true. Set explicitly to false to actually apply."`
+	Confirm bool     `json:"confirm" jsonschema:"REQUIRED when dry_run is false: Must be explicitly set to true to confirm applying the config. Not required for dry-run mode."`
+	Nodes   []string `json:"nodes,omitempty" jsonschema:"Target node IP or hostname (exactly one). Omit to use the default node from talosconfig."`
+}
+
+// HandleApplyConfig implements the talos_apply_config tool.
+func (h *Handlers) HandleApplyConfig(ctx context.Context, req *mcp.CallToolRequest, args ApplyConfigArgs) (*mcp.CallToolResult, any, error) {
+	// Log a redacted copy: the config content may contain TLS keys, tokens, or registry passwords.
+	h.auditLog("talos_apply_config", struct {
+		Mode    string   `json:"mode,omitempty"`
+		DryRun  *bool    `json:"dry_run,omitempty"`
+		Confirm bool     `json:"confirm"`
+		Nodes   []string `json:"nodes,omitempty"`
+		Config  string   `json:"config"`
+	}{
+		Mode:    args.Mode,
+		DryRun:  args.DryRun,
+		Confirm: args.Confirm,
+		Nodes:   args.Nodes,
+		Config:  fmt.Sprintf("<redacted, %d bytes>", len(args.Config)),
+	}, args.Nodes)
+
+	if args.Config == "" {
+		return nil, nil, fmt.Errorf("talos_apply_config requires a non-empty config")
+	}
+
+	// Require exactly one node: each node has a unique machine config.
+	// Applying the same full config to multiple nodes risks overwriting node-specific settings
+	// (e.g. hostname, network interface names, node-specific certificates).
+	if len(args.Nodes) > 1 {
+		return nil, nil, fmt.Errorf("talos_apply_config requires exactly one target node (got %d); apply each node individually", len(args.Nodes))
+	}
+
+	// Confirm guard: require explicit confirmation for non-dry-run applies.
+	// Dry-run mode (the default) does not require confirmation.
+	if !resolveDryRun(args.DryRun) && !args.Confirm {
+		return nil, nil, fmt.Errorf("apply_config refused: confirm must be explicitly set to true when dry_run is false")
+	}
+
+	ctx, err := talos.WithNodes(ctx, args.Nodes, h.AllowedNodes)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	var mode machineapi.ApplyConfigurationRequest_Mode
+
+	switch args.Mode {
+	case "reboot":
+		mode = machineapi.ApplyConfigurationRequest_REBOOT
+	case "no_reboot":
+		mode = machineapi.ApplyConfigurationRequest_NO_REBOOT
+	case "staged":
+		mode = machineapi.ApplyConfigurationRequest_STAGED
+	case "try":
+		mode = machineapi.ApplyConfigurationRequest_TRY
+	case "auto", "":
+		mode = machineapi.ApplyConfigurationRequest_AUTO
+	default:
+		return nil, nil, fmt.Errorf("unknown mode %q: must be 'auto', 'reboot', 'no_reboot', 'staged', or 'try'", args.Mode)
+	}
+
+	dryRun := resolveDryRun(args.DryRun)
+
+	applyMsg := "Applying configuration"
+	doneMsg := "Configuration applied"
+
+	if dryRun {
+		applyMsg = "Validating configuration (dry run)"
+		doneMsg = "Configuration validated (dry run)"
+	}
+
+	notifyProgress(ctx, req, applyMsg, 1, 2)
+
+	applyReq := &machineapi.ApplyConfigurationRequest{
+		Data:   []byte(args.Config),
+		Mode:   mode,
+		DryRun: dryRun,
+	}
+
+	resp, err := h.Client.ApplyConfiguration(ctx, applyReq)
+	if err != nil {
+		h.mcpLogError("talos_apply_config", err)
+		return nil, nil, fmt.Errorf("apply configuration: %w", err)
+	}
+
+	notifyProgress(ctx, req, doneMsg, 2, 2)
+
+	out, err := json.MarshalIndent(resp, "", "  ")
+	if err != nil {
+		return nil, nil, fmt.Errorf("marshal JSON: %w", err)
+	}
+
+	return textResult(string(out)), nil, nil
+}
+
 // extractMachineConfigBody extracts the raw YAML config bytes from a MachineConfig COSI resource.
 // Reimplemented from talosctl/cmd/talos/patch.go — handles both annotation-based (current Talos)
 // and legacy protobuf-based serialization (pre-annotation Talos versions).

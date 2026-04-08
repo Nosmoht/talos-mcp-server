@@ -259,6 +259,82 @@ export GITHUB_PERSONAL_ACCESS_TOKEN=ghp_...
 
 The token value uses `${GITHUB_PERSONAL_ACCESS_TOKEN}` — Claude Code expands this from the environment at startup. The actual token never appears in `.mcp.json`.
 
+## GitHub Issues
+
+Issues are created via `gh` CLI. Use `--body-file` for issue bodies containing backticks — heredocs with `--body` corrupt markdown code blocks. The `.github/ISSUE_TEMPLATE/` directory provides form-based templates for issues submitted via the web UI; the structures below apply to CLI-created issues.
+
+```bash
+gh issue create \
+  --title "fix(tools): describe the fix" \
+  --label "type/bug,priority/P2,origin/audit" \
+  --body-file /tmp/issue-body.md
+```
+
+### Issue types and body structure
+
+**Bugs and chores** — use `##` headings:
+
+```markdown
+## Description
+What is wrong and where.
+
+## Evidence
+Code snippets, file paths with line numbers, reproduction steps.
+
+## Impact
+What breaks, who is affected, severity context.
+
+## Recommended Fix
+Concrete suggestion with code examples where helpful.
+
+## Audit Source
+How this was found (e.g., "AI-assisted code review, verified at commit `abc1234` on 2026-04-07").
+```
+
+**Feature requests** — use `###` headings:
+
+```markdown
+### Severity
+P0–P3 with one-line rationale.
+
+### Category
+Area(s) affected (e.g., safety, transport, security).
+
+### Description
+What is missing and why it matters.
+
+### Evidence
+Current behavior, code locations, related issues.
+
+### Impact
+What improves, what is currently blocked.
+
+### Recommended Fix
+Proposed implementation with effort estimate.
+
+### Audit Source
+How this was found.
+```
+
+### Labels
+
+Every issue gets **one type**, **one priority**, and optionally **area** and **origin** labels. See [AGENTS.md](./AGENTS.md) for the full label taxonomy and state machine.
+
+| Category | Examples |
+|---|---|
+| Type | `type/bug`, `type/enhancement`, `type/chore`, `type/docs`, `type/test` |
+| Priority | `priority/P0` (critical), `priority/P1` (significant), `priority/P2` (moderate), `priority/P3` (nice to have) |
+| Area | `area/safety`, `area/security`, `area/streaming`, `area/testing`, `area/transport` |
+| Origin | `origin/audit` (from code review or security audit) |
+
+### Referencing commits
+
+Include the commit hash where the issue was discovered in the **Audit Source** section: ``verified at commit `c8e3db9` on 2026-04-07``.
+
+### Cross-references
+
+Link related issues with `Related: #38, #41` or `Depends on: #37` in the Audit Source section or inline.
+
 ## Change Governance
 
 Every change to tracked files requires review before commit.

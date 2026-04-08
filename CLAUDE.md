@@ -143,8 +143,9 @@ Every code change (features, fixes, refactors) is developed in an isolated git w
 
 ```bash
 # Create a new worktree for a feature or fix (slug = change-id)
-git worktree add -b feat/<slug> .claude/worktrees/<slug> main
-# or: git worktree add -b fix/<slug> .claude/worktrees/<slug> main
+git fetch origin main
+git worktree add -b feat/<slug> .claude/worktrees/<slug> origin/main
+# or: git worktree add -b fix/<slug> .claude/worktrees/<slug> origin/main
 ```
 
 Work inside `.claude/worktrees/<slug>/` for the full lifecycle of the change.
@@ -175,12 +176,13 @@ git branch -d feat/<slug>
 
 ### Workflow summary
 
-1. Create worktree: `git worktree add -b feat/<slug> .claude/worktrees/<slug> main`
-2. Work in `.claude/worktrees/<slug>/`
-3. Run reviews (see Change Governance below)
-4. Rebase: `git fetch origin main && git rebase origin/main`
-5. Push branch and open PR
-6. After merge: remove worktree and delete local branch
+1. Fetch latest: `git fetch origin main`
+2. Create worktree: `git worktree add -b feat/<slug> .claude/worktrees/<slug> origin/main`
+3. Work in `.claude/worktrees/<slug>/`
+4. Run reviews (see Change Governance below)
+5. Rebase: `git fetch origin main && git rebase origin/main`
+6. Push branch and open PR
+7. After merge: remove worktree and delete local branch
 
 ## Release
 

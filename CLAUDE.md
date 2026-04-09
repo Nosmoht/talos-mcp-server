@@ -59,6 +59,7 @@ Tested against Talos Linux v1.9.x – v1.12.x (machinery SDK v1.12.6). The serve
 - `talos_dmesg` — kernel ring buffer messages
 - `talos_events` — recent Talos runtime events
 - `talos_etcd` — etcd members or status
+- `talos_etcd_snapshot` — take an etcd snapshot from a single control plane node and write it to a local file; returns path and byte count
 - `talos_list_files` — directory listing from node filesystem
 - `talos_read_file` — read file contents from node filesystem
 - `talos_validate` — validate a Talos machine config offline (no cluster needed); supports `mode` (`metal`/`cloud`/`container`) and `strict`

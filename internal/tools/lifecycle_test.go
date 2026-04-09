@@ -604,7 +604,10 @@ type simpleResource struct {
 
 func (r *simpleResource) Metadata() *resource.Metadata { return &r.md }
 func (r *simpleResource) Spec() any                    { return r.spec }
-func (r *simpleResource) DeepCopy() resource.Resource  { return r }
+
+// DeepCopy returns the receiver unchanged — intentional shallow copy,
+// safe because these tests only read the resource.
+func (r *simpleResource) DeepCopy() resource.Resource { return r }
 
 // newProtoResource builds a *cosiprotobuf.Resource with no annotations and
 // the given YAML spec string, simulating a legacy Talos MachineConfig resource.

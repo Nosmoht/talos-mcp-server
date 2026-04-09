@@ -210,6 +210,15 @@ func main() {
 	}, h.HandleEtcd)
 
 	mcp.AddTool(server, &mcp.Tool{
+		Name: "talos_etcd_snapshot",
+		Description: "Take an etcd snapshot from a single control plane node and write it to a local file. " +
+			"Returns the file path and byte count on success. " +
+			"Requires exactly one control plane node in nodes[]. " +
+			"Snapshot may take up to 5 minutes for large clusters.",
+		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, OpenWorldHint: closedWorld},
+	}, h.HandleEtcdSnapshot)
+
+	mcp.AddTool(server, &mcp.Tool{
 		Name:        "talos_list_files",
 		Description: "List files and directories on a target node filesystem.",
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, OpenWorldHint: closedWorld},

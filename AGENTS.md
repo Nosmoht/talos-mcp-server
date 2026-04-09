@@ -48,7 +48,7 @@ When adding, removing, or renaming a **tool**, **prompt**, or **resource**, upda
 
 | Surface | What to update |
 |---------|----------------|
-| `CLAUDE.md` | Tools, Prompts, or Resources section — add/remove entry; update count in the section heading (e.g. `## Tools (18)`) |
+| `CLAUDE.md` | Safety section — update if adding, removing, or changing a mutating tool guard |
 | `server.json` | `description` field — remove or rephrase if it references specific capabilities |
 | `README.md` | Feature list or tool table (if present) |
 
@@ -421,5 +421,4 @@ The implementing agent must not serve as the approving reviewer for the same cha
 
 Review artifacts (`.claude/reviews/`) are local-only (gitignored). They act as process gates
 for the pre-commit hook. The `[review:change-id]` tag in the commit message is the permanent
-audit trail. See [CLAUDE.md — Change Governance](./CLAUDE.md#change-governance) for the full
-artifact schema, hook enforcement details, and known limitations.
+audit trail. See [CLAUDE.md — Change Governance](./CLAUDE.md#change-governance) for hook enforcement details.

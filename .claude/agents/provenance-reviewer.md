@@ -65,7 +65,7 @@ For each new dependency:
 
 ### SDK Version Constraints (talos-specific)
 
-- [ ] **machinery SDK version matches CLAUDE.md**: The `github.com/siderolabs/talos` version in go.mod must be consistent with the compatibility range documented in `CLAUDE.md` (currently v1.9.x – v1.12.x, SDK v1.12.6)
+- [ ] **machinery SDK version matches README.md**: The `github.com/siderolabs/talos` version in go.mod must be consistent with the compatibility range documented in `README.md` (currently v1.9.x – v1.12.x, SDK v1.12.6)
 - [ ] **MinSupported/MaxTested constants updated**: If SDK version bumped, verify `internal/version/version.go` constants (`MinSupported`, `MaxTested`) are updated to match
 - [ ] **go-sdk version**: `github.com/modelcontextprotocol/go-sdk` — verify no breaking API changes in new version
 

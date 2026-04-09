@@ -15,9 +15,9 @@ import (
 )
 
 const (
-	defaultContainerNamespace       = "k8s.io"
-	defaultHealthWaitTimeout        = 2 * time.Minute
-	defaultHealthWaitTimeoutBuffer  = 10 * time.Second
+	defaultContainerNamespace      = "k8s.io"
+	defaultHealthWaitTimeout       = 2 * time.Minute
+	defaultHealthWaitTimeoutBuffer = 10 * time.Second
 )
 
 // ContainersArgs defines input for talos_containers.

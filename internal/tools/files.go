@@ -180,6 +180,7 @@ func (h *Handlers) HandleReadFile(ctx context.Context, _ *mcp.CallToolRequest, a
 
 // allowedPaths returns the configured path allowlist from TALOS_MCP_ALLOWED_PATHS,
 // or nil if no allowlist is set (all paths permitted).
+// Each prefix is normalized with filepath.Clean for consistent matching.
 func allowedPaths() []string {
 	val := os.Getenv("TALOS_MCP_ALLOWED_PATHS")
 	if val == "" {
@@ -190,7 +191,7 @@ func allowedPaths() []string {
 
 	for _, p := range strings.Split(val, ",") {
 		if trimmed := strings.TrimSpace(p); trimmed != "" {
-			paths = append(paths, trimmed)
+			paths = append(paths, filepath.Clean(trimmed))
 		}
 	}
 
@@ -201,6 +202,13 @@ func allowedPaths() []string {
 // It returns nil when allowed is empty (no allowlist configured).
 // Prefix matching is directory-boundary-safe: "/etc" does not match "/etc-evil".
 // The path is canonicalized via filepath.Clean to prevent ".." traversal bypass.
+//
+// Limitation: this check operates on the local MCP server host. Symlinks on the
+// remote Talos node are not resolved — a path like "/etc/symlink" that resolves
+// to "/root/secret" on the node will pass the local check if "/etc" is allowed.
+// True enforcement would require server-side (node-side) path resolution, which
+// the Talos LS/Read API does not support. Use this option as a defense-in-depth
+// measure, not as the sole access control.
 func checkPathAllowed(rawPath string, allowed []string) error {
 	if len(allowed) == 0 {
 		return nil

@@ -191,7 +191,7 @@ MCP Client (Claude Code / Codex)
 | Mechanism | How it works |
 |---|---|
 | Read-only mode | `TALOS_MCP_READ_ONLY=true` registers only read-only tools at startup; mutating tools are never exposed to the LLM |
-| Path allowlist | `TALOS_MCP_ALLOWED_PATHS=/etc,/proc` restricts `talos_read_file` and `talos_list_files` to specified prefixes |
+| Path allowlist | `TALOS_MCP_ALLOWED_PATHS=/etc,/proc` restricts `talos_read_file` and `talos_list_files` to specified prefixes (defense-in-depth). **Note:** checks are local to the MCP server — symlinks on the remote Talos node that point outside allowed prefixes are not detected |
 | Confirm gates | `talos_reboot`, `talos_upgrade`, `talos_rollback`, and `talos_patch_config` (when `dry_run=false`) require `confirm=true`; enforced server-side |
 | Preserve default | `talos_upgrade` defaults `preserve` to `true` (keep EPHEMERAL partition) — differs from `talosctl` default of `false` |
 | Dry-run default | `talos_patch_config` defaults to `dry_run=true`; applying requires both `dry_run=false` and `confirm=true` |

@@ -7,12 +7,18 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"time"
 
 	talosclient "github.com/siderolabs/talos/pkg/machinery/client"
 	clientconfig "github.com/siderolabs/talos/pkg/machinery/client/config"
 
 	"github.com/Nosmoht/talos-mcp-server/internal/version"
 )
+
+// dialTimeout is the maximum time allowed for the initial gRPC connection
+// setup in NewClient. It prevents an indefinite hang when the Talos cluster
+// is unreachable at startup.
+const dialTimeout = 30 * time.Second
 
 // Client wraps the Talos machinery client.
 // Client is safe for concurrent use by multiple goroutines.
@@ -46,9 +52,12 @@ func NewClient(ctx context.Context) (*Client, error) {
 		opts = append(opts, talosclient.WithEndpoints(strings.Split(eps, ",")...))
 	}
 
-	c, err := talosclient.New(ctx, opts...)
+	dialCtx, cancel := context.WithTimeout(ctx, dialTimeout)
+	defer cancel()
+
+	c, err := talosclient.New(dialCtx, opts...)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("dial Talos gRPC (timeout %s): %w", dialTimeout, err)
 	}
 
 	return &Client{Client: c}, nil

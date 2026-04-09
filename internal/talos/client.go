@@ -11,6 +11,8 @@ import (
 
 	talosclient "github.com/siderolabs/talos/pkg/machinery/client"
 	clientconfig "github.com/siderolabs/talos/pkg/machinery/client/config"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/keepalive"
 
 	"github.com/Nosmoht/talos-mcp-server/internal/version"
 )
@@ -19,6 +21,21 @@ import (
 // setup in NewClient. It prevents an indefinite hang when the Talos cluster
 // is unreachable at startup.
 const dialTimeout = 30 * time.Second
+
+// grpcKeepalive configures TCP keepalive probes on the gRPC connection.
+// Probes are sent every 30 s on idle connections; the connection is closed
+// if no response arrives within 10 s. PermitWithoutStream ensures that idle
+// connections (no active RPCs) are also probed, which is the common case for
+// the MCP server between tool calls.
+//
+// This enables gRPC's built-in reconnect logic to trigger quickly after a
+// network blip, firewall idle-timeout drop, or Talos endpoint restart — rather
+// than silently failing all subsequent tool calls until the server is restarted.
+var grpcKeepalive = grpc.WithKeepaliveParams(keepalive.ClientParameters{
+	Time:                30 * time.Second,
+	Timeout:             10 * time.Second,
+	PermitWithoutStream: true,
+})
 
 // Client wraps the Talos machinery client.
 // Client is safe for concurrent use by multiple goroutines.
@@ -42,6 +59,7 @@ func NewClient(ctx context.Context) (*Client, error) {
 	opts := []talosclient.OptionFunc{
 		talosclient.WithConfig(cfg),
 		talosclient.WithDefaultGRPCDialOptions(),
+		talosclient.WithGRPCDialOptions(grpcKeepalive),
 	}
 
 	if ctxName := os.Getenv("TALOS_CONTEXT"); ctxName != "" {

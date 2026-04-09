@@ -33,6 +33,10 @@ type ServiceActionArgs struct {
 func (h *Handlers) HandleServiceAction(ctx context.Context, _ *mcp.CallToolRequest, args ServiceActionArgs) (*mcp.CallToolResult, any, error) {
 	h.auditLog("talos_service_action", args, args.Nodes)
 
+	if args.ServiceName == "" {
+		return nil, nil, fmt.Errorf("service_name is required")
+	}
+
 	var (
 		resp any
 		err  error

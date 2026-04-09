@@ -25,6 +25,10 @@ type LogsArgs struct {
 
 // HandleLogs implements the talos_logs tool.
 func (h *Handlers) HandleLogs(ctx context.Context, _ *mcp.CallToolRequest, args LogsArgs) (*mcp.CallToolResult, any, error) {
+	if args.ServiceName == "" {
+		return nil, nil, fmt.Errorf("service_name is required")
+	}
+
 	ctx, cancel := withToolTimeout(ctx)
 	defer cancel()
 

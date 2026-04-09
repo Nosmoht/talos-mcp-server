@@ -97,6 +97,22 @@ func TestHandleUpgrade_Guards(t *testing.T) {
 	}
 }
 
+// TestHandleServiceAction_EmptyServiceName verifies empty service name is rejected.
+func TestHandleServiceAction_EmptyServiceName(t *testing.T) {
+	h := safeH()
+	ctx := context.Background()
+
+	_, _, err := h.HandleServiceAction(ctx, nil, ServiceActionArgs{
+		Action: "restart",
+	})
+	if err == nil {
+		t.Fatal("expected error for empty service_name, got nil")
+	}
+	if !strings.Contains(err.Error(), "service_name is required") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
 // TestHandleServiceAction_InvalidAction verifies unknown actions are rejected.
 func TestHandleServiceAction_InvalidAction(t *testing.T) {
 	h := safeH()

@@ -11,14 +11,13 @@ import (
 	"github.com/cosi-project/runtime/pkg/resource"
 	cosiprotobuf "github.com/cosi-project/runtime/pkg/resource/protobuf"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
-
-	"github.com/Nosmoht/talos-mcp-server/internal/talos"
 )
 
-// safeH returns a Handlers with a nil-embedded Talos client.
-// Safe to use only for test cases that return before touching the gRPC client.
+// safeH returns a Handlers with a mock Talos client.
+// The mock panics if any gRPC method is called, so it is safe to use only
+// for test cases whose guard logic returns before touching the client.
 func safeH() *Handlers {
-	return &Handlers{Client: &talos.Client{}}
+	return &Handlers{Client: &mockClient{}}
 }
 
 // TestHandleReboot_Guards verifies that reboot is rejected without confirm or without nodes.

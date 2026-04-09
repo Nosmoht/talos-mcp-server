@@ -45,7 +45,7 @@ func (h *Handlers) HandleGetResource(ctx context.Context, _ *mcp.CallToolRequest
 
 	if args.ResourceID != "" {
 		// Get a single specific resource
-		r, err := h.Client.COSI.Get(ctx,
+		r, err := h.Client.COSIState().Get(ctx,
 			resource.NewMetadata(ns, resourceType, args.ResourceID, resource.VersionUndefined),
 		)
 		if err != nil {
@@ -60,7 +60,7 @@ func (h *Handlers) HandleGetResource(ctx context.Context, _ *mcp.CallToolRequest
 		results = []map[string]any{data}
 	} else {
 		// List all resources of this type
-		list, err := h.Client.COSI.List(ctx,
+		list, err := h.Client.COSIState().List(ctx,
 			resource.NewMetadata(ns, resourceType, "", resource.VersionUndefined),
 		)
 		if err != nil {
@@ -85,7 +85,7 @@ func (h *Handlers) HandleResourceDefinitions(ctx context.Context, _ *mcp.CallToo
 	ctx, cancel := withToolTimeout(ctx)
 	defer cancel()
 
-	list, err := safe.StateListAll[*meta.ResourceDefinition](ctx, h.Client.COSI)
+	list, err := safe.StateListAll[*meta.ResourceDefinition](ctx, h.Client.COSIState())
 	if err != nil {
 		return nil, nil, fmt.Errorf("list resource definitions: %w", err)
 	}

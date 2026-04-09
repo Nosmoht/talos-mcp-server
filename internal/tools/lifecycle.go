@@ -552,7 +552,7 @@ func (h *Handlers) HandlePatchConfig(ctx context.Context, req *mcp.CallToolReque
 
 	// Step 2: fetch the current MachineConfig from the node via COSI.
 	// talos.WithNodes already set the single-node context, so COSI.Get uses one-to-one proxying.
-	mc, err := h.Client.COSI.Get(ctx, resource.NewMetadata(
+	mc, err := h.Client.COSIState().Get(ctx, resource.NewMetadata(
 		talosconfig.NamespaceName,
 		talosconfig.MachineConfigType,
 		talosconfig.ActiveID,

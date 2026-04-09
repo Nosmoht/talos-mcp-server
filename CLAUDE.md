@@ -121,6 +121,8 @@ openssl rand -hex 32
 
 `DisableLocalhostProtection` is enabled — the built-in DNS rebinding guard is inactive. The server must be behind a reverse proxy or on a trusted network. The reverse proxy must preserve the `Origin` request header — the SDK's cross-origin protection uses it to reject untrusted origins; stripping it will cause all MCP client connections to fail.
 
+**Health endpoint** — `GET /healthz` is unauthenticated and available in HTTP mode. Returns `200 OK` with body `ok` when the gRPC connection to the default endpoint is alive; returns `503 Service Unavailable` when the probe fails (error is logged to stderr, not returned in the body). Designed as a **liveness** probe — it checks whether the process can reach the Talos API, not whether the cluster is ready for traffic. Use for Kubernetes liveness probes, Nomad health checks, or load-balancer health checks. No bearer token is required.
+
 **MCP log notifications** (`notifications/message`) are only emitted in stdio mode. In HTTP mode, audit lines are written to the server's stderr only.
 
 ## Development

@@ -296,7 +296,7 @@ func main() {
 	resources.Register(server, tc, allowedNodes)
 	prompts.Register(server, readOnly)
 
-	if err := runServer(ctx, server, httpAddr, authToken, newHTTPTransportConfig()); err != nil {
+	if err := runServer(ctx, server, httpAddr, authToken, newHTTPTransportConfig(), tc.Ping); err != nil {
 		log.Printf("server stopped: %v", err)
 	}
 }
@@ -328,38 +328,68 @@ func buildTokenVerifier(token string) auth.TokenVerifier {
 	}
 }
 
-// runServer starts the server in either stdio or HTTP mode.
-func runServer(ctx context.Context, server *mcp.Server, addr, token string, hc httpTransportConfig) error {
-	if addr == "" {
-		// stdio mode — unchanged behaviour
-		return server.Run(ctx, &mcp.StdioTransport{})
-	}
+// buildHTTPMux constructs the HTTP request mux for HTTP transport mode:
+//
+//   - GET /healthz — unauthenticated liveness probe; 200 OK when gRPC is reachable, 503 otherwise
+//   - /* — full middleware chain: RateLimit → LimitRequestBody → auth → LimitConcurrency → mcpHandler
+//
+// Rate limiting and body limiting run before auth to prevent unauthenticated floods from consuming
+// auth resources. Concurrency limiting runs after auth so only authenticated requests consume slots.
+// The /healthz path is intentionally outside the auth chain so orchestrators (k8s, Nomad, etc.) can
+// probe liveness without a bearer token.
+func buildHTTPMux(mcpHandler http.Handler, token string, hc httpTransportConfig, healthProbe func(context.Context) error) http.Handler {
+	mux := http.NewServeMux()
 
-	// HTTP mode
-	mcpHandler := mcp.NewStreamableHTTPHandler(func(_ *http.Request) *mcp.Server {
-		return server
-	}, &mcp.StreamableHTTPOptions{
-		// DisableLocalhostProtection allows proxied requests whose Host header
-		// differs from the bind address (e.g. behind nginx/Caddy/Tailscale).
-		DisableLocalhostProtection: true,
-		Logger:                     slog.Default(),
+	// /healthz is unauthenticated — no bearer token required.
+	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet && r.Method != http.MethodHead {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		probeCtx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+		defer cancel()
+		if err := healthProbe(probeCtx); err != nil {
+			log.Printf("healthz probe failed: %v", err)
+			http.Error(w, "unhealthy", http.StatusServiceUnavailable)
+			return
+		}
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("ok\n"))
 	})
 
-	// Middleware chain (outermost → innermost):
-	//   RateLimit → LimitRequestBody → auth → LimitConcurrency → mcpHandler
-	//
-	// Rate limiting and body limiting run before auth to prevent unauthenticated
-	// floods from consuming auth resources. Concurrency limiting runs after auth
-	// so only authenticated requests consume semaphore slots.
+	// All other paths go through the full authenticated middleware chain.
 	verifier := buildTokenVerifier(token)
 	handler := LimitConcurrency(hc.sem)(mcpHandler)
 	handler = auth.RequireBearerToken(verifier, nil)(handler)
 	handler = LimitRequestBody(hc.maxBody)(handler)
 	handler = RateLimit(hc.limiter)(handler)
+	mux.Handle("/", handler)
+
+	return mux
+}
+
+// runServer starts the server in either stdio or HTTP mode.
+// healthProbe is called on each /healthz request to verify gRPC connectivity;
+// it is only used in HTTP mode and must be non-nil when addr is non-empty.
+func runServer(ctx context.Context, server *mcp.Server, addr, token string, hc httpTransportConfig, healthProbe func(context.Context) error) error {
+	if addr == "" {
+		// stdio mode — unchanged behaviour
+		return server.Run(ctx, &mcp.StdioTransport{})
+	}
+
+	// HTTP mode — DisableLocalhostProtection allows proxied requests whose Host
+	// header differs from the bind address (e.g. behind nginx/Caddy/Tailscale).
+	mcpHandler := mcp.NewStreamableHTTPHandler(func(_ *http.Request) *mcp.Server {
+		return server
+	}, &mcp.StreamableHTTPOptions{
+		DisableLocalhostProtection: true,
+		Logger:                     slog.Default(),
+	})
 
 	httpSrv := &http.Server{
 		Addr:              addr,
-		Handler:           handler,
+		Handler:           buildHTTPMux(mcpHandler, token, hc, healthProbe),
 		ReadHeaderTimeout: 30 * time.Second,
 	}
 

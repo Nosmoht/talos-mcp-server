@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"log/slog"
 	"strings"
 	"sync/atomic"
@@ -82,11 +81,10 @@ func (h *Handlers) auditLog(tool string, args any, nodes []string) {
 		nodeList = "<default>"
 	}
 
-	log.Printf("AUDIT timestamp=%s tool=%s nodes=%s args=%s",
-		time.Now().UTC().Format(time.RFC3339),
-		tool,
-		nodeList,
-		argsJSON,
+	slog.Default().Info("AUDIT",
+		"tool", tool,
+		"nodes", nodeList,
+		"args", string(argsJSON),
 	)
 
 	if l := h.logger.Load(); l != nil {
@@ -102,7 +100,7 @@ func (h *Handlers) auditLog(tool string, args any, nodes []string) {
 // Only called after guard checks pass (not for validation errors).
 // Best-effort — silently dropped if no logger is set or delivery fails.
 func (h *Handlers) mcpLogError(tool string, err error) {
-	log.Printf("ERROR tool=%s error=%v", tool, err)
+	slog.Default().Error("tool error", "tool", tool, "error", err)
 
 	if l := h.logger.Load(); l != nil {
 		l.Error("tool error", "tool", tool, "error", err.Error())
@@ -114,7 +112,7 @@ func (h *Handlers) mcpLogError(tool string, err error) {
 // carry additional context alongside the underlying error.
 // Best-effort — silently dropped if no logger is set or delivery fails.
 func (h *Handlers) mcpLogWarn(tool string, msg string, err error) {
-	log.Printf("WARN tool=%s msg=%s error=%v", tool, msg, err)
+	slog.Default().Warn("tool warning", "tool", tool, "msg", msg, "error", err)
 
 	if l := h.logger.Load(); l != nil {
 		l.Warn(msg, "tool", tool, "error", err.Error())
@@ -157,6 +155,6 @@ func notifyProgress(ctx context.Context, req *mcp.CallToolRequest, message strin
 		Progress:      progress,
 		Total:         total,
 	}); err != nil {
-		log.Printf("progress notification: %v", err)
+		slog.Default().Warn("progress notification failed", "error", err)
 	}
 }

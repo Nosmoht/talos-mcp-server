@@ -82,24 +82,27 @@ func main() {
 	}
 	defer tc.Close() //nolint:errcheck
 
-	log.Printf("talos-mcp version=%q commit=%q date=%q read_only=%v", version, commit, date, readOnly) //nolint:gosec // G706 false positive: version/commit/date are build-time ldflags constants injected by GoReleaser, not runtime user input
+	slog.Info("talos-mcp started", "version", version, "commit", commit, "date", date, "read_only", readOnly) //nolint:gosec // G706 false positive: version/commit/date are build-time ldflags constants injected by GoReleaser, not runtime user input
 
 	// Best-effort cluster version compatibility check. Non-fatal — the server
 	// starts regardless and operators can set TALOS_MCP_SKIP_VERSION_CHECK=true
 	// to suppress validation warnings.
 	if cv, err := tc.GetClusterVersion(ctx); err != nil {
-		log.Printf("WARNING: could not detect cluster Talos version: %v", err)
+		slog.Warn("could not detect cluster Talos version", "error", err)
 	} else if !cv.InSupportedRange() {
-		log.Printf("WARNING: cluster Talos version %s is outside the tested range (%s – %s); some features may not work correctly",
-			cv, talosversion.MinSupported, talosversion.MaxTested)
+		slog.Warn("cluster Talos version is outside the tested range; some features may not work correctly",
+			"version", cv.String(),
+			"min_supported", talosversion.MinSupported.String(),
+			"max_tested", talosversion.MaxTested.String(),
+		)
 	} else {
-		log.Printf("cluster Talos version: %s (supported)", cv)
+		slog.Info("cluster Talos version", "version", cv.String(), "status", "supported")
 	}
 
 	if allowedNodes != nil {
-		log.Printf("node allowlist: active (%d entries)", allowedNodes.Len()) //nolint:gosec // G706: entry count is an integer, not user-controlled string input
+		slog.Info("node allowlist active", "entries", allowedNodes.Len()) //nolint:gosec // G706: entry count is an integer, not user-controlled string input
 	} else {
-		log.Printf("node allowlist: disabled (all nodes allowed)")
+		slog.Info("node allowlist disabled")
 	}
 
 	h := &tools.Handlers{Client: tc, AllowedNodes: allowedNodes}
@@ -320,7 +323,7 @@ func main() {
 	prompts.Register(server, readOnly)
 
 	if err := runServer(ctx, server, httpAddr, authToken, newHTTPTransportConfig(), tc.Ping); err != nil {
-		log.Printf("server stopped: %v", err)
+		slog.Error("server stopped with error", "error", err)
 	}
 }
 
@@ -372,7 +375,7 @@ func buildHTTPMux(mcpHandler http.Handler, token string, hc httpTransportConfig,
 		probeCtx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 		defer cancel()
 		if err := healthProbe(probeCtx); err != nil {
-			log.Printf("healthz probe failed: %v", err)
+			slog.Error("healthz probe failed", "error", err)
 			http.Error(w, "unhealthy", http.StatusServiceUnavailable)
 			return
 		}
@@ -424,8 +427,8 @@ func runServer(ctx context.Context, server *mcp.Server, addr, token string, hc h
 		_ = httpSrv.Shutdown(shutdownCtx)
 	}()
 
-	log.Printf("WARNING: DNS rebinding protection disabled — ensure a reverse proxy with Origin header preservation is in front of this server")
-	log.Printf("HTTP transport listening on %s", addr) //nolint:gosec // G706: addr is operator-supplied config, not user input
+	slog.Warn("DisableLocalhostProtection is active — DNS rebinding protection disabled; ensure a reverse proxy with Origin header preservation is in front of this server")
+	slog.Info("HTTP transport listening", "addr", addr) //nolint:gosec // G706: addr is operator-supplied config, not user input
 	if err := httpSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return fmt.Errorf("HTTP server: %w", err)
 	}

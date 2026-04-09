@@ -147,6 +147,11 @@ func resolveGraceful(v *bool) bool {
 // It uses the same path as talosctl get --output json:
 //
 //	resource.MarshalYAML → yaml.Marshal → yaml.Unmarshal → map[string]any
+//
+// The YAML library used is go.yaml.in/yaml/v4 which follows YAML 1.2 semantics.
+// YAML 1.1 boolean strings ("yes", "no", "on", "off") are preserved as strings.
+// Standard YAML 1.2 booleans ("true"/"false") and unquoted numbers are coerced
+// to their Go types (bool, int, float64), which is correct and expected.
 func MarshalResource(r resource.Resource) (map[string]any, error) {
 	out, err := resource.MarshalYAML(r)
 	if err != nil {

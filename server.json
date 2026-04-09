@@ -32,6 +32,56 @@
           "name": "TALOS_ENDPOINTS",
           "description": "Comma-separated endpoint overrides",
           "isRequired": false
+        },
+        {
+          "name": "TALOS_MCP_READ_ONLY",
+          "description": "Set to \"true\" to disable all mutating tools (default: false)",
+          "isRequired": false
+        },
+        {
+          "name": "TALOS_MCP_HTTP_ADDR",
+          "description": "If set (e.g. \":8080\"), serve Streamable HTTP instead of stdio",
+          "isRequired": false
+        },
+        {
+          "name": "TALOS_MCP_AUTH_TOKEN",
+          "description": "Required bearer token when HTTP mode is active (TALOS_MCP_HTTP_ADDR is set)",
+          "isRequired": false
+        },
+        {
+          "name": "TALOS_MCP_ALLOWED_NODES",
+          "description": "Comma-separated IPs, hostnames, and CIDR ranges permitted as tool targets. Unset or empty allows all nodes.",
+          "isRequired": false
+        },
+        {
+          "name": "TALOS_MCP_ALLOWED_PATHS",
+          "description": "Comma-separated path prefixes permitted for talos_read_file and talos_list_files (e.g. /etc,/proc). Unset or empty allows all paths.",
+          "isRequired": false
+        },
+        {
+          "name": "TALOS_MCP_SKIP_VERSION_CHECK",
+          "description": "Set to \"true\" to bypass upgrade path validation (default: false)",
+          "isRequired": false
+        },
+        {
+          "name": "TALOS_MCP_RATE_LIMIT",
+          "description": "HTTP mode: token-bucket refill rate in requests/second (float, default: 10)",
+          "isRequired": false
+        },
+        {
+          "name": "TALOS_MCP_RATE_BURST",
+          "description": "HTTP mode: token-bucket burst capacity (int, default: 20)",
+          "isRequired": false
+        },
+        {
+          "name": "TALOS_MCP_MAX_BODY_SIZE",
+          "description": "HTTP mode: max POST request body size in bytes (int, default: 4194304 = 4 MiB)",
+          "isRequired": false
+        },
+        {
+          "name": "TALOS_MCP_MAX_CONCURRENT",
+          "description": "HTTP mode: max concurrent POST handlers; returns 503 on overload (int, default: 20)",
+          "isRequired": false
         }
       ]
     }

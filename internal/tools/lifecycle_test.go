@@ -508,3 +508,68 @@ func TestResolveDryRun(t *testing.T) {
 		})
 	}
 }
+
+// TestResolveGraceful verifies the graceful default behaviour.
+func TestResolveGraceful(t *testing.T) {
+	f := false
+	tr := true
+
+	tests := []struct {
+		name string
+		in   *bool
+		want bool
+	}{
+		{"nil means graceful", nil, true},
+		{"explicit true is graceful", &tr, true},
+		{"explicit false skips graceful", &f, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := resolveGraceful(tt.in)
+			if got != tt.want {
+				t.Errorf("resolveGraceful(%v) = %v, want %v", tt.in, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestHandleReset_Guards verifies that reset is rejected without confirm or without nodes.
+func TestHandleReset_Guards(t *testing.T) {
+	h := safeH()
+	ctx := context.Background()
+
+	tests := []struct {
+		name    string
+		args    ResetArgs
+		wantErr string
+	}{
+		{
+			name:    "no confirm",
+			args:    ResetArgs{Nodes: []string{"192.168.2.61"}, Confirm: false},
+			wantErr: "confirm must be explicitly set to true",
+		},
+		{
+			name:    "no nodes",
+			args:    ResetArgs{Nodes: nil, Confirm: true},
+			wantErr: "nodes must be explicitly specified",
+		},
+		{
+			name:    "empty nodes",
+			args:    ResetArgs{Nodes: []string{}, Confirm: true},
+			wantErr: "nodes must be explicitly specified",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, err := h.HandleReset(ctx, nil, tt.args)
+			if err == nil {
+				t.Fatal("expected error, got nil")
+			}
+			if !strings.Contains(err.Error(), tt.wantErr) {
+				t.Errorf("error %q does not contain %q", err.Error(), tt.wantErr)
+			}
+		})
+	}
+}

@@ -1,7 +1,7 @@
 package main
 
 import (
-	"log"
+	"log/slog"
 	"math"
 	"net/http"
 	"os"
@@ -99,7 +99,7 @@ func envInt64(key string, fallback int64) int64 {
 	}
 	n, err := strconv.ParseInt(v, 10, 64)
 	if err != nil {
-		log.Printf("WARNING: invalid %s=%q (expected integer): %v; using default %d", key, v, err, fallback) //nolint:gosec // G706: key is a hardcoded constant; v is operator-supplied config, not user input
+		slog.Warn("invalid integer env var, using default", "key", key, "value", v, "error", err, "default", fallback) //nolint:gosec // G706: key is a hardcoded constant; v is operator-supplied config, not user input
 		return fallback
 	}
 	return n
@@ -111,7 +111,7 @@ func envInt64(key string, fallback int64) int64 {
 func envInt(key string, fallback int) int {
 	n := envInt64(key, int64(fallback))
 	if n < math.MinInt || n > math.MaxInt {
-		log.Printf("WARNING: %s=%d out of int range [%d, %d]; using default %d", key, n, math.MinInt, math.MaxInt, fallback) //nolint:gosec // G706: key is a hardcoded constant; n is operator-supplied config, not user input
+		slog.Warn("env var out of int range, using default", "key", key, "value", n, "min", math.MinInt, "max", math.MaxInt, "default", fallback)
 		return fallback
 	}
 	return int(n)
@@ -126,7 +126,7 @@ func envFloat64(key string, fallback float64) float64 {
 	}
 	f, err := strconv.ParseFloat(v, 64)
 	if err != nil {
-		log.Printf("WARNING: invalid %s=%q (expected float): %v; using default %g", key, v, err, fallback) //nolint:gosec // G706: key is a hardcoded constant; v is operator-supplied config, not user input
+		slog.Warn("invalid float env var, using default", "key", key, "value", v, "error", err, "default", fallback) //nolint:gosec // G706: key is a hardcoded constant; v is operator-supplied config, not user input
 		return fallback
 	}
 	return f

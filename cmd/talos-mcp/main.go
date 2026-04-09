@@ -424,6 +424,7 @@ func runServer(ctx context.Context, server *mcp.Server, addr, token string, hc h
 		_ = httpSrv.Shutdown(shutdownCtx)
 	}()
 
+	log.Printf("WARNING: DNS rebinding protection disabled — ensure a reverse proxy with Origin header preservation is in front of this server")
 	log.Printf("HTTP transport listening on %s", addr) //nolint:gosec // G706: addr is operator-supplied config, not user input
 	if err := httpSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return fmt.Errorf("HTTP server: %w", err)

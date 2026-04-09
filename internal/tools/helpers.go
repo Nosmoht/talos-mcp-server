@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -20,9 +21,23 @@ type Handlers struct {
 	Client       *talos.Client
 	AllowedNodes *talos.NodeAllowlist
 	AllowedPaths []string // set once at startup; read-only afterward
+	// patchMu serialises concurrent HandlePatchConfig calls on a per-node basis.
+	// In HTTP multi-session mode two agents could otherwise both fetch the current
+	// config, each merge their own patch, and the second apply would silently
+	// overwrite the first (read-modify-write race). The map is populated lazily
+	// on first use and is bounded by the number of distinct patch targets.
+	patchMu sync.Map // map[string]*sync.Mutex
 	// logger is the active slog.Logger for MCP log notifications.
 	// It is swapped atomically per session in stdio mode.
 	logger atomic.Pointer[slog.Logger]
+}
+
+// nodePatchMu returns (or lazily creates) the per-node mutex that serialises
+// concurrent config-patch operations. key is the resolved node identifier or
+// "<default>" when no explicit node was provided.
+func (h *Handlers) nodePatchMu(key string) *sync.Mutex {
+	mu, _ := h.patchMu.LoadOrStore(key, &sync.Mutex{})
+	return mu.(*sync.Mutex) //nolint:forcetypeassert // only *sync.Mutex is ever stored
 }
 
 // SetLogger replaces the active logger used for MCP log notifications.

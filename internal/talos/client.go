@@ -42,7 +42,7 @@ var grpcKeepalive = grpc.WithKeepaliveParams(keepalive.ClientParameters{
 type Client struct {
 	*talosclient.Client
 
-	versionMu     sync.Mutex
+	versionMu     sync.RWMutex
 	versionCached *version.TalosVersion
 }
 
@@ -88,6 +88,18 @@ func NewClient(ctx context.Context) (*Client, error) {
 // This is suitable for informational use (startup log, prompts). For upgrade
 // path validation use GetNodeVersion to query a specific target node.
 func (c *Client) GetClusterVersion(ctx context.Context) (*version.TalosVersion, error) {
+	// Fast path: read lock allows concurrent cache hits without serialisation.
+	c.versionMu.RLock()
+	if c.versionCached != nil {
+		v := c.versionCached
+		c.versionMu.RUnlock()
+		return v, nil
+	}
+	c.versionMu.RUnlock()
+
+	// Slow path: acquire write lock and re-check (double-checked locking).
+	// A concurrent goroutine may have fetched the version between the two lock
+	// acquisitions, so the nil check is repeated to avoid a redundant fetch.
 	c.versionMu.Lock()
 	defer c.versionMu.Unlock()
 

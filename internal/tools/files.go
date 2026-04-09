@@ -17,6 +17,11 @@ import (
 	"github.com/Nosmoht/talos-mcp-server/internal/talos"
 )
 
+const (
+	defaultReadMaxBytes = 32768 // 32 KB
+	maxListEntries      = 10000
+)
+
 // ListFilesArgs defines input for talos_list_files.
 type ListFilesArgs struct {
 	Path    string   `json:"path" jsonschema:"Absolute path on the node to list (e.g. '/etc'\\, '/var/log')."`
@@ -67,8 +72,6 @@ func (h *Handlers) HandleListFiles(ctx context.Context, _ *mcp.CallToolRequest, 
 		IsDir        bool   `json:"is_dir"`
 		Mode         string `json:"mode,omitempty"`
 	}
-
-	const maxListEntries = 10000
 
 	var files []fileEntry
 
@@ -143,7 +146,7 @@ func (h *Handlers) HandleReadFile(ctx context.Context, _ *mcp.CallToolRequest, a
 
 	maxBytes := args.MaxBytes
 	if maxBytes <= 0 {
-		maxBytes = 32768
+		maxBytes = defaultReadMaxBytes
 	}
 
 	r, err := h.Client.Read(ctx, args.Path)

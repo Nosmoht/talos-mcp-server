@@ -22,6 +22,12 @@ import (
 	"github.com/Nosmoht/talos-mcp-server/internal/version"
 )
 
+const (
+	defaultRebootTimeout  = 5 * time.Minute
+	rebootProbeInterval   = 2 * time.Second
+	comebackProbeInterval = 3 * time.Second
+)
+
 // ServiceActionArgs defines input for talos_service_action.
 type ServiceActionArgs struct {
 	ServiceName string   `json:"service_name" jsonschema:"Name of the service to act on (e.g. 'kubelet'\\, 'containerd'\\, 'etcd')."`
@@ -84,7 +90,7 @@ type rebootResult struct {
 // Returns the default of 5 minutes when s is empty.
 func parseRebootTimeout(s string) (time.Duration, error) {
 	if s == "" {
-		return 5 * time.Minute, nil
+		return defaultRebootTimeout, nil
 	}
 
 	d, err := time.ParseDuration(s)
@@ -266,7 +272,7 @@ func (h *Handlers) waitForNodeReboot(ctx context.Context, req *mcp.CallToolReque
 		select {
 		case <-ctx.Done():
 			return nil, fmt.Errorf("timed out waiting for node to go down: %w", ctx.Err())
-		case <-time.After(2 * time.Second):
+		case <-time.After(rebootProbeInterval):
 		}
 	}
 
@@ -285,7 +291,7 @@ func (h *Handlers) waitForNodeReboot(ctx context.Context, req *mcp.CallToolReque
 		select {
 		case <-ctx.Done():
 			return nil, fmt.Errorf("timed out waiting for node to come back: %w", ctx.Err())
-		case <-time.After(3 * time.Second):
+		case <-time.After(comebackProbeInterval):
 		}
 	}
 

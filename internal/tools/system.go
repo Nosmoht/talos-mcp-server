@@ -14,6 +14,12 @@ import (
 	"github.com/Nosmoht/talos-mcp-server/internal/talos"
 )
 
+const (
+	defaultContainerNamespace       = "k8s.io"
+	defaultHealthWaitTimeout        = 2 * time.Minute
+	defaultHealthWaitTimeoutBuffer  = 10 * time.Second
+)
+
 // ContainersArgs defines input for talos_containers.
 type ContainersArgs struct {
 	Namespace string   `json:"namespace,omitempty" jsonschema:"Container namespace. Defaults to 'k8s.io' for Kubernetes containers."`
@@ -76,7 +82,7 @@ func (h *Handlers) HandleContainers(ctx context.Context, _ *mcp.CallToolRequest,
 
 	ns := args.Namespace
 	if ns == "" {
-		ns = "k8s.io"
+		ns = defaultContainerNamespace
 	}
 
 	resp, err := h.Client.Containers(ctx, ns, commonapi.ContainerDriver_CONTAINERD)
@@ -119,7 +125,7 @@ func (h *Handlers) HandleHealth(ctx context.Context, req *mcp.CallToolRequest, a
 		return nil, nil, err
 	}
 
-	waitTimeout := 2 * time.Minute
+	waitTimeout := defaultHealthWaitTimeout
 
 	if args.WaitTimeout != "" {
 		d, err := time.ParseDuration(args.WaitTimeout)
@@ -134,7 +140,7 @@ func (h *Handlers) HandleHealth(ctx context.Context, req *mcp.CallToolRequest, a
 
 	var cancel context.CancelFunc
 
-	timeoutCtx, cancel = context.WithTimeout(ctx, waitTimeout+10*time.Second)
+	timeoutCtx, cancel = context.WithTimeout(ctx, waitTimeout+defaultHealthWaitTimeoutBuffer)
 	defer cancel()
 
 	stream, err := h.Client.ClusterHealthCheck(timeoutCtx, waitTimeout, &clusterapi.ClusterInfo{

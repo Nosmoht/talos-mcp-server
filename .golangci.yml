@@ -1,7 +1,11 @@
 version: "2"
 linters:
+  # standard preset covers govet (equivalent to `go vet ./...` in make check).
+  # gofmt is added explicitly below (not in the standard preset) to match the
+  # `gofmt -l .` check run by `make fmt`, ensuring `make check` and CI are equivalent.
   default: standard
   enable:
+    - gofmt
     - gosec
     - errorlint
     - gocritic

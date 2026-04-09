@@ -17,11 +17,11 @@ import (
 )
 
 const (
-	defaultLogsTailLines    int32 = 100
-	defaultDmesgMaxLines          = 200
-	defaultEventsTailCount  int32 = 50
-	defaultEventsTimeout          = 5 * time.Second
-	defaultLogsNamespace          = "system"
+	defaultLogsTailLines   int32 = 100
+	defaultDmesgMaxLines         = 200
+	defaultEventsTailCount int32 = 50
+	defaultEventsTimeout         = 5 * time.Second
+	defaultLogsNamespace         = "system"
 )
 
 // LogsArgs defines input for talos_logs.

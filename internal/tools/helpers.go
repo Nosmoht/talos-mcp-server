@@ -60,9 +60,9 @@ func textResult(text string) *mcp.CallToolResult {
 	}
 }
 
-// jsonResult marshals v to indented JSON and returns the MCP tool result tuple.
+// jsonResult marshals v to compact JSON and returns the MCP tool result tuple.
 func jsonResult(v any) (*mcp.CallToolResult, any, error) {
-	out, err := json.MarshalIndent(v, "", "  ")
+	out, err := json.Marshal(v)
 	if err != nil {
 		return nil, nil, fmt.Errorf("marshal JSON: %w", err)
 	}

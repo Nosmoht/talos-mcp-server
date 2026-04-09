@@ -18,7 +18,7 @@ func (h *Handlers) handleVersion(ctx context.Context, _ *mcp.ReadResourceRequest
 		return nil, fmt.Errorf("get version: %w", err)
 	}
 
-	out, err := json.MarshalIndent(resp, "", "  ")
+	out, err := json.Marshal(resp)
 	if err != nil {
 		return nil, fmt.Errorf("marshal version: %w", err)
 	}
@@ -42,7 +42,7 @@ func (h *Handlers) handleResourceDefinitions(ctx context.Context, _ *mcp.ReadRes
 		defs = append(defs, tools.MarshalResourceDefinition(rd))
 	}
 
-	out, err := json.MarshalIndent(defs, "", "  ")
+	out, err := json.Marshal(defs)
 	if err != nil {
 		return nil, fmt.Errorf("marshal JSON: %w", err)
 	}

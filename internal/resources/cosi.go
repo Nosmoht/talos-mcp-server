@@ -78,7 +78,7 @@ func (h *Handlers) handleCOSIResource(ctx context.Context, req *mcp.ReadResource
 	}
 	payload := response{Items: results, Truncated: truncated}
 
-	out, err := json.MarshalIndent(payload, "", "  ")
+	out, err := json.Marshal(payload)
 	if err != nil {
 		return nil, fmt.Errorf("marshal JSON: %w", err)
 	}

@@ -114,7 +114,7 @@ func (h *Handlers) HandleListFiles(ctx context.Context, _ *mcp.CallToolRequest, 
 		return nil, nil, fmt.Errorf("list files %q: %w", listPath, streamErr)
 	}
 
-	out, err := json.MarshalIndent(files, "", "  ")
+	out, err := json.Marshal(files)
 	if err != nil {
 		return nil, nil, fmt.Errorf("marshal JSON: %w", err)
 	}

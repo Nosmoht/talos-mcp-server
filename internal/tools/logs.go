@@ -15,6 +15,14 @@ import (
 	"github.com/Nosmoht/talos-mcp-server/internal/talos"
 )
 
+const (
+	defaultLogsTailLines    int32 = 100
+	defaultDmesgMaxLines          = 200
+	defaultEventsTailCount  int32 = 50
+	defaultEventsTimeout          = 5 * time.Second
+	defaultLogsNamespace          = "system"
+)
+
 // LogsArgs defines input for talos_logs.
 type LogsArgs struct {
 	ServiceName string   `json:"service_name" jsonschema:"Service or container name (e.g. 'kubelet'\\, 'containerd'\\, 'etcd')."`
@@ -39,12 +47,12 @@ func (h *Handlers) HandleLogs(ctx context.Context, _ *mcp.CallToolRequest, args 
 
 	tailLines := args.TailLines
 	if tailLines <= 0 {
-		tailLines = 100
+		tailLines = defaultLogsTailLines
 	}
 
 	ns := args.Namespace
 	if ns == "" {
-		ns = "system"
+		ns = defaultLogsNamespace
 	}
 
 	// follow=false: finite stream capped by tailLines
@@ -97,7 +105,7 @@ func (h *Handlers) HandleDmesg(ctx context.Context, _ *mcp.CallToolRequest, args
 
 	maxLines := args.MaxLines
 	if maxLines <= 0 {
-		maxLines = 200
+		maxLines = defaultDmesgMaxLines
 	}
 
 	// follow=false, tail=false: collect existing messages
@@ -157,7 +165,7 @@ type EventsArgs struct {
 func (h *Handlers) HandleEvents(ctx context.Context, _ *mcp.CallToolRequest, args EventsArgs) (*mcp.CallToolResult, any, error) {
 	tailCount := args.TailCount
 	if tailCount == 0 {
-		tailCount = 50
+		tailCount = defaultEventsTailCount
 	}
 
 	// Use a cancellable child context so we can stop after collecting enough events.
@@ -165,7 +173,7 @@ func (h *Handlers) HandleEvents(ctx context.Context, _ *mcp.CallToolRequest, arg
 	if err != nil {
 		return nil, nil, err
 	}
-	collectCtx, cancel := context.WithTimeout(nodesCtx, 5*time.Second)
+	collectCtx, cancel := context.WithTimeout(nodesCtx, defaultEventsTimeout)
 	defer cancel()
 
 	type eventEntry struct {

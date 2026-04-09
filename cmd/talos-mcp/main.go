@@ -70,6 +70,8 @@ func main() {
 		log.Fatalf("invalid TALOS_MCP_ALLOWED_NODES: %v", err) //nolint:gocritic // exitAfterDefer: stop() called explicitly above
 	}
 
+	allowedPaths := tools.ParseAllowedPaths(os.Getenv("TALOS_MCP_ALLOWED_PATHS"))
+
 	if err := validateHTTPConfig(httpAddr, authToken); err != nil {
 		stop()
 		log.Fatalf("%v", err) //nolint:gocritic // exitAfterDefer: stop() called explicitly above
@@ -105,7 +107,7 @@ func main() {
 		slog.Info("node allowlist disabled")
 	}
 
-	h := &tools.Handlers{Client: tc, AllowedNodes: allowedNodes}
+	h := &tools.Handlers{Client: tc, AllowedNodes: allowedNodes, AllowedPaths: allowedPaths}
 
 	serverOpts := &mcp.ServerOptions{
 		Instructions: "Talos Linux cluster management server. " +

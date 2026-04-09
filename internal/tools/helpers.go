@@ -19,6 +19,7 @@ import (
 type Handlers struct {
 	Client       *talos.Client
 	AllowedNodes *talos.NodeAllowlist
+	AllowedPaths []string
 	// logger is the active slog.Logger for MCP log notifications.
 	// It is swapped atomically per session in stdio mode.
 	logger atomic.Pointer[slog.Logger]

@@ -2,7 +2,6 @@ package tools
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -44,12 +43,7 @@ func (h *Handlers) HandleVersion(ctx context.Context, _ *mcp.CallToolRequest, ar
 		return nil, nil, fmt.Errorf("version: %w", err)
 	}
 
-	out, err := json.MarshalIndent(resp, "", "  ")
-	if err != nil {
-		return nil, nil, fmt.Errorf("marshal JSON: %w", err)
-	}
-
-	return textResult(string(out)), nil, nil
+	return jsonResult(resp)
 }
 
 // HandleServices implements the talos_services tool.
@@ -67,12 +61,7 @@ func (h *Handlers) HandleServices(ctx context.Context, _ *mcp.CallToolRequest, a
 		return nil, nil, fmt.Errorf("service list: %w", err)
 	}
 
-	out, err := json.MarshalIndent(resp, "", "  ")
-	if err != nil {
-		return nil, nil, fmt.Errorf("marshal JSON: %w", err)
-	}
-
-	return textResult(string(out)), nil, nil
+	return jsonResult(resp)
 }
 
 // HandleContainers implements the talos_containers tool.
@@ -95,12 +84,7 @@ func (h *Handlers) HandleContainers(ctx context.Context, _ *mcp.CallToolRequest,
 		return nil, nil, fmt.Errorf("containers: %w", err)
 	}
 
-	out, err := json.MarshalIndent(resp, "", "  ")
-	if err != nil {
-		return nil, nil, fmt.Errorf("marshal JSON: %w", err)
-	}
-
-	return textResult(string(out)), nil, nil
+	return jsonResult(resp)
 }
 
 // HandleProcesses implements the talos_processes tool.
@@ -118,12 +102,7 @@ func (h *Handlers) HandleProcesses(ctx context.Context, _ *mcp.CallToolRequest, 
 		return nil, nil, fmt.Errorf("processes: %w", err)
 	}
 
-	out, err := json.MarshalIndent(resp, "", "  ")
-	if err != nil {
-		return nil, nil, fmt.Errorf("marshal JSON: %w", err)
-	}
-
-	return textResult(string(out)), nil, nil
+	return jsonResult(resp)
 }
 
 // HandleHealth implements the talos_health tool.
@@ -209,10 +188,5 @@ func (h *Handlers) HandleHealth(ctx context.Context, req *mcp.CallToolRequest, a
 		Messages []string `json:"messages"`
 	}
 
-	out, err := json.MarshalIndent(healthResult{Messages: messages}, "", "  ")
-	if err != nil {
-		return nil, nil, fmt.Errorf("marshal JSON: %w", err)
-	}
-
-	return textResult(string(out)), nil, nil
+	return jsonResult(healthResult{Messages: messages})
 }

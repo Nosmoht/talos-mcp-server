@@ -205,10 +205,5 @@ func (h *Handlers) HandleEvents(ctx context.Context, _ *mcp.CallToolRequest, arg
 		Events []eventEntry `json:"events"`
 	}
 
-	out, err := jsonMarshal(result{Count: len(events), Events: events})
-	if err != nil {
-		return nil, nil, fmt.Errorf("marshal JSON: %w", err)
-	}
-
-	return textResult(out), nil, nil
+	return jsonResult(result{Count: len(events), Events: events})
 }

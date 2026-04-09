@@ -2,7 +2,6 @@ package tools
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -38,12 +37,7 @@ func (h *Handlers) HandleEtcd(ctx context.Context, _ *mcp.CallToolRequest, args 
 			return nil, nil, fmt.Errorf("etcd member list: %w", err)
 		}
 
-		out, err := json.MarshalIndent(resp, "", "  ")
-		if err != nil {
-			return nil, nil, fmt.Errorf("marshal JSON: %w", err)
-		}
-
-		return textResult(string(out)), nil, nil
+		return jsonResult(resp)
 
 	case "status":
 		resp, err := h.Client.EtcdStatus(ctx)
@@ -51,12 +45,7 @@ func (h *Handlers) HandleEtcd(ctx context.Context, _ *mcp.CallToolRequest, args 
 			return nil, nil, fmt.Errorf("etcd status: %w", err)
 		}
 
-		out, err := json.MarshalIndent(resp, "", "  ")
-		if err != nil {
-			return nil, nil, fmt.Errorf("marshal JSON: %w", err)
-		}
-
-		return textResult(string(out)), nil, nil
+		return jsonResult(resp)
 
 	default:
 		return nil, nil, fmt.Errorf("unknown etcd subcommand %q: must be 'members' or 'status'", args.Subcommand)
@@ -132,13 +121,8 @@ func (h *Handlers) HandleEtcdSnapshot(ctx context.Context, req *mcp.CallToolRequ
 
 	notifyProgress(ctx, req, "Snapshot complete", 3, 3)
 
-	out, err := json.MarshalIndent(map[string]any{
+	return jsonResult(map[string]any{
 		"path":  args.Path,
 		"bytes": n,
-	}, "", "  ")
-	if err != nil {
-		return nil, nil, fmt.Errorf("marshal JSON: %w", err)
-	}
-
-	return textResult(string(out)), nil, nil
+	})
 }

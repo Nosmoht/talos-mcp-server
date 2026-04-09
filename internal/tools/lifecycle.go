@@ -59,12 +59,7 @@ func (h *Handlers) HandleServiceAction(ctx context.Context, _ *mcp.CallToolReque
 		return nil, nil, fmt.Errorf("service %s %q: %w", args.Action, args.ServiceName, err)
 	}
 
-	out, err := json.MarshalIndent(resp, "", "  ")
-	if err != nil {
-		return nil, nil, fmt.Errorf("marshal JSON: %w", err)
-	}
-
-	return textResult(string(out)), nil, nil
+	return jsonResult(resp)
 }
 
 // RebootArgs defines input for talos_reboot.
@@ -225,12 +220,7 @@ func (h *Handlers) HandleReboot(ctx context.Context, req *mcp.CallToolRequest, a
 
 	notifyProgress(ctx, req, "All node(s) rebooted successfully", 4, 4)
 
-	out, err := json.MarshalIndent(results, "", "  ")
-	if err != nil {
-		return nil, nil, fmt.Errorf("marshal JSON: %w", err)
-	}
-
-	return textResult(string(out)), nil, nil
+	return jsonResult(results)
 }
 
 // readBootID reads /proc/sys/kernel/random/boot_id from the given node.
@@ -414,12 +404,7 @@ func (h *Handlers) HandleUpgrade(ctx context.Context, req *mcp.CallToolRequest, 
 
 	notifyProgress(ctx, req, "Upgrade complete", 2, 2)
 
-	out, err := json.MarshalIndent(resp, "", "  ")
-	if err != nil {
-		return nil, nil, fmt.Errorf("marshal JSON: %w", err)
-	}
-
-	return textResult(string(out)), nil, nil
+	return jsonResult(resp)
 }
 
 // RollbackArgs defines input for talos_rollback.
@@ -585,12 +570,7 @@ func (h *Handlers) HandlePatchConfig(ctx context.Context, req *mcp.CallToolReque
 
 	notifyProgress(ctx, req, doneMsg, 3, 3)
 
-	out, err := json.MarshalIndent(resp, "", "  ")
-	if err != nil {
-		return nil, nil, fmt.Errorf("marshal JSON: %w", err)
-	}
-
-	return textResult(string(out)), nil, nil
+	return jsonResult(resp)
 }
 
 // ApplyConfigArgs defines input for talos_apply_config.
@@ -684,12 +664,7 @@ func (h *Handlers) HandleApplyConfig(ctx context.Context, req *mcp.CallToolReque
 
 	notifyProgress(ctx, req, doneMsg, 2, 2)
 
-	out, err := json.MarshalIndent(resp, "", "  ")
-	if err != nil {
-		return nil, nil, fmt.Errorf("marshal JSON: %w", err)
-	}
-
-	return textResult(string(out)), nil, nil
+	return jsonResult(resp)
 }
 
 // ResetArgs defines input for talos_reset.
@@ -740,12 +715,7 @@ func (h *Handlers) HandleReset(ctx context.Context, _ *mcp.CallToolRequest, args
 		return nil, nil, fmt.Errorf("reset: %w", err)
 	}
 
-	out, err := json.MarshalIndent(resp, "", "  ")
-	if err != nil {
-		return nil, nil, fmt.Errorf("marshal JSON: %w", err)
-	}
-
-	return textResult(string(out)), nil, nil
+	return jsonResult(resp)
 }
 
 // extractMachineConfigBody extracts the raw YAML config bytes from a MachineConfig COSI resource.

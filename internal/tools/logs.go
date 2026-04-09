@@ -80,6 +80,13 @@ func (h *Handlers) HandleLogs(ctx context.Context, _ *mcp.CallToolRequest, args 
 
 		if msg.GetBytes() != nil {
 			lines = append(lines, strings.TrimRight(string(msg.GetBytes()), "\n"))
+
+			// Defense-in-depth: stop collecting once we have tailLines entries.
+			// The server-side cap should already enforce this, but a rogue
+			// implementation could send more, causing unbounded memory growth.
+			if len(lines) >= int(tailLines) {
+				break
+			}
 		} else if meta := msg.GetMetadata(); meta != nil && meta.GetError() != "" {
 			// Per-node error embedded in the stream (e.g. node unreachable).
 			node := meta.GetHostname()
@@ -131,7 +138,9 @@ func (h *Handlers) HandleDmesg(ctx context.Context, _ *mcp.CallToolRequest, args
 		return nil, nil, fmt.Errorf("dmesg: %w", err)
 	}
 
-	var lines []string
+	// Ring buffer: pre-allocated to maxLines; once full, oldest entry is
+	// overwritten so memory stays bounded regardless of kernel buffer size.
+	lines := make([]string, 0, maxLines)
 
 	nodeErrors := make(map[string]string)
 
@@ -149,8 +158,16 @@ func (h *Handlers) HandleDmesg(ctx context.Context, _ *mcp.CallToolRequest, args
 
 		if msg.GetBytes() != nil {
 			for _, line := range strings.Split(strings.TrimRight(string(msg.GetBytes()), "\n"), "\n") {
-				if line != "" {
+				if line == "" {
+					continue
+				}
+
+				if len(lines) < maxLines {
 					lines = append(lines, line)
+				} else {
+					// Shift left and place new line at the end (keep last maxLines).
+					copy(lines, lines[1:])
+					lines[maxLines-1] = line
 				}
 			}
 		} else if meta := msg.GetMetadata(); meta != nil && meta.GetError() != "" {
@@ -166,11 +183,6 @@ func (h *Handlers) HandleDmesg(ctx context.Context, _ *mcp.CallToolRequest, args
 
 	if streamErr != nil {
 		return nil, nil, fmt.Errorf("dmesg stream: %w", streamErr)
-	}
-
-	// Truncate to max_lines from the end (most recent)
-	if len(lines) > maxLines {
-		lines = lines[len(lines)-maxLines:]
 	}
 
 	result := strings.Join(lines, "\n")

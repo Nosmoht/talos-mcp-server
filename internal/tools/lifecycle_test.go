@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -722,4 +723,69 @@ func TestExtractMachineConfigBody(t *testing.T) {
 			t.Error("expected error when spec cannot be unmarshaled as string, got nil")
 		}
 	})
+}
+
+// TestNodePatchMu_SameKeyReturnsSameMutex verifies that repeated calls for the same
+// node key return the identical *sync.Mutex (lazy creation + identity guarantee).
+func TestNodePatchMu_SameKeyReturnsSameMutex(t *testing.T) {
+	h := safeH()
+	m1 := h.nodePatchMu("10.0.0.1")
+	m2 := h.nodePatchMu("10.0.0.1")
+	if m1 != m2 {
+		t.Error("expected same mutex instance for same node key, got different pointers")
+	}
+}
+
+// TestNodePatchMu_DifferentKeysHaveDifferentMutexes verifies per-node isolation:
+// two distinct node keys must not share a mutex.
+func TestNodePatchMu_DifferentKeysHaveDifferentMutexes(t *testing.T) {
+	h := safeH()
+	m1 := h.nodePatchMu("10.0.0.1")
+	m2 := h.nodePatchMu("10.0.0.2")
+	if m1 == m2 {
+		t.Error("expected distinct mutex instances for different node keys, got same pointer")
+	}
+}
+
+// TestNodePatchMu_Serializes verifies that only one goroutine holds the per-node
+// mutex at a time. Run with -race to also detect data races on the counter.
+func TestNodePatchMu_Serializes(t *testing.T) {
+	h := safeH()
+	const node = "10.0.0.1"
+	const goroutines = 20
+
+	var (
+		counter int // protected by the per-node mutex
+		maxSeen int
+		maxMu   sync.Mutex
+		wg      sync.WaitGroup
+	)
+
+	for range goroutines {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			mu := h.nodePatchMu(node)
+			mu.Lock()
+			defer mu.Unlock()
+
+			// Increment, yield, then decrement — if two goroutines hold the lock
+			// concurrently, counter would reach 2. Under correct serialisation it
+			// stays at 1 for the entire critical section.
+			counter++
+			current := counter
+			maxMu.Lock()
+			if current > maxSeen {
+				maxSeen = current
+			}
+			maxMu.Unlock()
+			counter--
+		}()
+	}
+
+	wg.Wait()
+
+	if maxSeen != 1 {
+		t.Errorf("concurrent lock holders: got max %d, want 1", maxSeen)
+	}
 }

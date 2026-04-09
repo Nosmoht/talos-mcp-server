@@ -666,6 +666,19 @@ func (h *Handlers) HandleApplyConfig(ctx context.Context, req *mcp.CallToolReque
 
 	dryRun := resolveDryRun(args.DryRun)
 
+	// Acquire the same per-node lock used by HandlePatchConfig to prevent a
+	// PatchConfig-vs-ApplyConfig interleaving race: a concurrent PatchConfig
+	// could fetch the current config, then ApplyConfig replaces it, and
+	// PatchConfig would apply its patch against the now-stale base.
+	nodeID := "<default>"
+	if len(args.Nodes) > 0 {
+		nodeID = args.Nodes[0]
+	}
+
+	mu := h.nodePatchMu(nodeID)
+	mu.Lock()
+	defer mu.Unlock()
+
 	applyMsg := "Applying configuration"
 	doneMsg := "Configuration applied"
 

@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -25,6 +27,10 @@ const (
 	defaultRebootTimeout  = 5 * time.Minute
 	rebootProbeInterval   = 2 * time.Second
 	comebackProbeInterval = 3 * time.Second
+
+	// maxConfigFileSize caps the size of a config file read by readConfigFile.
+	// A machine config should never exceed 1 MiB in practice.
+	maxConfigFileSize = 1 << 20 // 1 MiB
 )
 
 // ServiceActionArgs defines input for talos_service_action.
@@ -598,35 +604,70 @@ func (h *Handlers) HandlePatchConfig(ctx context.Context, req *mcp.CallToolReque
 	return jsonResult(resp)
 }
 
+// readConfigFile reads a machine config from a local file path.
+// It validates that the path is absolute, clean (no ".." components), points to a
+// regular file (symlinks are rejected), and does not exceed maxConfigFileSize.
+//
+// The Open+LimitReader pattern avoids a TOCTOU race between a size check and the
+// actual read, and caps memory consumption regardless of actual file size.
+func readConfigFile(path string) ([]byte, error) {
+	if !filepath.IsAbs(path) {
+		return nil, fmt.Errorf("config_file must be an absolute path (got %q)", path)
+	}
+	if cleaned := filepath.Clean(path); cleaned != path {
+		return nil, fmt.Errorf("config_file must not contain .. or redundant separators (got %q)", path)
+	}
+	// Lstat does not follow symlinks — rejects symlink targets to prevent reading
+	// arbitrary files via symlink indirection (e.g. /tmp/config.yaml -> /etc/shadow).
+	info, err := os.Lstat(path)
+	if err != nil {
+		return nil, fmt.Errorf("config_file: %w", err)
+	}
+	if !info.Mode().IsRegular() {
+		return nil, fmt.Errorf("config_file %q is not a regular file", path)
+	}
+	f, err := os.Open(path) //nolint:gosec // path is validated above: absolute, clean, no symlinks
+	if err != nil {
+		return nil, fmt.Errorf("config_file: %w", err)
+	}
+	defer func() { _ = f.Close() }()
+	// Read at most maxConfigFileSize+1 bytes so we can detect the oversize case.
+	data, err := io.ReadAll(io.LimitReader(f, maxConfigFileSize+1))
+	if err != nil {
+		return nil, fmt.Errorf("config_file: %w", err)
+	}
+	if len(data) > maxConfigFileSize {
+		return nil, fmt.Errorf("config_file %q exceeds maximum size (%d bytes)", path, maxConfigFileSize)
+	}
+	return data, nil
+}
+
 // ApplyConfigArgs defines input for talos_apply_config.
 type ApplyConfigArgs struct {
-	Config  string   `json:"config" jsonschema:"Full machine config content to apply (YAML or JSON). Must target a single node — each node has a unique machine config. May contain TLS keys or secrets; content is redacted in audit logs."`
-	Mode    string   `json:"mode,omitempty" jsonschema:"Apply mode: 'auto' (default)\\, 'reboot'\\, 'no_reboot'\\, 'staged'\\, or 'try'."`
-	DryRun  *bool    `json:"dry_run,omitempty" jsonschema:"Run in dry-run mode without applying changes. Defaults to true. Set explicitly to false to actually apply."`
-	Confirm bool     `json:"confirm" jsonschema:"REQUIRED when dry_run is false: Must be explicitly set to true to confirm applying the config. Not required for dry-run mode."`
-	Nodes   []string `json:"nodes,omitempty" jsonschema:"Target node IP or hostname (exactly one). Omit to use the default node from talosconfig."`
+	ConfigFile string   `json:"config_file" jsonschema:"Absolute path to a local machine config file (YAML or JSON). Must be absolute\\, no '..' components\\, regular file (symlinks are rejected)\\, max 1 MiB. The file is read server-side — secrets never enter the conversation context."`
+	Mode       string   `json:"mode,omitempty" jsonschema:"Apply mode: 'auto' (default)\\, 'reboot'\\, 'no_reboot'\\, 'staged'\\, or 'try'."`
+	DryRun     *bool    `json:"dry_run,omitempty" jsonschema:"Run in dry-run mode without applying changes. Defaults to true. Set explicitly to false to actually apply."`
+	Confirm    bool     `json:"confirm" jsonschema:"REQUIRED when dry_run is false: Must be explicitly set to true to confirm applying the config. Not required for dry-run mode."`
+	Nodes      []string `json:"nodes,omitempty" jsonschema:"Target node IP or hostname (exactly one). Omit to use the default node from talosconfig."`
 }
 
 // HandleApplyConfig implements the talos_apply_config tool.
 func (h *Handlers) HandleApplyConfig(ctx context.Context, req *mcp.CallToolRequest, args ApplyConfigArgs) (*mcp.CallToolResult, any, error) {
-	// Log a redacted copy: the config content may contain TLS keys, tokens, or registry passwords.
+	// Log the file path only — file content is never logged (may contain TLS keys, tokens, or
+	// registry passwords). No redaction needed since the path itself is not sensitive.
 	h.auditLog("talos_apply_config", struct {
-		Mode    string   `json:"mode,omitempty"`
-		DryRun  *bool    `json:"dry_run,omitempty"`
-		Confirm bool     `json:"confirm"`
-		Nodes   []string `json:"nodes,omitempty"`
-		Config  string   `json:"config"`
+		ConfigFile string   `json:"config_file"`
+		Mode       string   `json:"mode,omitempty"`
+		DryRun     *bool    `json:"dry_run,omitempty"`
+		Confirm    bool     `json:"confirm"`
+		Nodes      []string `json:"nodes,omitempty"`
 	}{
-		Mode:    args.Mode,
-		DryRun:  args.DryRun,
-		Confirm: args.Confirm,
-		Nodes:   args.Nodes,
-		Config:  fmt.Sprintf("<redacted, %d bytes>", len(args.Config)),
+		ConfigFile: args.ConfigFile,
+		Mode:       args.Mode,
+		DryRun:     args.DryRun,
+		Confirm:    args.Confirm,
+		Nodes:      args.Nodes,
 	}, args.Nodes)
-
-	if args.Config == "" {
-		return nil, nil, fmt.Errorf("talos_apply_config requires a non-empty config")
-	}
 
 	// Require exactly one node: each node has a unique machine config.
 	// Applying the same full config to multiple nodes risks overwriting node-specific settings
@@ -641,7 +682,15 @@ func (h *Handlers) HandleApplyConfig(ctx context.Context, req *mcp.CallToolReque
 		return nil, nil, fmt.Errorf("apply_config refused: confirm must be explicitly set to true when dry_run is false")
 	}
 
-	ctx, err := talos.WithNodes(ctx, args.Nodes, h.AllowedNodes)
+	var err error
+	ctx, err = talos.WithNodes(ctx, args.Nodes, h.AllowedNodes)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	// Read config file after all guard checks pass — guards are cheap structural
+	// validations; file I/O should not run until the call is authorized.
+	configData, err := readConfigFile(args.ConfigFile)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -689,7 +738,7 @@ func (h *Handlers) HandleApplyConfig(ctx context.Context, req *mcp.CallToolReque
 	notifyProgress(ctx, req, applyMsg, 1, 2)
 
 	applyReq := &machineapi.ApplyConfigurationRequest{
-		Data:   []byte(args.Config),
+		Data:   configData,
 		Mode:   mode,
 		DryRun: dryRun,
 	}

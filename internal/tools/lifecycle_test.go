@@ -2,6 +2,8 @@ package tools
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -431,43 +433,231 @@ func TestHandleApplyConfig_Guards(t *testing.T) {
 	ctx := context.Background()
 	dryRunFalse := false
 
+	// Create a valid config file used by test cases that need to pass the file guard.
+	validFile := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(validFile, []byte("machine: {}"), 0o600); err != nil {
+		t.Fatalf("setup: write temp config: %v", err)
+	}
+
 	tests := []struct {
 		name    string
 		args    ApplyConfigArgs
 		wantErr string
 	}{
 		{
-			name:    "empty config rejected",
-			args:    ApplyConfigArgs{Config: "", Nodes: []string{"10.0.0.1"}},
-			wantErr: "requires a non-empty config",
+			name:    "empty config_file rejected",
+			args:    ApplyConfigArgs{ConfigFile: "", Nodes: []string{"10.0.0.1"}},
+			wantErr: "must be an absolute path",
 		},
 		{
 			name:    "multi-node rejected",
-			args:    ApplyConfigArgs{Config: "machine: {}", Nodes: []string{"10.0.0.1", "10.0.0.2"}},
+			args:    ApplyConfigArgs{ConfigFile: validFile, Nodes: []string{"10.0.0.1", "10.0.0.2"}},
 			wantErr: "exactly one target node",
 		},
 		{
 			name: "dry_run=false without confirm rejected",
 			args: ApplyConfigArgs{
-				Config:  "machine: {}",
-				DryRun:  &dryRunFalse,
-				Confirm: false,
+				ConfigFile: validFile,
+				DryRun:     &dryRunFalse,
+				Confirm:    false,
 			},
 			wantErr: "confirm must be explicitly set to true when dry_run is false",
 		},
 		{
 			name: "unknown mode rejected",
 			args: ApplyConfigArgs{
-				Config: "machine: {}",
-				Mode:   "turbo",
+				ConfigFile: validFile,
+				Mode:       "turbo",
 			},
 			wantErr: "unknown mode",
+		},
+		{
+			name:    "relative config_file rejected",
+			args:    ApplyConfigArgs{ConfigFile: "relative/path/config.yaml"},
+			wantErr: "must be an absolute path",
+		},
+		{
+			name:    "path traversal rejected",
+			args:    ApplyConfigArgs{ConfigFile: "/tmp/../tmp/config.yaml"},
+			wantErr: "must not contain ..",
+		},
+		{
+			name:    "nonexistent config_file rejected",
+			args:    ApplyConfigArgs{ConfigFile: "/tmp/talos-test-does-not-exist-abc123.yaml"},
+			wantErr: "no such file",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			_, _, err := h.HandleApplyConfig(ctx, nil, tt.args)
+			if err == nil {
+				t.Fatal("expected error, got nil")
+			}
+			if !strings.Contains(err.Error(), tt.wantErr) {
+				t.Errorf("expected error containing %q, got: %v", tt.wantErr, err)
+			}
+		})
+	}
+}
+
+// TestHandleApplyConfig_ConfigFile verifies config_file-specific guard checks that
+// require real filesystem state (actual files on disk).
+func TestHandleApplyConfig_ConfigFile(t *testing.T) {
+	h := safeH()
+	ctx := context.Background()
+
+	// Oversized file: maxConfigFileSize+1 bytes.
+	oversizedFile := filepath.Join(t.TempDir(), "oversized.yaml")
+	if err := os.WriteFile(oversizedFile, make([]byte, maxConfigFileSize+1), 0o600); err != nil {
+		t.Fatalf("setup: write oversized file: %v", err)
+	}
+
+	// Directory: pass a directory path — should be rejected as not a regular file.
+	dirPath := t.TempDir()
+
+	// Symlink: points to a valid config file — should be rejected.
+	target := filepath.Join(t.TempDir(), "real.yaml")
+	if err := os.WriteFile(target, []byte("machine: {}"), 0o600); err != nil {
+		t.Fatalf("setup: write symlink target: %v", err)
+	}
+	symlinkPath := filepath.Join(t.TempDir(), "link.yaml")
+	if err := os.Symlink(target, symlinkPath); err != nil {
+		t.Fatalf("setup: create symlink: %v", err)
+	}
+
+	// Valid file: passes all guards and reaches the (nil) gRPC client.
+	validFile := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(validFile, []byte("machine: {}"), 0o600); err != nil {
+		t.Fatalf("setup: write valid config: %v", err)
+	}
+
+	tests := []struct {
+		name    string
+		args    ApplyConfigArgs
+		wantErr string
+	}{
+		{
+			name:    "oversized file rejected",
+			args:    ApplyConfigArgs{ConfigFile: oversizedFile},
+			wantErr: "exceeds maximum size",
+		},
+		{
+			name:    "directory rejected",
+			args:    ApplyConfigArgs{ConfigFile: dirPath},
+			wantErr: "not a regular file",
+		},
+		{
+			name:    "symlink rejected",
+			args:    ApplyConfigArgs{ConfigFile: symlinkPath},
+			wantErr: "not a regular file",
+		},
+		{
+			name:    "valid file passes guards",
+			args:    ApplyConfigArgs{ConfigFile: validFile},
+			wantErr: "", // guard passes; mock panics on gRPC call — expect a non-guard error
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.wantErr == "" {
+				// Valid case: expect the call to panic or fail at the gRPC layer,
+				// not at guard validation. Catching the panic confirms guards passed.
+				defer func() {
+					if r := recover(); r == nil {
+						t.Error("expected panic from mock client on gRPC call, got none")
+					}
+				}()
+				_, _, _ = h.HandleApplyConfig(ctx, nil, tt.args)
+				return
+			}
+			_, _, err := h.HandleApplyConfig(ctx, nil, tt.args)
+			if err == nil {
+				t.Fatal("expected error, got nil")
+			}
+			if !strings.Contains(err.Error(), tt.wantErr) {
+				t.Errorf("expected error containing %q, got: %v", tt.wantErr, err)
+			}
+		})
+	}
+}
+
+// TestReadConfigFile exercises the readConfigFile helper directly.
+func TestReadConfigFile(t *testing.T) {
+	// Valid file: should return content unchanged.
+	validDir := t.TempDir()
+	validPath := filepath.Join(validDir, "config.yaml")
+	content := []byte("machine: {}")
+	if err := os.WriteFile(validPath, content, 0o600); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+
+	// Oversized file.
+	oversizedPath := filepath.Join(t.TempDir(), "big.yaml")
+	if err := os.WriteFile(oversizedPath, make([]byte, maxConfigFileSize+1), 0o600); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+
+	// Symlink to valid file.
+	symlinkPath := filepath.Join(t.TempDir(), "link.yaml")
+	if err := os.Symlink(validPath, symlinkPath); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+
+	tests := []struct {
+		name    string
+		path    string
+		wantErr string
+	}{
+		{
+			name: "valid file",
+			path: validPath,
+		},
+		{
+			name:    "relative path",
+			path:    "config.yaml",
+			wantErr: "must be an absolute path",
+		},
+		{
+			name:    "path with ..",
+			path:    validDir + "/../" + filepath.Base(validDir) + "/config.yaml",
+			wantErr: "must not contain ..",
+		},
+		{
+			name:    "nonexistent",
+			path:    "/tmp/talos-test-readconfigfile-nonexistent.yaml",
+			wantErr: "no such file",
+		},
+		{
+			name:    "directory",
+			path:    validDir,
+			wantErr: "not a regular file",
+		},
+		{
+			name:    "symlink",
+			path:    symlinkPath,
+			wantErr: "not a regular file",
+		},
+		{
+			name:    "oversized",
+			path:    oversizedPath,
+			wantErr: "exceeds maximum size",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			data, err := readConfigFile(tt.path)
+			if tt.wantErr == "" {
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+				if string(data) != string(content) {
+					t.Errorf("got %q, want %q", data, content)
+				}
+				return
+			}
 			if err == nil {
 				t.Fatal("expected error, got nil")
 			}

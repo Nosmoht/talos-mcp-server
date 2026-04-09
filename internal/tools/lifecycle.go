@@ -692,6 +692,62 @@ func (h *Handlers) HandleApplyConfig(ctx context.Context, req *mcp.CallToolReque
 	return textResult(string(out)), nil, nil
 }
 
+// ResetArgs defines input for talos_reset.
+type ResetArgs struct {
+	Nodes              []string `json:"nodes" jsonschema:"REQUIRED: Target node IPs or hostnames to reset. Must be explicitly specified. All listed nodes are reset simultaneously — reset one node at a time to avoid a full cluster outage."`
+	Confirm            bool     `json:"confirm" jsonschema:"REQUIRED: Must be explicitly set to true to confirm the destructive reset operation."`
+	Graceful           *bool    `json:"graceful,omitempty" jsonschema:"Stop services gracefully before wiping (kube-drain\\, etcd leave). Defaults to true. Set to false only on nodes that are already unresponsive."`
+	Reboot             bool     `json:"reboot,omitempty" jsonschema:"Reboot the node after the reset. Defaults to false (node powers off after wiping). Set to true to have the node come back up immediately after reset."`
+	SystemLabelsToWipe []string `json:"system_labels_to_wipe,omitempty" jsonschema:"Partition labels to wipe on the system disk (e.g. 'EPHEMERAL'\\, 'STATE'). If empty\\, all system disk partitions are wiped (full factory reset)."`
+}
+
+// HandleReset implements the talos_reset tool.
+func (h *Handlers) HandleReset(ctx context.Context, _ *mcp.CallToolRequest, args ResetArgs) (*mcp.CallToolResult, any, error) {
+	h.auditLog("talos_reset", args, args.Nodes)
+
+	if !args.Confirm {
+		return nil, nil, fmt.Errorf("reset refused: confirm must be explicitly set to true")
+	}
+
+	if len(args.Nodes) == 0 {
+		return nil, nil, fmt.Errorf("reset refused: nodes must be explicitly specified")
+	}
+
+	nodeCtx, err := talos.WithNodes(ctx, args.Nodes, h.AllowedNodes)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	var partitions []*machineapi.ResetPartitionSpec
+
+	for _, label := range args.SystemLabelsToWipe {
+		partitions = append(partitions, &machineapi.ResetPartitionSpec{
+			Label: label,
+			Wipe:  true,
+		})
+	}
+
+	req := &machineapi.ResetRequest{
+		Graceful:               resolveGraceful(args.Graceful),
+		Reboot:                 args.Reboot,
+		SystemPartitionsToWipe: partitions,
+		Mode:                   machineapi.ResetRequest_SYSTEM_DISK,
+	}
+
+	resp, err := h.Client.ResetGenericWithResponse(nodeCtx, req)
+	if err != nil {
+		h.mcpLogError("talos_reset", err)
+		return nil, nil, fmt.Errorf("reset: %w", err)
+	}
+
+	out, err := json.MarshalIndent(resp, "", "  ")
+	if err != nil {
+		return nil, nil, fmt.Errorf("marshal JSON: %w", err)
+	}
+
+	return textResult(string(out)), nil, nil
+}
+
 // extractMachineConfigBody extracts the raw YAML config bytes from a MachineConfig COSI resource.
 // Reimplemented from talosctl/cmd/talos/patch.go — handles both annotation-based (current Talos)
 // and legacy protobuf-based serialization (pre-annotation Talos versions).

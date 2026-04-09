@@ -137,6 +137,12 @@ func resolvePreserve(v *bool) bool {
 	return v == nil || *v
 }
 
+// resolveGraceful returns true (stop services gracefully) unless v is explicitly set to false.
+// Defaults to true — AI agents that omit the field should not skip graceful drain.
+func resolveGraceful(v *bool) bool {
+	return v == nil || *v
+}
+
 // MarshalResource converts a COSI resource to a JSON-serializable map.
 // It uses the same path as talosctl get --output json:
 //

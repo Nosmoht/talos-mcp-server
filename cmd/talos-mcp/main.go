@@ -283,6 +283,17 @@ func main() {
 		}, h.HandlePatchConfig)
 
 		mcp.AddTool(server, &mcp.Tool{
+			Name: "talos_reset",
+			Description: "Wipe and factory-reset the specified nodes. IRREVERSIBLE: all data on the system disk is permanently destroyed. " +
+				"Requires explicit nodes and confirm=true. " +
+				"All listed nodes are reset simultaneously — reset one node at a time to avoid a full cluster outage. " +
+				"Set graceful=false only on nodes that are already unresponsive. " +
+				"Provide system_labels_to_wipe to wipe only specific partitions (e.g. ['EPHEMERAL']) instead of the full system disk. " +
+				"Set reboot=true to have nodes come back up automatically after wiping.",
+			Annotations: &mcp.ToolAnnotations{DestructiveHint: destructive, OpenWorldHint: closedWorld},
+		}, h.HandleReset)
+
+		mcp.AddTool(server, &mcp.Tool{
 			Name: "talos_apply_config",
 			Description: "Apply a complete machine config document to a single target node. " +
 				"Use this to deliver a full config (e.g. output of talosctl gen config) rather than a patch. " +

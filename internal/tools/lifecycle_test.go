@@ -712,6 +712,8 @@ func TestExtractMachineConfigBody(t *testing.T) {
 		// If Spec() returns a struct (not a string), yaml.Unmarshal into a string
 		// must fail — the function must propagate the error rather than silently
 		// return garbage bytes.
+		// Note: the pb.Marshal() error branch (lifecycle.go:729) is not covered here
+		// because protobuf.Resource.Marshal() always returns nil error (cosi-project/runtime).
 		type nonStringSpec struct{ X int }
 		res := newAnnotatedResource(nonStringSpec{X: 42})
 

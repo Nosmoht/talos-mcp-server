@@ -136,6 +136,7 @@ make build      # build binary with version info
 make test       # run tests with race detector + coverage
 make lint       # run golangci-lint
 make fmt        # check formatting
+make bench      # run Go benchmarks (BENCH=pattern to filter)
 make check      # full CI parity (fmt + vet + lint + test)
 make help       # list all targets
 ```
@@ -246,10 +247,11 @@ GitHub Actions workflows:
 | `release.yml` | tag push (`v*`) | GoReleaser builds + npm publish |
 | `codeql.yml` | push to main, all PRs, weekly | Go static analysis |
 | `scorecard.yml` | push to main, weekly | OpenSSF security posture |
+| `benchmark.yml` | PRs (Go paths only) | Benchmark comparison with emoji-annotated PR comment |
 
 **Merge-guard pattern:** `ci.yml` uses a `changes` job (dorny/paths-filter) to skip Go jobs on PRs that don't touch server code. A `merge-guard` job always runs and is the sole required status check. On `push` to main, CI always runs in full (no path filter on push — safer for the default branch).
 
-**Path list maintenance:** Go-relevant paths are duplicated between `ci.yml` (`changes` job) and `auto-tag.yml`. Keep them in sync when adding new Go packages or build files.
+**Path list maintenance:** Go-relevant paths are duplicated between `ci.yml` (`changes` job), `auto-tag.yml`, and `benchmark.yml`. Keep them in sync when adding new Go packages or build files.
 
 ## MCP Development Setup
 

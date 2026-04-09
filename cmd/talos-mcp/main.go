@@ -221,6 +221,15 @@ func main() {
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, OpenWorldHint: closedWorld},
 	}, h.HandleReadFile)
 
+	mcp.AddTool(server, &mcp.Tool{
+		Name: "talos_validate",
+		Description: "Validate a Talos machine config (YAML or JSON) offline — no cluster connection required. " +
+			"Use mode='metal' (default), 'cloud', or 'container'. " +
+			"Set strict=true to treat warnings as errors. " +
+			"Returns {valid, mode, strict, warnings} and on failure also {errors}.",
+		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, OpenWorldHint: closedWorld},
+	}, h.HandleValidate)
+
 	// ── Write / mutating tools ───────────────────────────────────────────────
 	// Skipped when TALOS_MCP_READ_ONLY=true.
 

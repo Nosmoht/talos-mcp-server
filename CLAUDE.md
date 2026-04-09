@@ -45,7 +45,7 @@ Tested against Talos Linux v1.9.x – v1.12.x (machinery SDK v1.12.6). The serve
 - `talos://{node}/resource/{namespace}/{type}` — list all COSI resources of a given type in a namespace on a specific node
 - `talos://{node}/resource/{namespace}/{type}/{id}` — get a specific COSI resource by namespace, type, and ID on a specific node
 
-## Tools (19)
+## Tools (20)
 
 ### Read-only
 - `talos_resource_definitions` — list all resource types and aliases
@@ -61,6 +61,7 @@ Tested against Talos Linux v1.9.x – v1.12.x (machinery SDK v1.12.6). The serve
 - `talos_etcd` — etcd members or status
 - `talos_list_files` — directory listing from node filesystem
 - `talos_read_file` — read file contents from node filesystem
+- `talos_validate` — validate a Talos machine config offline (no cluster needed); supports `mode` (`metal`/`cloud`/`container`) and `strict`
 
 ### Mutating (require explicit confirmation)
 - `talos_service_action` — start/stop/restart a service (note: restarting `etcd` is not supported by the Talos API)

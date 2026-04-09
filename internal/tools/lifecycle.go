@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"os"
 	"strings"
 	"time"
 
@@ -375,7 +374,7 @@ func (h *Handlers) HandleUpgrade(ctx context.Context, req *mcp.CallToolRequest, 
 	//   image parseable, node version unfetchable      → warn + proceed
 	//   image parseable, node version fetched, path ok → proceed silently
 	//   image parseable, node version fetched, invalid → hard error (reject)
-	if os.Getenv("TALOS_MCP_SKIP_VERSION_CHECK") != "true" {
+	if !h.SkipVersionCheck {
 		if len(args.Nodes) > 1 {
 			h.mcpLogWarn("talos_upgrade", "multiple nodes targeted; validating upgrade path against the first node only — upgrade nodes one at a time", fmt.Errorf("%d nodes", len(args.Nodes)))
 		}

@@ -71,6 +71,7 @@ func main() {
 	}
 
 	allowedPaths := tools.ParseAllowedPaths(os.Getenv("TALOS_MCP_ALLOWED_PATHS"))
+	skipVersionCheck := os.Getenv("TALOS_MCP_SKIP_VERSION_CHECK") == "true"
 
 	if err := validateHTTPConfig(httpAddr, authToken); err != nil {
 		stop()
@@ -107,7 +108,22 @@ func main() {
 		slog.Info("node allowlist disabled")
 	}
 
-	h := &tools.Handlers{Client: tc, AllowedNodes: allowedNodes, AllowedPaths: allowedPaths}
+	if len(allowedPaths) > 0 {
+		slog.Info("path allowlist active", "entries", len(allowedPaths)) //nolint:gosec // G706: entry count is an integer, not user-controlled string input
+	} else {
+		slog.Info("path allowlist disabled")
+	}
+
+	if skipVersionCheck {
+		slog.Warn("version check disabled (TALOS_MCP_SKIP_VERSION_CHECK=true)")
+	}
+
+	h := &tools.Handlers{
+		Client:           tc,
+		AllowedNodes:     allowedNodes,
+		AllowedPaths:     allowedPaths,
+		SkipVersionCheck: skipVersionCheck,
+	}
 
 	serverOpts := &mcp.ServerOptions{
 		Instructions: "Talos Linux cluster management server. " +

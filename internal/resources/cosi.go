@@ -8,8 +8,8 @@ import (
 	"github.com/cosi-project/runtime/pkg/resource"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/Nosmoht/talos-mcp-server/internal/marshal"
 	"github.com/Nosmoht/talos-mcp-server/internal/talos"
-	"github.com/Nosmoht/talos-mcp-server/internal/tools"
 )
 
 const maxListResults = 100
@@ -43,7 +43,7 @@ func (h *Handlers) handleCOSIResource(ctx context.Context, req *mcp.ReadResource
 			return nil, mcp.ResourceNotFoundError(req.Params.URI)
 		}
 
-		data, err := tools.MarshalResource(r)
+		data, err := marshal.Resource(r)
 		if err != nil {
 			return nil, fmt.Errorf("marshal resource: %w", err)
 		}
@@ -61,7 +61,7 @@ func (h *Handlers) handleCOSIResource(ctx context.Context, req *mcp.ReadResource
 				truncated = true
 				break
 			}
-			data, err := tools.MarshalResource(r)
+			data, err := marshal.Resource(r)
 			if err != nil {
 				return nil, fmt.Errorf("marshal resource: %w", err)
 			}

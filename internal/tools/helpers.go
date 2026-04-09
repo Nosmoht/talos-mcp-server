@@ -11,10 +11,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/cosi-project/runtime/pkg/resource"
-	"github.com/cosi-project/runtime/pkg/resource/meta"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
-	yaml "go.yaml.in/yaml/v4"
 
 	"github.com/Nosmoht/talos-mcp-server/internal/talos"
 )
@@ -143,30 +140,6 @@ func resolveGraceful(v *bool) bool {
 	return v == nil || *v
 }
 
-// MarshalResource converts a COSI resource to a JSON-serializable map.
-// It uses the same path as talosctl get --output json:
-//
-//	resource.MarshalYAML → yaml.Marshal → yaml.Unmarshal → map[string]any
-func MarshalResource(r resource.Resource) (map[string]any, error) {
-	out, err := resource.MarshalYAML(r)
-	if err != nil {
-		return nil, err
-	}
-
-	yamlBytes, err := yaml.Marshal(out)
-	if err != nil {
-		return nil, err
-	}
-
-	var data map[string]any
-
-	if err = yaml.Unmarshal(yamlBytes, &data); err != nil {
-		return nil, err
-	}
-
-	return data, nil
-}
-
 // notifyProgress sends a progress notification to the client if the request
 // carries a progress token. It is a no-op when req is nil or when no token is
 // present, so callers do not need to guard every call site.
@@ -185,18 +158,5 @@ func notifyProgress(ctx context.Context, req *mcp.CallToolRequest, message strin
 		Total:         total,
 	}); err != nil {
 		log.Printf("progress notification: %v", err)
-	}
-}
-
-// MarshalResourceDefinition converts a ResourceDefinition to a compact summary map.
-func MarshalResourceDefinition(rd *meta.ResourceDefinition) map[string]any {
-	spec := rd.TypedSpec()
-
-	return map[string]any{
-		"type":              spec.Type,
-		"display_type":      spec.DisplayType,
-		"default_namespace": spec.DefaultNamespace,
-		"aliases":           spec.Aliases,
-		"printColumns":      spec.PrintColumns,
 	}
 }

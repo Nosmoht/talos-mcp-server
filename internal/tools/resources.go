@@ -9,6 +9,7 @@ import (
 	"github.com/cosi-project/runtime/pkg/safe"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/Nosmoht/talos-mcp-server/internal/marshal"
 	"github.com/Nosmoht/talos-mcp-server/internal/talos"
 )
 
@@ -51,7 +52,7 @@ func (h *Handlers) HandleGetResource(ctx context.Context, _ *mcp.CallToolRequest
 			return nil, nil, fmt.Errorf("get resource %s/%s/%s: %w", ns, resourceType, args.ResourceID, err)
 		}
 
-		data, err := MarshalResource(r)
+		data, err := marshal.Resource(r)
 		if err != nil {
 			return nil, nil, fmt.Errorf("marshal resource: %w", err)
 		}
@@ -67,7 +68,7 @@ func (h *Handlers) HandleGetResource(ctx context.Context, _ *mcp.CallToolRequest
 		}
 
 		for _, r := range list.Items {
-			data, err := MarshalResource(r)
+			data, err := marshal.Resource(r)
 			if err != nil {
 				return nil, nil, fmt.Errorf("marshal resource: %w", err)
 			}
@@ -92,7 +93,7 @@ func (h *Handlers) HandleResourceDefinitions(ctx context.Context, _ *mcp.CallToo
 	var defs []map[string]any
 
 	for rd := range list.All() {
-		defs = append(defs, MarshalResourceDefinition(rd))
+		defs = append(defs, marshal.ResourceDefinition(rd))
 	}
 
 	return jsonResult(defs)

@@ -9,7 +9,7 @@ import (
 	"github.com/cosi-project/runtime/pkg/safe"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/Nosmoht/talos-mcp-server/internal/tools"
+	"github.com/Nosmoht/talos-mcp-server/internal/marshal"
 )
 
 func (h *Handlers) handleVersion(ctx context.Context, _ *mcp.ReadResourceRequest) (*mcp.ReadResourceResult, error) {
@@ -39,7 +39,7 @@ func (h *Handlers) handleResourceDefinitions(ctx context.Context, _ *mcp.ReadRes
 
 	var defs []map[string]any
 	for rd := range list.All() {
-		defs = append(defs, tools.MarshalResourceDefinition(rd))
+		defs = append(defs, marshal.ResourceDefinition(rd))
 	}
 
 	out, err := json.Marshal(defs)

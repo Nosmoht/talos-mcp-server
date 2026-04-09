@@ -29,7 +29,7 @@ Download the latest release from [GitHub Releases](https://github.com/Nosmoht/ta
 ```bash
 git clone https://github.com/Nosmoht/talos-mcp-server
 cd talos-mcp
-go build -o talos-mcp .
+go build -o talos-mcp ./cmd/talos-mcp
 ```
 
 ## Configuration
@@ -42,8 +42,15 @@ Reads `~/.talos/config` by default (the same file `talosctl` uses). Override via
 | `TALOS_CONTEXT` | active context | Context name to use |
 | `TALOS_ENDPOINTS` | from config | Comma-separated endpoint overrides |
 | `TALOS_MCP_READ_ONLY` | `false` | Set to `true` to disable all mutating tools at startup |
+| `TALOS_MCP_HTTP_ADDR` | (unset) | If set (e.g. `:8080`), serve Streamable HTTP instead of stdio |
+| `TALOS_MCP_AUTH_TOKEN` | (unset) | Required bearer token when HTTP mode is active |
+| `TALOS_MCP_ALLOWED_NODES` | (unset) | Comma-separated IPs, hostnames, and CIDR ranges permitted as tool targets. Unset allows all. |
 | `TALOS_MCP_ALLOWED_PATHS` | *(all)* | Comma-separated path prefixes allowed for `talos_read_file` and `talos_list_files` (e.g. `/etc,/proc`) |
 | `TALOS_MCP_SKIP_VERSION_CHECK` | `false` | Set to `true` to bypass upgrade path validation (e.g. for factory images or custom tags) |
+| `TALOS_MCP_RATE_LIMIT` | `10` | HTTP mode: token-bucket refill rate (requests/second, float) |
+| `TALOS_MCP_RATE_BURST` | `20` | HTTP mode: token-bucket burst capacity (int) |
+| `TALOS_MCP_MAX_BODY_SIZE` | `4194304` | HTTP mode: max POST request body size in bytes (4 MiB default) |
+| `TALOS_MCP_MAX_CONCURRENT` | `20` | HTTP mode: max concurrent POST handlers (fail-fast 503 on overload) |
 
 ## Compatibility
 
@@ -263,7 +270,7 @@ A passing result means the package was published by the official GitHub Actions 
 
 ```bash
 # Build
-go build -o talos-mcp .
+go build -o talos-mcp ./cmd/talos-mcp
 
 # Test
 go test -race ./...

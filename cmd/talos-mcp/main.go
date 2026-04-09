@@ -14,6 +14,9 @@
 //   - TALOS_MCP_ALLOWED_NODES: comma-separated list of permitted node IPs, hostnames,
 //     and CIDR ranges (e.g. "10.0.0.1,10.0.0.2" or "10.0.0.0/24"). When set, any tool
 //     call targeting a node not in this list is rejected. Unset or empty allows all nodes.
+//   - TALOS_MCP_ALLOWED_PATHS: comma-separated path prefixes allowed for talos_read_file
+//     and talos_list_files (e.g. "/etc,/proc"). Unset or empty allows all paths.
+//   - TALOS_MCP_SKIP_VERSION_CHECK: set to "true" to bypass upgrade path validation
 //   - TALOS_MCP_RATE_LIMIT: HTTP mode requests/second (float, default 10)
 //   - TALOS_MCP_RATE_BURST: HTTP mode burst capacity (int, default 20)
 //   - TALOS_MCP_MAX_BODY_SIZE: HTTP mode max POST body bytes (int, default 4194304)

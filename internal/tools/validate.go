@@ -2,7 +2,6 @@ package tools
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -79,10 +78,5 @@ func (h *Handlers) HandleValidate(_ context.Context, _ *mcp.CallToolRequest, arg
 		result["error"] = valErr.Error()
 	}
 
-	out, err := json.MarshalIndent(result, "", "  ")
-	if err != nil {
-		return nil, nil, fmt.Errorf("marshal JSON: %w", err)
-	}
-
-	return textResult(string(out)), nil, nil
+	return jsonResult(result)
 }

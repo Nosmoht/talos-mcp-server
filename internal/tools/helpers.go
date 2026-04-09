@@ -60,14 +60,14 @@ func textResult(text string) *mcp.CallToolResult {
 	}
 }
 
-// jsonMarshal marshals v to indented JSON string.
-func jsonMarshal(v any) (string, error) {
+// jsonResult marshals v to indented JSON and returns the MCP tool result tuple.
+func jsonResult(v any) (*mcp.CallToolResult, any, error) {
 	out, err := json.MarshalIndent(v, "", "  ")
 	if err != nil {
-		return "", fmt.Errorf("marshal JSON: %w", err)
+		return nil, nil, fmt.Errorf("marshal JSON: %w", err)
 	}
 
-	return string(out), nil
+	return textResult(string(out)), nil, nil
 }
 
 // auditLog emits a structured audit record at INFO level.

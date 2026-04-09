@@ -2,7 +2,6 @@ package tools
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 
 	"github.com/cosi-project/runtime/pkg/resource"
@@ -77,16 +76,7 @@ func (h *Handlers) HandleGetResource(ctx context.Context, _ *mcp.CallToolRequest
 		}
 	}
 
-	out, err := json.MarshalIndent(results, "", "  ")
-	if err != nil {
-		return nil, nil, fmt.Errorf("marshal JSON: %w", err)
-	}
-
-	return &mcp.CallToolResult{
-		Content: []mcp.Content{
-			&mcp.TextContent{Text: string(out)},
-		},
-	}, nil, nil
+	return jsonResult(results)
 }
 
 // HandleResourceDefinitions implements the talos_resource_definitions tool.
@@ -105,14 +95,5 @@ func (h *Handlers) HandleResourceDefinitions(ctx context.Context, _ *mcp.CallToo
 		defs = append(defs, MarshalResourceDefinition(rd))
 	}
 
-	out, err := json.MarshalIndent(defs, "", "  ")
-	if err != nil {
-		return nil, nil, fmt.Errorf("marshal JSON: %w", err)
-	}
-
-	return &mcp.CallToolResult{
-		Content: []mcp.Content{
-			&mcp.TextContent{Text: string(out)},
-		},
-	}, nil, nil
+	return jsonResult(defs)
 }

@@ -3,10 +3,12 @@ linters:
   # standard preset covers govet (equivalent to `go vet ./...` in make check).
   default: standard
   enable:
-    - gosec
     - errorlint
+    - exhaustive
     - gocritic
+    - gosec
     - revive
+    - thelper
 formatters:
   # gofmt is a formatter in golangci-lint v2 (moved out of linters).
   # Enabled here to match the `gofmt -l .` check run by `make fmt`,

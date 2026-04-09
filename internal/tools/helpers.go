@@ -22,6 +22,10 @@ type Handlers struct {
 	AllowedNodes     *talos.NodeAllowlist
 	AllowedPaths     []string // set once at startup; read-only afterward
 	SkipVersionCheck bool     // set once at startup; read-only afterward
+	// BlockedConfigPaths is the list of dot-separated config path prefixes that
+	// talos_patch_config refuses to modify. Empty means no restriction.
+	// Set once at startup; read-only afterward.
+	BlockedConfigPaths []string
 	// patchMu serialises concurrent HandlePatchConfig calls on a per-node basis.
 	// In HTTP multi-session mode two agents could otherwise both fetch the current
 	// config, each merge their own patch, and the second apply would silently

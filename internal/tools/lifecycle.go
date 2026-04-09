@@ -500,6 +500,12 @@ func (h *Handlers) HandlePatchConfig(ctx context.Context, req *mcp.CallToolReque
 		return nil, nil, fmt.Errorf("patch_config refused: confirm must be explicitly set to true when dry_run is false")
 	}
 
+	// Blocklist guard: reject patches that touch operator-restricted config paths.
+	// Applied before the network round-trip so misuse is caught cheaply.
+	if err := checkBlockedPaths([]byte(args.Patch), h.BlockedConfigPaths); err != nil {
+		return nil, nil, err
+	}
+
 	ctx, err := talos.WithNodes(ctx, args.Nodes, h.AllowedNodes)
 	if err != nil {
 		return nil, nil, err
@@ -668,6 +674,14 @@ func (h *Handlers) HandleApplyConfig(ctx context.Context, req *mcp.CallToolReque
 		Confirm:    args.Confirm,
 		Nodes:      args.Nodes,
 	}, args.Nodes)
+
+	// Blocklist guard: talos_apply_config replaces the entire machine config document,
+	// so it cannot be safely allowed when a path blocklist is active — any blocked path
+	// would be silently overwritten. Direct the caller to talos_patch_config instead,
+	// which supports targeted modifications that the blocklist can inspect.
+	if len(h.BlockedConfigPaths) > 0 {
+		return nil, nil, fmt.Errorf("talos_apply_config is disabled while TALOS_MCP_BLOCKED_CONFIG_PATHS is set: use talos_patch_config for targeted changes that respect the blocklist")
+	}
 
 	// Require exactly one node: each node has a unique machine config.
 	// Applying the same full config to multiple nodes risks overwriting node-specific settings

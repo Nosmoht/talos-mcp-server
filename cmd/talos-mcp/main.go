@@ -16,6 +16,9 @@
 //     call targeting a node not in this list is rejected. Unset or empty allows all nodes.
 //   - TALOS_MCP_ALLOWED_PATHS: comma-separated path prefixes allowed for talos_read_file
 //     and talos_list_files (e.g. "/etc,/proc"). Unset or empty allows all paths.
+//   - TALOS_MCP_BLOCKED_CONFIG_PATHS: comma-separated dot-path prefixes that
+//     talos_patch_config refuses to modify (e.g. "machine.security,cluster.etcd").
+//     Unset or empty disables the blocklist (all paths allowed).
 //   - TALOS_MCP_SKIP_VERSION_CHECK: set to "true" to bypass upgrade path validation
 //   - TALOS_MCP_RATE_LIMIT: HTTP mode requests/second (float, default 10)
 //   - TALOS_MCP_RATE_BURST: HTTP mode burst capacity (int, default 20)
@@ -33,6 +36,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -72,6 +76,7 @@ func main() {
 
 	allowedPaths := tools.ParseAllowedPaths(os.Getenv("TALOS_MCP_ALLOWED_PATHS"))
 	skipVersionCheck := os.Getenv("TALOS_MCP_SKIP_VERSION_CHECK") == "true"
+	blockedConfigPaths := splitNonEmpty(os.Getenv("TALOS_MCP_BLOCKED_CONFIG_PATHS"), ",")
 
 	if err := validateHTTPConfig(httpAddr, authToken); err != nil {
 		stop()
@@ -118,11 +123,18 @@ func main() {
 		slog.Warn("version check disabled (TALOS_MCP_SKIP_VERSION_CHECK=true)")
 	}
 
+	if len(blockedConfigPaths) > 0 {
+		slog.Info("config path blocklist active", "entries", len(blockedConfigPaths)) //nolint:gosec // G706: entry count is an integer, not user-controlled string input
+	} else {
+		slog.Info("config path blocklist disabled")
+	}
+
 	h := &tools.Handlers{
-		Client:           tc,
-		AllowedNodes:     allowedNodes,
-		AllowedPaths:     allowedPaths,
-		SkipVersionCheck: skipVersionCheck,
+		Client:             tc,
+		AllowedNodes:       allowedNodes,
+		AllowedPaths:       allowedPaths,
+		SkipVersionCheck:   skipVersionCheck,
+		BlockedConfigPaths: blockedConfigPaths,
 	}
 
 	serverOpts := &mcp.ServerOptions{
@@ -454,4 +466,19 @@ func runServer(ctx context.Context, server *mcp.Server, addr, token string, hc h
 		return fmt.Errorf("HTTP server: %w", err)
 	}
 	return nil
+}
+
+// splitNonEmpty splits s by sep and returns non-empty, trimmed tokens.
+// Returns nil when s is empty.
+func splitNonEmpty(s, sep string) []string {
+	if s == "" {
+		return nil
+	}
+	var out []string
+	for _, p := range strings.Split(s, sep) {
+		if t := strings.TrimSpace(p); t != "" {
+			out = append(out, t)
+		}
+	}
+	return out
 }

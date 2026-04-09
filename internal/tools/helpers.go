@@ -18,7 +18,7 @@ import (
 
 // Handlers holds the Talos client and exposes MCP tool handler methods.
 type Handlers struct {
-	Client           *talos.Client
+	Client           talos.ClientInterface
 	AllowedNodes     *talos.NodeAllowlist
 	AllowedPaths     []string // set once at startup; read-only afterward
 	SkipVersionCheck bool     // set once at startup; read-only afterward

@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/cosi-project/runtime/pkg/state"
 	talosclient "github.com/siderolabs/talos/pkg/machinery/client"
 	clientconfig "github.com/siderolabs/talos/pkg/machinery/client/config"
 	"google.golang.org/grpc"
@@ -147,6 +148,14 @@ func (c *Client) InvalidateVersionCache() {
 	c.versionCached = nil
 }
 
+// COSIState returns the COSI state accessor for resource queries.
+// It satisfies the ClientInterface requirement for COSI access — the underlying
+// state.State field on talosclient.Client is a public field, not a method, so
+// this wrapper makes it accessible through the interface.
+func (c *Client) COSIState() state.State {
+	return c.COSI
+}
+
 // fetchVersion calls the Talos Version gRPC method and parses the first response message.
 func (c *Client) fetchVersion(ctx context.Context) (*version.TalosVersion, error) {
 	resp, err := c.Version(ctx)
@@ -186,3 +195,8 @@ func WithNodes(ctx context.Context, nodes []string, allow *NodeAllowlist) (conte
 	}
 	return talosclient.WithNodes(ctx, nodes...), nil
 }
+
+// Compile-time assertion: *Client must satisfy ClientInterface.
+// If this line fails to compile, a method required by ClientInterface is missing
+// from *Client.
+var _ ClientInterface = (*Client)(nil)

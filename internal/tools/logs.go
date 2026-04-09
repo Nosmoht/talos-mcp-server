@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -51,6 +52,8 @@ func (h *Handlers) HandleLogs(ctx context.Context, _ *mcp.CallToolRequest, args 
 
 	var lines []string
 
+	nodeErrors := make(map[string]string)
+
 	var streamErr error
 
 	for {
@@ -65,6 +68,14 @@ func (h *Handlers) HandleLogs(ctx context.Context, _ *mcp.CallToolRequest, args 
 
 		if msg.GetBytes() != nil {
 			lines = append(lines, strings.TrimRight(string(msg.GetBytes()), "\n"))
+		} else if meta := msg.GetMetadata(); meta != nil && meta.GetError() != "" {
+			// Per-node error embedded in the stream (e.g. node unreachable).
+			node := meta.GetHostname()
+			if node == "" {
+				node = "unknown"
+			}
+
+			nodeErrors[node] = meta.GetError()
 		}
 	}
 
@@ -72,7 +83,13 @@ func (h *Handlers) HandleLogs(ctx context.Context, _ *mcp.CallToolRequest, args 
 		return nil, nil, fmt.Errorf("logs stream for %q: %w", args.ServiceName, streamErr)
 	}
 
-	return textResult(strings.Join(lines, "\n")), nil, nil
+	result := strings.Join(lines, "\n")
+	if len(nodeErrors) > 0 {
+		errJSON, _ := json.Marshal(nodeErrors)
+		result += "\n\n[node errors: " + string(errJSON) + "]"
+	}
+
+	return textResult(result), nil, nil
 }
 
 // DmesgArgs defines input for talos_dmesg.
@@ -104,6 +121,8 @@ func (h *Handlers) HandleDmesg(ctx context.Context, _ *mcp.CallToolRequest, args
 
 	var lines []string
 
+	nodeErrors := make(map[string]string)
+
 	var streamErr error
 
 	for {
@@ -122,6 +141,14 @@ func (h *Handlers) HandleDmesg(ctx context.Context, _ *mcp.CallToolRequest, args
 					lines = append(lines, line)
 				}
 			}
+		} else if meta := msg.GetMetadata(); meta != nil && meta.GetError() != "" {
+			// Per-node error embedded in the stream (e.g. node unreachable).
+			node := meta.GetHostname()
+			if node == "" {
+				node = "unknown"
+			}
+
+			nodeErrors[node] = meta.GetError()
 		}
 	}
 
@@ -137,6 +164,11 @@ func (h *Handlers) HandleDmesg(ctx context.Context, _ *mcp.CallToolRequest, args
 	result := strings.Join(lines, "\n")
 	if len(lines) == 0 {
 		result = "(no dmesg output)"
+	}
+
+	if len(nodeErrors) > 0 {
+		errJSON, _ := json.Marshal(nodeErrors)
+		result += "\n\n[node errors: " + string(errJSON) + "]"
 	}
 
 	return textResult(result), nil, nil

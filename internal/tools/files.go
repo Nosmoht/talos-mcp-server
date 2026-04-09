@@ -72,6 +72,8 @@ func (h *Handlers) HandleListFiles(ctx context.Context, _ *mcp.CallToolRequest, 
 
 	var files []fileEntry
 
+	nodeErrors := make(map[string]string)
+
 	var streamErr error
 
 	truncated := false
@@ -87,6 +89,16 @@ func (h *Handlers) HandleListFiles(ctx context.Context, _ *mcp.CallToolRequest, 
 		}
 
 		if info.GetName() == "" {
+			// Empty-name messages carry per-node metadata errors (e.g. node unreachable).
+			if meta := info.GetMetadata(); meta != nil && meta.GetError() != "" {
+				node := meta.GetHostname()
+				if node == "" {
+					node = "unknown"
+				}
+
+				nodeErrors[node] = meta.GetError()
+			}
+
 			continue
 		}
 
@@ -122,6 +134,11 @@ func (h *Handlers) HandleListFiles(ctx context.Context, _ *mcp.CallToolRequest, 
 	result := string(out)
 	if truncated {
 		result += fmt.Sprintf("\n\n[truncated at %d entries]", maxListEntries)
+	}
+
+	if len(nodeErrors) > 0 {
+		errJSON, _ := json.Marshal(nodeErrors)
+		result += "\n\n[node errors: " + string(errJSON) + "]"
 	}
 
 	return textResult(result), nil, nil

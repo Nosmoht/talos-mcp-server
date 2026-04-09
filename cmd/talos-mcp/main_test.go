@@ -69,19 +69,15 @@ func TestBuildTokenVerifier(t *testing.T) {
 	}
 }
 
-// buildTestHandler assembles the full middleware chain used in production,
-// against a minimal MCP server, for integration testing.
+// buildTestHandler assembles the full HTTP mux used in production (including
+// /healthz routing) against a minimal MCP server, for integration testing.
+// The health probe always returns nil (healthy) so existing tests are unaffected.
 func buildTestHandler(secret string, hc httpTransportConfig) http.Handler {
 	server := mcp.NewServer(&mcp.Implementation{Name: "test", Version: "0"}, nil)
 	mcpHandler := mcp.NewStreamableHTTPHandler(func(_ *http.Request) *mcp.Server {
 		return server
 	}, &mcp.StreamableHTTPOptions{DisableLocalhostProtection: true})
-	verifier := buildTokenVerifier(secret)
-	handler := LimitConcurrency(hc.sem)(mcpHandler)
-	handler = auth.RequireBearerToken(verifier, nil)(handler)
-	handler = LimitRequestBody(hc.maxBody)(handler)
-	handler = RateLimit(hc.limiter)(handler)
-	return handler
+	return buildHTTPMux(mcpHandler, secret, hc, func(_ context.Context) error { return nil })
 }
 
 func TestHTTPHandler_Integration(t *testing.T) {
@@ -146,4 +142,108 @@ func TestHTTPHandler_RateLimit_Integration(t *testing.T) {
 	if second != http.StatusTooManyRequests {
 		t.Fatalf("second immediate request should be rate-limited, got %d", second)
 	}
+}
+
+func buildMuxForTest(probe func(context.Context) error) (*httptest.Server, func()) {
+	srv := mcp.NewServer(&mcp.Implementation{Name: "test", Version: "0"}, nil)
+	mcpHandler := mcp.NewStreamableHTTPHandler(func(_ *http.Request) *mcp.Server {
+		return srv
+	}, &mcp.StreamableHTTPOptions{DisableLocalhostProtection: true})
+	ts := httptest.NewServer(buildHTTPMux(mcpHandler, "secret", newHTTPTransportConfig(), probe))
+	return ts, ts.Close
+}
+
+func TestHealthzEndpoint(t *testing.T) {
+	t.Run("returns 200 when probe succeeds", func(t *testing.T) {
+		ts, cleanup := buildMuxForTest(func(_ context.Context) error { return nil })
+		defer cleanup()
+
+		req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, ts.URL+"/healthz", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			t.Errorf("expected 200 from healthy probe, got %d", resp.StatusCode)
+		}
+	})
+
+	t.Run("returns 503 when probe fails", func(t *testing.T) {
+		ts, cleanup := buildMuxForTest(func(_ context.Context) error { return errors.New("gRPC down") })
+		defer cleanup()
+
+		req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, ts.URL+"/healthz", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = resp.Body.Close()
+		if resp.StatusCode != http.StatusServiceUnavailable {
+			t.Errorf("expected 503 from failing probe, got %d", resp.StatusCode)
+		}
+	})
+
+	t.Run("no auth required on /healthz", func(t *testing.T) {
+		ts, cleanup := buildMuxForTest(func(_ context.Context) error { return nil })
+		defer cleanup()
+
+		// Deliberately omit Authorization header — /healthz must still return 200.
+		req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, ts.URL+"/healthz", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			t.Errorf("expected 200 without auth on /healthz, got %d", resp.StatusCode)
+		}
+	})
+
+	t.Run("auth still required on non-healthz path", func(t *testing.T) {
+		ts, cleanup := buildMuxForTest(func(_ context.Context) error { return nil })
+		defer cleanup()
+
+		req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, ts.URL+"/mcp", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = resp.Body.Close()
+		if resp.StatusCode != http.StatusUnauthorized {
+			t.Errorf("expected 401 without token on /mcp, got %d", resp.StatusCode)
+		}
+	})
+
+	t.Run("method not allowed on /healthz for non-GET/HEAD", func(t *testing.T) {
+		ts, cleanup := buildMuxForTest(func(_ context.Context) error { return nil })
+		defer cleanup()
+
+		for _, method := range []string{http.MethodPost, http.MethodPut, http.MethodDelete} {
+			req, err := http.NewRequestWithContext(context.Background(), method, ts.URL+"/healthz", nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			resp, err := http.DefaultClient.Do(req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			_ = resp.Body.Close()
+			if resp.StatusCode != http.StatusMethodNotAllowed {
+				t.Errorf("method %s: expected 405 on /healthz, got %d", method, resp.StatusCode)
+			}
+		}
+	})
 }

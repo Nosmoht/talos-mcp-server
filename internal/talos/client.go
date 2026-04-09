@@ -90,6 +90,14 @@ func (c *Client) GetNodeVersion(ctx context.Context, node string) (*version.Talo
 	return c.fetchVersion(ctx)
 }
 
+// Ping verifies gRPC connectivity to the default endpoint by issuing a Version
+// RPC. Unlike GetClusterVersion, Ping never uses a cached result, making it
+// suitable for liveness probes that must detect a lost connection.
+func (c *Client) Ping(ctx context.Context) error {
+	_, err := c.Version(ctx)
+	return err
+}
+
 // InvalidateVersionCache clears the cached cluster version.
 // Call this after a successful upgrade so the next GetClusterVersion call
 // fetches fresh data.

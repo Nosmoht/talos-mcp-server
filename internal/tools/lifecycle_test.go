@@ -6,6 +6,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/cosi-project/runtime/api/v1alpha1"
+	"github.com/cosi-project/runtime/pkg/resource"
+	cosiprotobuf "github.com/cosi-project/runtime/pkg/resource/protobuf"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/Nosmoht/talos-mcp-server/internal/talos"
@@ -588,4 +591,130 @@ func TestHandleReset_Guards(t *testing.T) {
 			}
 		})
 	}
+}
+
+// --- extractMachineConfigBody tests ---
+
+// simpleResource is a minimal resource.Resource implementation used in tests
+// for the non-protobuf code paths of extractMachineConfigBody.
+type simpleResource struct {
+	md   resource.Metadata
+	spec any
+}
+
+func (r *simpleResource) Metadata() *resource.Metadata { return &r.md }
+func (r *simpleResource) Spec() any                    { return r.spec }
+func (r *simpleResource) DeepCopy() resource.Resource  { return r }
+
+// newProtoResource builds a *cosiprotobuf.Resource with no annotations and
+// the given YAML spec string, simulating a legacy Talos MachineConfig resource.
+func newProtoResource(yamlSpec string) *cosiprotobuf.Resource {
+	res, err := cosiprotobuf.Unmarshal(&v1alpha1.Resource{
+		Metadata: &v1alpha1.Metadata{
+			Namespace: "config",
+			Type:      "MachineConfigs.config.talos.dev",
+			Id:        "v1alpha1",
+			Version:   "1",
+			Phase:     "running",
+		},
+		Spec: &v1alpha1.Spec{YamlSpec: yamlSpec},
+	})
+	if err != nil {
+		panic("newProtoResource: " + err.Error())
+	}
+	return res
+}
+
+// newSimpleResource builds a simpleResource with empty annotations.
+func newSimpleResource(spec any) *simpleResource {
+	md := resource.NewMetadata("config", "MachineConfigs.config.talos.dev", "v1alpha1", resource.VersionUndefined)
+	return &simpleResource{md: md, spec: spec}
+}
+
+// newAnnotatedResource builds a simpleResource with one annotation set,
+// simulating the current Talos MachineConfig format where spec is a YAML string.
+func newAnnotatedResource(spec any) *simpleResource {
+	md := resource.NewMetadata("config", "MachineConfigs.config.talos.dev", "v1alpha1", resource.VersionUndefined)
+	md.Annotations().Set("config.talos.dev/hash", "abc123")
+	return &simpleResource{md: md, spec: spec}
+}
+
+// TestExtractMachineConfigBody covers both code paths of the function and
+// selected error branches.
+func TestExtractMachineConfigBody(t *testing.T) {
+	const machineConfigYAML = "version: v1alpha1\nmachine:\n  type: controlplane\n"
+
+	t.Run("legacy protobuf path returns yaml spec", func(t *testing.T) {
+		res := newProtoResource(machineConfigYAML)
+
+		if !res.Metadata().Annotations().Empty() {
+			t.Fatal("fixture must have empty annotations to exercise legacy path")
+		}
+
+		got, err := extractMachineConfigBody(res)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if string(got) != machineConfigYAML {
+			t.Errorf("got %q, want %q", string(got), machineConfigYAML)
+		}
+	})
+
+	t.Run("legacy protobuf path with empty yaml spec returns empty bytes", func(t *testing.T) {
+		res := newProtoResource("")
+
+		got, err := extractMachineConfigBody(res)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(got) != 0 {
+			t.Errorf("expected empty bytes for empty yaml spec, got %q", got)
+		}
+	})
+
+	t.Run("legacy fallback path yaml-marshals spec", func(t *testing.T) {
+		// Spec is a plain map — not a *cosiprotobuf.Resource — so the function falls
+		// through to yaml.Marshal(mc.Spec()).
+		specMap := map[string]any{"version": "v1alpha1", "machine": map[string]any{"type": "controlplane"}}
+		res := newSimpleResource(specMap)
+
+		got, err := extractMachineConfigBody(res)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(got) == 0 {
+			t.Error("expected non-empty YAML output from fallback path")
+		}
+		if !strings.Contains(string(got), "v1alpha1") {
+			t.Errorf("marshaled YAML does not contain expected version key, got: %s", got)
+		}
+	})
+
+	t.Run("current path unwraps YAML string envelope", func(t *testing.T) {
+		// In the current Talos format, Spec() returns a Go string. yaml.Marshal of a
+		// Go string produces a quoted YAML scalar; yaml.Unmarshal back into a Go string
+		// yields the original value — this is the envelope-unwrap in extractMachineConfigBody.
+		res := newAnnotatedResource(machineConfigYAML)
+
+		got, err := extractMachineConfigBody(res)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if string(got) != machineConfigYAML {
+			t.Errorf("got %q, want %q", string(got), machineConfigYAML)
+		}
+	})
+
+	t.Run("current path errors when spec cannot be unmarshaled as string", func(t *testing.T) {
+		// If Spec() returns a struct (not a string), yaml.Unmarshal into a string
+		// must fail — the function must propagate the error rather than silently
+		// return garbage bytes.
+		type nonStringSpec struct{ X int }
+		res := newAnnotatedResource(nonStringSpec{X: 42})
+
+		_, err := extractMachineConfigBody(res)
+		if err == nil {
+			t.Error("expected error when spec cannot be unmarshaled as string, got nil")
+		}
+	})
 }

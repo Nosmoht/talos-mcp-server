@@ -18,9 +18,10 @@ import (
 
 // Handlers holds the Talos client and exposes MCP tool handler methods.
 type Handlers struct {
-	Client       *talos.Client
-	AllowedNodes *talos.NodeAllowlist
-	AllowedPaths []string // set once at startup; read-only afterward
+	Client           *talos.Client
+	AllowedNodes     *talos.NodeAllowlist
+	AllowedPaths     []string // set once at startup; read-only afterward
+	SkipVersionCheck bool     // set once at startup; read-only afterward
 	// patchMu serialises concurrent HandlePatchConfig calls on a per-node basis.
 	// In HTTP multi-session mode two agents could otherwise both fetch the current
 	// config, each merge their own patch, and the second apply would silently

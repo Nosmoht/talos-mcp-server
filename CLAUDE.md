@@ -22,6 +22,7 @@ Environment variables (set in `.mcp.json` env block or shell):
 | `TALOS_MCP_AUTH_TOKEN` | (unset) | Required bearer token when HTTP mode is active |
 | `TALOS_MCP_ALLOWED_NODES` | (unset) | Comma-separated IPs, hostnames, and CIDR ranges permitted as tool targets. Unset or empty allows all nodes. |
 | `TALOS_MCP_ALLOWED_PATHS` | (all) | Comma-separated path prefixes permitted for `talos_read_file` and `talos_list_files` (e.g. `/etc,/proc`). Unset or empty allows all paths. |
+| `TALOS_MCP_BLOCKED_CONFIG_PATHS` | (unset) | Comma-separated dot-path prefixes that `talos_patch_config` refuses to modify (e.g. `machine.security,cluster.etcd`). Blocks exact matches, child paths, and parent paths. Unset or empty disables the blocklist. |
 | `TALOS_MCP_SKIP_VERSION_CHECK` | `false` | Set to `"true"` to bypass upgrade path validation |
 | `TALOS_MCP_RATE_LIMIT` | `10` | HTTP mode: token-bucket refill rate (requests/second, float) |
 | `TALOS_MCP_RATE_BURST` | `20` | HTTP mode: token-bucket burst capacity (int) |

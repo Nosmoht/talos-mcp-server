@@ -72,7 +72,7 @@ Tested against Talos Linux v1.9.x – v1.12.x (machinery SDK v1.12.6). The serve
 - `talos_rollback` — roll back the last upgrade on nodes (requires `confirm=true` + explicit `nodes`)
 - `talos_reset` — wipe and factory-reset nodes (requires `confirm=true` + explicit `nodes`); supports `graceful` (default `true`), `reboot` (default `false`), `system_labels_to_wipe` (specific partitions; empty = full system disk wipe)
 - `talos_patch_config` — apply machine config patch (defaults to `dry_run=true`; requires `confirm=true` when `dry_run=false`)
-- `talos_apply_config` — apply a complete machine config document to a single node (defaults to `dry_run=true`; requires `confirm=true` when `dry_run=false`)
+- `talos_apply_config` — apply a complete machine config document to a single node via `config_file` (absolute local path); secrets never enter the conversation context (defaults to `dry_run=true`; requires `confirm=true` when `dry_run=false`)
 
 ## Prompts (5)
 
@@ -101,7 +101,7 @@ Prompts are guided workflows that instruct the AI agent which tools to call and 
 - `talos_upgrade` `preserve` defaults to `true` (keep EPHEMERAL partition) — differs from `talosctl` default of `false`. Set `preserve=false` explicitly to wipe.
 - `talos_reset` requires `confirm=true` and explicit `nodes`. All listed nodes are reset simultaneously — reset one node at a time to maintain cluster availability. `graceful` defaults to `true` (drain workloads and leave etcd before wiping). Set `graceful=false` only on unresponsive nodes. `system_labels_to_wipe` empty = full system disk wipe (factory reset); provide specific labels (e.g. `["EPHEMERAL"]`) for a partial wipe.
 - `talos_patch_config` defaults `dry_run=true` — you must explicitly pass `dry_run=false` to apply. When `dry_run=false`, `confirm=true` is also required.
-- `talos_apply_config` defaults `dry_run=true` and requires exactly one target node. When `dry_run=false`, `confirm=true` is also required. Replaces the entire machine config — use `talos_patch_config` for targeted changes.
+- `talos_apply_config` requires `config_file`: an absolute path to a local YAML/JSON file (no symlinks, max 1 MiB). The server reads the file directly — secrets (CA keys, tokens, encryption keys) never enter the conversation context. Reads from the local host filesystem; `TALOS_MCP_ALLOWED_PATHS` does not apply. Defaults `dry_run=true` and requires exactly one target node. When `dry_run=false`, `confirm=true` is also required. Replaces the entire machine config — use `talos_patch_config` for targeted changes.
 
 ## Logging
 

@@ -329,6 +329,9 @@ func main() {
 		mcp.AddTool(server, &mcp.Tool{
 			Name: "talos_apply_config",
 			Description: "Apply a complete machine config document to a single target node. " +
+				"config_file must be an absolute path to a local YAML/JSON file — the server reads it " +
+				"directly so secrets (CA keys, tokens, encryption keys) never enter the conversation. " +
+				"Reads from the local host filesystem (not Talos nodes); TALOS_MCP_ALLOWED_PATHS does not apply. " +
 				"Use this to deliver a full config (e.g. output of talosctl gen config) rather than a patch. " +
 				"Defaults to dry_run=true — set dry_run=false to actually apply. " +
 				"Requires confirm=true when dry_run=false. " +

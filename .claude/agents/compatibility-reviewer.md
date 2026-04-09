@@ -51,14 +51,14 @@ For each modified tool handler and its `Args` struct:
 - [ ] **No required fields added**: Adding a new required (non-`omitempty`) field to an existing `Args` struct is a breaking change — existing clients will fail validation
 - [ ] **No field removal**: Removing an existing field is breaking — flag as critical
 - [ ] **No type changes**: Changing a field type (e.g., string → []string) is breaking
-- [ ] **No tool removal**: Removing a registered tool is breaking — requires deprecation notice in CLAUDE.md first
+- [ ] **No tool removal**: Removing a registered tool is breaking — requires deprecation notice in README.md first
 - [ ] **New optional fields are safe**: Fields with `json:"name,omitempty"` are backward-compatible additions
 
 ### Tool Naming and Registration
 
 - [ ] **Consistent naming pattern**: Tool names follow `talos_<verb>` or `talos_<noun>_<verb>` convention
 - [ ] **Tool registered in correct mode**: Mutating tools only in `if !readOnly { }` block in `cmd/talos-mcp/main.go`
-- [ ] **CLAUDE.md Tools section updated**: New tools appear in the Tools (18) section; count is accurate
+- [ ] **README.md tool table updated**: New tools appear in the tool list; count and description are accurate
 
 ### Prompt and Resource Compatibility
 
@@ -76,7 +76,7 @@ For SDK version bumps or new gRPC method usage:
 ### Version Constants
 
 - [ ] **`MinSupported` / `MaxTested`** in `internal/version/version.go` match the machinery SDK version in `go.mod`
-- [ ] **CLAUDE.md Compatibility table** matches `MinSupported` / `MaxTested` constants
+- [ ] **README.md Compatibility section** matches `MinSupported` / `MaxTested` constants
 - [ ] **Startup warning range**: Server warns on connect when cluster version is outside `[MinSupported, MaxTested]` — verify the warning logic reflects the new range
 
 ### MCP Protocol Compatibility
@@ -115,5 +115,5 @@ findings: []
 ## Severity Calibration
 
 - **Critical**: Required field added to existing tool, tool/resource removed without deprecation, gRPC method no longer exists in target SDK, version constants inconsistent with go.mod
-- **Major**: Optional field removed (may break clients relying on its presence), deprecated gRPC method used, CLAUDE.md tool count/list outdated
+- **Major**: Optional field removed (may break clients relying on its presence), deprecated gRPC method used, README.md tool count/list outdated
 - **Minor**: Documentation wording, naming inconsistency in new additions

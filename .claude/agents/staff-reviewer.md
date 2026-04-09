@@ -168,8 +168,8 @@ Flag as **major** finding:
 
 ### Documentation Currency (Google Eng Practices — Documentation)
 
-- `CLAUDE.md` Tools (18) section: count accurate, new tools listed with description
-- `CLAUDE.md` Prompts (5) section: new prompts listed
+- `README.md` tool table updated for user-visible tool additions, removals, or description changes
+- Prompt descriptions in server registration code updated to reflect behavior changes
 - Tool `jsonschema` descriptions updated to reflect any behavior changes
 - `README.md` tool tables updated for user-visible changes
 

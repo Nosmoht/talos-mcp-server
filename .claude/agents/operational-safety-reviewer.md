@@ -50,7 +50,7 @@ For every mutating tool (`talos_reboot`, `talos_upgrade`, `talos_rollback`, `tal
 
 - [ ] **Explicit confirmation gate**: `confirm=true` required server-side for destructive operations (reboot, upgrade, rollback). Verify the check is in the handler, not just the schema.
 - [ ] **Explicit nodes requirement**: Nodes must be explicitly specified — no implicit "apply to all" defaults for destructive operations. Verify `len(args.Nodes) == 0` check exists.
-- [ ] **Safe default for reversible operations**: `dry_run` defaults to `true` for config patches. `preserve` defaults to `true` for upgrades. Document any deviation from talosctl defaults in CLAUDE.md.
+- [ ] **Safe default for reversible operations**: `dry_run` defaults to `true` for config patches. `preserve` defaults to `true` for upgrades. Document any deviation from talosctl defaults in CLAUDE.md Safety section and README.md.
 - [ ] **Mode validation**: All mode/action enum parameters have exhaustive switch with a default error case.
 - [ ] **Guard placement**: Guards run before any I/O or gRPC call — not after partial execution.
 
@@ -65,7 +65,7 @@ For every mutating tool (`talos_reboot`, `talos_upgrade`, `talos_rollback`, `tal
 - [ ] **auditLog() call present**: Every mutating handler calls `h.auditLog(toolName, args, args.Nodes)` as first operation
 - [ ] **Redaction of sensitive fields**: Config patches that may contain TLS keys/tokens must log `<redacted, N bytes>` not raw content (see existing `talos_patch_config` pattern)
 - [ ] **Error path logging**: `h.mcpLogError(toolName, err)` called on gRPC failures after guard checks pass
-- [ ] **HTTP vs stdio parity**: If adding a new mutating tool, confirm CLAUDE.md "Logging" section documents audit behavior for both transport modes
+- [ ] **HTTP vs stdio parity**: If adding a new mutating tool, verify `auditLog()` in the handler covers stdio mode and `h.mcpLogError()` covers HTTP mode stderr
 
 ### TALOS_MCP_READ_ONLY Enforcement
 

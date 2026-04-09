@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 	"path/filepath"
 	"strings"
 
@@ -46,7 +45,7 @@ func (h *Handlers) HandleListFiles(ctx context.Context, _ *mcp.CallToolRequest, 
 		listPath = "/"
 	}
 
-	if err := checkPathAllowed(listPath, allowedPaths()); err != nil {
+	if err := checkPathAllowed(listPath, h.AllowedPaths); err != nil {
 		return nil, nil, err
 	}
 
@@ -152,7 +151,7 @@ func (h *Handlers) HandleReadFile(ctx context.Context, _ *mcp.CallToolRequest, a
 	ctx, cancel := withToolTimeout(ctx)
 	defer cancel()
 
-	if err := checkPathAllowed(args.Path, allowedPaths()); err != nil {
+	if err := checkPathAllowed(args.Path, h.AllowedPaths); err != nil {
 		return nil, nil, err
 	}
 
@@ -198,19 +197,20 @@ func (h *Handlers) HandleReadFile(ctx context.Context, _ *mcp.CallToolRequest, a
 	return textResult(sb.String()), nil, nil
 }
 
-// allowedPaths returns the configured path allowlist from TALOS_MCP_ALLOWED_PATHS,
-// or nil if no allowlist is set (all paths permitted).
-func allowedPaths() []string {
-	val := os.Getenv("TALOS_MCP_ALLOWED_PATHS")
-	if val == "" {
+// ParseAllowedPaths parses a comma-separated list of path prefixes into a slice.
+// Each prefix is trimmed of whitespace and canonicalized with filepath.Clean to
+// prevent bypass attempts using ".." components.
+// Returns nil when raw is empty (no allowlist — all paths permitted).
+func ParseAllowedPaths(raw string) []string {
+	if raw == "" {
 		return nil
 	}
 
 	var paths []string
 
-	for _, p := range strings.Split(val, ",") {
+	for _, p := range strings.Split(raw, ",") {
 		if trimmed := strings.TrimSpace(p); trimmed != "" {
-			paths = append(paths, trimmed)
+			paths = append(paths, filepath.Clean(trimmed))
 		}
 	}
 

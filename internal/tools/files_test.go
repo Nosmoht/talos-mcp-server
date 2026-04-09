@@ -95,49 +95,53 @@ func TestCheckPathAllowed(t *testing.T) {
 	}
 }
 
-func TestAllowedPaths(t *testing.T) {
+func TestParseAllowedPaths(t *testing.T) {
 	cases := []struct {
-		name     string
-		envValue string
-		want     []string
+		name  string
+		input string
+		want  []string
 	}{
 		{
-			name:     "unset returns nil",
-			envValue: "",
-			want:     nil,
+			name:  "empty returns nil",
+			input: "",
+			want:  nil,
 		},
 		{
-			name:     "single path",
-			envValue: "/etc",
-			want:     []string{"/etc"},
+			name:  "single path",
+			input: "/etc",
+			want:  []string{"/etc"},
 		},
 		{
-			name:     "multiple paths",
-			envValue: "/etc,/proc,/sys",
-			want:     []string{"/etc", "/proc", "/sys"},
+			name:  "multiple paths",
+			input: "/etc,/proc,/sys",
+			want:  []string{"/etc", "/proc", "/sys"},
 		},
 		{
-			name:     "paths with whitespace trimmed",
-			envValue: " /etc , /proc ",
-			want:     []string{"/etc", "/proc"},
+			name:  "paths with whitespace trimmed",
+			input: " /etc , /proc ",
+			want:  []string{"/etc", "/proc"},
 		},
 		{
-			name:     "empty segments skipped",
-			envValue: "/etc,,/proc",
-			want:     []string{"/etc", "/proc"},
+			name:  "empty segments skipped",
+			input: "/etc,,/proc",
+			want:  []string{"/etc", "/proc"},
+		},
+		{
+			name:  "unclean path is canonicalized",
+			input: "/etc/../var",
+			want:  []string{"/var"},
 		},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			t.Setenv("TALOS_MCP_ALLOWED_PATHS", tc.envValue)
-			got := allowedPaths()
+			got := ParseAllowedPaths(tc.input)
 			if len(got) != len(tc.want) {
-				t.Fatalf("allowedPaths() = %v, want %v", got, tc.want)
+				t.Fatalf("ParseAllowedPaths(%q) = %v, want %v", tc.input, got, tc.want)
 			}
 			for i := range tc.want {
 				if got[i] != tc.want[i] {
-					t.Errorf("allowedPaths()[%d] = %q, want %q", i, got[i], tc.want[i])
+					t.Errorf("ParseAllowedPaths(%q)[%d] = %q, want %q", tc.input, i, got[i], tc.want[i])
 				}
 			}
 		})

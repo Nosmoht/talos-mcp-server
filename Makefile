@@ -9,7 +9,7 @@ LDFLAGS    := -s -w \
 
 .DEFAULT_GOAL := help
 
-.PHONY: help build test test-integration lint fmt fmt-fix vet check clean coverage mod-tidy
+.PHONY: help build test test-integration bench lint fmt fmt-fix vet check clean coverage mod-tidy
 
 help: ## Show available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | \
@@ -24,6 +24,9 @@ test: ## Run tests with race detector and coverage report
 
 test-integration: build ## Run integration tests against a live Talos cluster (requires talosconfig)
 	go test -v -tags integration -timeout 120s -count=1 ./cmd/talos-mcp/
+
+bench: ## Run Go benchmarks (use BENCH=pattern to filter, e.g. BENCH=Marshal)
+	go test -bench=$${BENCH:-.} -benchmem -run='^$$' ./internal/tools/
 
 lint: ## Run golangci-lint (install: curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin v2.11.4)
 	@GOPATH=$$(go env GOPATH); \

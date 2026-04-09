@@ -533,6 +533,22 @@ func (h *Handlers) HandlePatchConfig(ctx context.Context, req *mcp.CallToolReque
 		return nil, nil, fmt.Errorf("load patch: %w", err)
 	}
 
+	// Acquire a per-node lock before the fetch→merge→apply sequence to prevent a
+	// read-modify-write race in HTTP multi-session mode. Without this, two concurrent
+	// sessions targeting the same node would both fetch the current config (v1), each
+	// merge their own patch, and the second apply would silently overwrite the first.
+	// The lock is held for the full duration of the operation and released on return.
+	// In dry-run mode the lock is still acquired: dry-run still reads live config and
+	// serialising it avoids confusing interleaved progress notifications.
+	nodeID := "<default>"
+	if len(args.Nodes) > 0 {
+		nodeID = args.Nodes[0]
+	}
+
+	mu := h.nodePatchMu(nodeID)
+	mu.Lock()
+	defer mu.Unlock()
+
 	notifyProgress(ctx, req, "Fetching current machine config", 1, 3)
 
 	// Step 2: fetch the current MachineConfig from the node via COSI.

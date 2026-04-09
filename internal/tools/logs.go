@@ -27,7 +27,7 @@ const (
 // LogsArgs defines input for talos_logs.
 type LogsArgs struct {
 	ServiceName string   `json:"service_name" jsonschema:"Service or container name (e.g. 'kubelet'\\, 'containerd'\\, 'etcd')."`
-	TailLines   int32    `json:"tail_lines,omitempty" jsonschema:"Number of log lines to return from the end. Defaults to 100."`
+	TailLines   int32    `json:"tail_lines,omitempty" jsonschema:"Number of log lines to return from the end. Defaults to 100. Note: talos_dmesg uses max_lines and talos_events uses tail_count for the equivalent parameter; these will be unified in a future major version."`
 	Namespace   string   `json:"namespace,omitempty" jsonschema:"Container namespace. Defaults to 'system' for Talos services."`
 	Nodes       []string `json:"nodes,omitempty" jsonschema:"Target node IPs or hostnames. Omit to use the default nodes from talosconfig."`
 }
@@ -113,7 +113,7 @@ func (h *Handlers) HandleLogs(ctx context.Context, _ *mcp.CallToolRequest, args 
 
 // DmesgArgs defines input for talos_dmesg.
 type DmesgArgs struct {
-	MaxLines int      `json:"max_lines,omitempty" jsonschema:"Maximum number of dmesg lines to return. Defaults to 200."`
+	MaxLines int      `json:"max_lines,omitempty" jsonschema:"Maximum number of dmesg lines to return. Defaults to 200. Note: talos_logs uses tail_lines and talos_events uses tail_count for the equivalent parameter; these will be unified in a future major version."`
 	Nodes    []string `json:"nodes,omitempty" jsonschema:"Target node IPs or hostnames. Omit to use the default nodes from talosconfig."`
 }
 
@@ -200,7 +200,7 @@ func (h *Handlers) HandleDmesg(ctx context.Context, _ *mcp.CallToolRequest, args
 
 // EventsArgs defines input for talos_events.
 type EventsArgs struct {
-	TailCount int32    `json:"tail_count,omitempty" jsonschema:"Number of recent events to return. Defaults to 50. Use -1 for all available events."`
+	TailCount int32    `json:"tail_count,omitempty" jsonschema:"Number of recent events to return. Defaults to 50. Use -1 for all available events. Note: talos_logs uses tail_lines and talos_dmesg uses max_lines for the equivalent parameter; these will be unified in a future major version."`
 	Nodes     []string `json:"nodes,omitempty" jsonschema:"Target node IPs or hostnames. Omit to use the default nodes from talosconfig."`
 }
 

@@ -88,15 +88,16 @@ jobs:
           done
 
       - name: Set version in main package
+        env:
+          PKG_VERSION: ${{ steps.version.outputs.VERSION }}
         run: |
-          VERSION="${{ steps.version.outputs.VERSION }}"
           cd npm/talos-mcp
           node -e "
             const fs = require('fs');
             const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
-            pkg.version = '${VERSION}';
+            pkg.version = process.env.PKG_VERSION;
             for (const dep of Object.keys(pkg.optionalDependencies || {})) {
-              pkg.optionalDependencies[dep] = '${VERSION}';
+              pkg.optionalDependencies[dep] = process.env.PKG_VERSION;
             }
             fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
           "

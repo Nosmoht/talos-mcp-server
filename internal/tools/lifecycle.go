@@ -778,7 +778,7 @@ type ResetArgs struct {
 }
 
 // HandleReset implements the talos_reset tool.
-func (h *Handlers) HandleReset(ctx context.Context, _ *mcp.CallToolRequest, args ResetArgs) (*mcp.CallToolResult, any, error) {
+func (h *Handlers) HandleReset(ctx context.Context, req *mcp.CallToolRequest, args ResetArgs) (*mcp.CallToolResult, any, error) {
 	h.auditLog("talos_reset", args, args.Nodes)
 
 	if !args.Confirm {
@@ -803,18 +803,22 @@ func (h *Handlers) HandleReset(ctx context.Context, _ *mcp.CallToolRequest, args
 		})
 	}
 
-	req := &machineapi.ResetRequest{
+	resetReq := &machineapi.ResetRequest{
 		Graceful:               resolveGraceful(args.Graceful),
 		Reboot:                 args.Reboot,
 		SystemPartitionsToWipe: partitions,
 		Mode:                   machineapi.ResetRequest_SYSTEM_DISK,
 	}
 
-	resp, err := h.Client.ResetGenericWithResponse(nodeCtx, req)
+	notifyProgress(ctx, req, "Initiating reset", 1, 2)
+
+	resp, err := h.Client.ResetGenericWithResponse(nodeCtx, resetReq)
 	if err != nil {
 		h.mcpLogError("talos_reset", err)
 		return nil, nil, fmt.Errorf("reset: %w", err)
 	}
+
+	notifyProgress(ctx, req, "Reset initiated", 2, 2)
 
 	return jsonResult(resp)
 }

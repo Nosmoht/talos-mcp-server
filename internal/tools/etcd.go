@@ -8,11 +8,32 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	machineapi "github.com/siderolabs/talos/pkg/machinery/api/machine"
 
 	"github.com/Nosmoht/talos-mcp-server/internal/talos"
 )
+
+// etcdSnapshotResult is the structured output for talos_etcd_snapshot.
+type etcdSnapshotResult struct {
+	Path  string `json:"path"`
+	Bytes int64  `json:"bytes"`
+}
+
+// etcdOutputSchema is permissive: the handler returns one of two Talos
+// protobuf types (member list or status) depending on the subcommand, and
+// reflective derivation over protoimpl-embedded structs is noisy.
+var (
+	etcdOutputSchema         = permissiveObjectSchema()
+	etcdSnapshotOutputSchema = mustDeriveSchema[etcdSnapshotResult]()
+)
+
+// EtcdOutputSchema returns the JSON schema for HandleEtcd.
+func EtcdOutputSchema() *jsonschema.Schema { return etcdOutputSchema }
+
+// EtcdSnapshotOutputSchema returns the JSON schema for HandleEtcdSnapshot.
+func EtcdSnapshotOutputSchema() *jsonschema.Schema { return etcdSnapshotOutputSchema }
 
 // EtcdArgs defines input for talos_etcd.
 type EtcdArgs struct {
@@ -121,8 +142,5 @@ func (h *Handlers) HandleEtcdSnapshot(ctx context.Context, req *mcp.CallToolRequ
 
 	notifyProgress(ctx, req, "Snapshot complete", 3, 3)
 
-	return jsonResult(map[string]any{
-		"path":  args.Path,
-		"bytes": n,
-	})
+	return jsonResult(etcdSnapshotResult{Path: args.Path, Bytes: n})
 }

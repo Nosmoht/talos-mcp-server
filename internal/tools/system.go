@@ -7,6 +7,7 @@ import (
 	"io"
 	"time"
 
+	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	clusterapi "github.com/siderolabs/talos/pkg/machinery/api/cluster"
 	commonapi "github.com/siderolabs/talos/pkg/machinery/api/common"
@@ -19,6 +20,40 @@ const (
 	defaultHealthWaitTimeout       = 2 * time.Minute
 	defaultHealthWaitTimeoutBuffer = 10 * time.Second
 )
+
+// healthResult is the structured output for talos_health.
+type healthResult struct {
+	Messages []string `json:"messages"`
+}
+
+// Schemas for talos_version, talos_services, talos_containers, talos_processes
+// use permissive object schemas because the underlying responses are Talos SDK
+// protobuf types. Reflective derivation over protobuf-generated structs with
+// embedded protoimpl.MessageState is noisy and risks runtime-validation
+// mismatches against actual marshaled payloads. Permissive schemas meet the
+// MCP spec's object-only constraint without guessing the exact shape.
+var (
+	versionOutputSchema    = permissiveObjectSchema()
+	servicesOutputSchema   = permissiveObjectSchema()
+	containersOutputSchema = permissiveObjectSchema()
+	processesOutputSchema  = permissiveObjectSchema()
+	healthOutputSchema     = mustDeriveSchema[healthResult]()
+)
+
+// VersionOutputSchema returns the JSON schema for HandleVersion.
+func VersionOutputSchema() *jsonschema.Schema { return versionOutputSchema }
+
+// ServicesOutputSchema returns the JSON schema for HandleServices.
+func ServicesOutputSchema() *jsonschema.Schema { return servicesOutputSchema }
+
+// ContainersOutputSchema returns the JSON schema for HandleContainers.
+func ContainersOutputSchema() *jsonschema.Schema { return containersOutputSchema }
+
+// ProcessesOutputSchema returns the JSON schema for HandleProcesses.
+func ProcessesOutputSchema() *jsonschema.Schema { return processesOutputSchema }
+
+// HealthOutputSchema returns the JSON schema for HandleHealth.
+func HealthOutputSchema() *jsonschema.Schema { return healthOutputSchema }
 
 // ContainersArgs defines input for talos_containers.
 type ContainersArgs struct {
@@ -151,7 +186,7 @@ func (h *Handlers) HandleHealth(ctx context.Context, req *mcp.CallToolRequest, a
 		return nil, nil, fmt.Errorf("health check: %w", err)
 	}
 
-	var messages []string
+	messages := []string{}
 
 	var i float64
 
@@ -188,10 +223,6 @@ func (h *Handlers) HandleHealth(ctx context.Context, req *mcp.CallToolRequest, a
 	// for upgrades and config patches.
 	if streamErr != nil {
 		return nil, nil, fmt.Errorf("health check failed: %w", streamErr)
-	}
-
-	type healthResult struct {
-		Messages []string `json:"messages"`
 	}
 
 	return jsonResult(healthResult{Messages: messages})

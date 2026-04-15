@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	machineapi "github.com/siderolabs/talos/pkg/machinery/api/machine"
 
@@ -20,6 +21,42 @@ const (
 	defaultReadMaxBytes = 32768 // 32 KB
 	maxListEntries      = 10000
 )
+
+// fileEntry describes a single filesystem entry returned by talos_list_files.
+type fileEntry struct {
+	Name         string `json:"name"`
+	RelativeName string `json:"relative_name,omitzero"`
+	Size         int64  `json:"size"`
+	IsDir        bool   `json:"is_dir"`
+	Mode         string `json:"mode,omitzero"`
+}
+
+// listFilesResult is the structured output for talos_list_files.
+type listFilesResult struct {
+	Path       string            `json:"path"`
+	Entries    []fileEntry       `json:"entries"`
+	Truncated  bool              `json:"truncated"`
+	NodeErrors map[string]string `json:"node_errors,omitzero"`
+}
+
+// readFileResult is the structured output for talos_read_file.
+type readFileResult struct {
+	Path      string `json:"path"`
+	Content   string `json:"content"`
+	Truncated bool   `json:"truncated"`
+	MaxBytes  int    `json:"max_bytes"`
+}
+
+var (
+	listFilesOutputSchema = mustDeriveSchema[listFilesResult]()
+	readFileOutputSchema  = mustDeriveSchema[readFileResult]()
+)
+
+// ListFilesOutputSchema returns the JSON schema for HandleListFiles.
+func ListFilesOutputSchema() *jsonschema.Schema { return listFilesOutputSchema }
+
+// ReadFileOutputSchema returns the JSON schema for HandleReadFile.
+func ReadFileOutputSchema() *jsonschema.Schema { return readFileOutputSchema }
 
 // ListFilesArgs defines input for talos_list_files.
 type ListFilesArgs struct {
@@ -64,15 +101,7 @@ func (h *Handlers) HandleListFiles(ctx context.Context, _ *mcp.CallToolRequest, 
 		return nil, nil, fmt.Errorf("list files %q: %w", path, err)
 	}
 
-	type fileEntry struct {
-		Name         string `json:"name"`
-		RelativeName string `json:"relative_name,omitempty"`
-		Size         int64  `json:"size"`
-		IsDir        bool   `json:"is_dir"`
-		Mode         string `json:"mode,omitempty"`
-	}
-
-	var files []fileEntry
+	files := []fileEntry{}
 
 	nodeErrors := make(map[string]string)
 
@@ -133,17 +162,22 @@ func (h *Handlers) HandleListFiles(ctx context.Context, _ *mcp.CallToolRequest, 
 		return nil, nil, fmt.Errorf("marshal JSON: %w", err)
 	}
 
-	result := string(out)
+	text := string(out)
 	if truncated {
-		result += fmt.Sprintf("\n\n[truncated at %d entries]", maxListEntries)
+		text += fmt.Sprintf("\n\n[truncated at %d entries]", maxListEntries)
 	}
 
 	if len(nodeErrors) > 0 {
 		errJSON, _ := json.Marshal(nodeErrors)
-		result += "\n\n[node errors: " + string(errJSON) + "]"
+		text += "\n\n[node errors: " + string(errJSON) + "]"
 	}
 
-	return textResult(result), nil, nil
+	dto := listFilesResult{Path: listPath, Entries: files, Truncated: truncated}
+	if len(nodeErrors) > 0 {
+		dto.NodeErrors = nodeErrors
+	}
+
+	return jsonWithTextResult(dto, text)
 }
 
 // HandleReadFile implements the talos_read_file tool.
@@ -194,7 +228,14 @@ func (h *Handlers) HandleReadFile(ctx context.Context, _ *mcp.CallToolRequest, a
 		fmt.Fprintf(&sb, "\n\n[truncated at %d bytes]", maxBytes)
 	}
 
-	return textResult(sb.String()), nil, nil
+	dto := readFileResult{
+		Path:      args.Path,
+		Content:   content,
+		Truncated: truncated,
+		MaxBytes:  maxBytes,
+	}
+
+	return jsonWithTextResult(dto, sb.String())
 }
 
 // ParseAllowedPaths parses a comma-separated list of path prefixes into a slice.

@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	commonapi "github.com/siderolabs/talos/pkg/machinery/api/common"
 	talosclient "github.com/siderolabs/talos/pkg/machinery/client"
@@ -23,6 +24,48 @@ const (
 	defaultEventsTimeout         = 5 * time.Second
 	defaultLogsNamespace         = "system"
 )
+
+// logsResult is the structured output for talos_logs.
+type logsResult struct {
+	Service    string            `json:"service"`
+	Lines      []string          `json:"lines"`
+	NodeErrors map[string]string `json:"node_errors,omitzero"`
+}
+
+// dmesgResult is the structured output for talos_dmesg.
+type dmesgResult struct {
+	Lines      []string          `json:"lines"`
+	NodeErrors map[string]string `json:"node_errors,omitzero"`
+}
+
+// eventEntry is a single Talos runtime event.
+type eventEntry struct {
+	Node    string `json:"node"`
+	TypeURL string `json:"type_url"`
+	ID      string `json:"id"`
+	Payload string `json:"payload"`
+}
+
+// eventsResult is the structured output for talos_events.
+type eventsResult struct {
+	Count  int          `json:"count"`
+	Events []eventEntry `json:"events"`
+}
+
+var (
+	logsOutputSchema   = mustDeriveSchema[logsResult]()
+	dmesgOutputSchema  = mustDeriveSchema[dmesgResult]()
+	eventsOutputSchema = mustDeriveSchema[eventsResult]()
+)
+
+// LogsOutputSchema returns the JSON schema for HandleLogs.
+func LogsOutputSchema() *jsonschema.Schema { return logsOutputSchema }
+
+// DmesgOutputSchema returns the JSON schema for HandleDmesg.
+func DmesgOutputSchema() *jsonschema.Schema { return dmesgOutputSchema }
+
+// EventsOutputSchema returns the JSON schema for HandleEvents.
+func EventsOutputSchema() *jsonschema.Schema { return eventsOutputSchema }
 
 // LogsArgs defines input for talos_logs.
 type LogsArgs struct {
@@ -62,7 +105,7 @@ func (h *Handlers) HandleLogs(ctx context.Context, _ *mcp.CallToolRequest, args 
 		return nil, nil, fmt.Errorf("logs for %q: %w", args.ServiceName, err)
 	}
 
-	var lines []string
+	lines := []string{}
 
 	nodeErrors := make(map[string]string)
 
@@ -102,13 +145,18 @@ func (h *Handlers) HandleLogs(ctx context.Context, _ *mcp.CallToolRequest, args 
 		return nil, nil, fmt.Errorf("logs stream for %q: %w", args.ServiceName, streamErr)
 	}
 
-	result := strings.Join(lines, "\n")
+	text := strings.Join(lines, "\n")
 	if len(nodeErrors) > 0 {
 		errJSON, _ := json.Marshal(nodeErrors)
-		result += "\n\n[node errors: " + string(errJSON) + "]"
+		text += "\n\n[node errors: " + string(errJSON) + "]"
 	}
 
-	return textResult(result), nil, nil
+	dto := logsResult{Service: args.ServiceName, Lines: lines}
+	if len(nodeErrors) > 0 {
+		dto.NodeErrors = nodeErrors
+	}
+
+	return jsonWithTextResult(dto, text)
 }
 
 // DmesgArgs defines input for talos_dmesg.
@@ -185,17 +233,26 @@ func (h *Handlers) HandleDmesg(ctx context.Context, _ *mcp.CallToolRequest, args
 		return nil, nil, fmt.Errorf("dmesg stream: %w", streamErr)
 	}
 
-	result := strings.Join(lines, "\n")
+	text := strings.Join(lines, "\n")
 	if len(lines) == 0 {
-		result = "(no dmesg output)"
+		text = "(no dmesg output)"
 	}
 
 	if len(nodeErrors) > 0 {
 		errJSON, _ := json.Marshal(nodeErrors)
-		result += "\n\n[node errors: " + string(errJSON) + "]"
+		text += "\n\n[node errors: " + string(errJSON) + "]"
 	}
 
-	return textResult(result), nil, nil
+	if lines == nil {
+		lines = []string{}
+	}
+
+	dto := dmesgResult{Lines: lines}
+	if len(nodeErrors) > 0 {
+		dto.NodeErrors = nodeErrors
+	}
+
+	return jsonWithTextResult(dto, text)
 }
 
 // EventsArgs defines input for talos_events.
@@ -220,14 +277,7 @@ func (h *Handlers) HandleEvents(ctx context.Context, _ *mcp.CallToolRequest, arg
 	collectCtx, cancel := context.WithTimeout(nodesCtx, defaultEventsTimeout)
 	defer cancel()
 
-	type eventEntry struct {
-		Node    string `json:"node"`
-		TypeURL string `json:"type_url"`
-		ID      string `json:"id"`
-		Payload string `json:"payload"`
-	}
-
-	var events []eventEntry
+	events := []eventEntry{}
 
 	// EventsWatch streams forever — we stop it via context timeout.
 	// WithTailEvents sends the last N historical events, then continues streaming new ones.
@@ -256,10 +306,5 @@ func (h *Handlers) HandleEvents(ctx context.Context, _ *mcp.CallToolRequest, arg
 		return nil, nil, fmt.Errorf("events watch: %w", err)
 	}
 
-	type result struct {
-		Count  int          `json:"count"`
-		Events []eventEntry `json:"events"`
-	}
-
-	return jsonResult(result{Count: len(events), Events: events})
+	return jsonResult(eventsResult{Count: len(events), Events: events})
 }

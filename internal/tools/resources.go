@@ -7,11 +7,58 @@ import (
 	"github.com/cosi-project/runtime/pkg/resource"
 	"github.com/cosi-project/runtime/pkg/resource/meta"
 	"github.com/cosi-project/runtime/pkg/safe"
+	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/Nosmoht/talos-mcp-server/internal/marshal"
 	"github.com/Nosmoht/talos-mcp-server/internal/talos"
 )
+
+// resourceList is the envelope returned by HandleGetResource. The MCP spec
+// requires structuredContent to be a JSON object, so the polymorphic list of
+// resources is wrapped in an object with a single "items" array.
+type resourceList struct {
+	Items []map[string]any `json:"items"`
+}
+
+// resourceDefinitionList is the envelope returned by HandleResourceDefinitions.
+type resourceDefinitionList struct {
+	Items []map[string]any `json:"items"`
+}
+
+// getResourceOutputSchema is hand-written rather than reflective: items are
+// genuinely polymorphic (MachineStatus, NodeAddress, Route have different
+// shapes). The permissive item schema matches Kubernetes' unstructured.Unstructured
+// convention for heterogeneous resource lists.
+var getResourceOutputSchema = &jsonschema.Schema{
+	Type: "object",
+	Properties: map[string]*jsonschema.Schema{
+		"items": {
+			Type:  "array",
+			Items: &jsonschema.Schema{Type: "object", AdditionalProperties: &jsonschema.Schema{}},
+		},
+	},
+	Required: []string{"items"},
+}
+
+// GetResourceOutputSchema returns the JSON schema for HandleGetResource.
+func GetResourceOutputSchema() *jsonschema.Schema { return getResourceOutputSchema }
+
+// resourceDefinitionsOutputSchema: same permissive shape as getResourceOutputSchema,
+// since each definition's marshaled map is also built ad-hoc.
+var resourceDefinitionsOutputSchema = &jsonschema.Schema{
+	Type: "object",
+	Properties: map[string]*jsonschema.Schema{
+		"items": {
+			Type:  "array",
+			Items: &jsonschema.Schema{Type: "object", AdditionalProperties: &jsonschema.Schema{}},
+		},
+	},
+	Required: []string{"items"},
+}
+
+// ResourceDefinitionsOutputSchema returns the JSON schema for HandleResourceDefinitions.
+func ResourceDefinitionsOutputSchema() *jsonschema.Schema { return resourceDefinitionsOutputSchema }
 
 // GetResourceArgs defines input for talos_get.
 type GetResourceArgs struct {
@@ -77,7 +124,11 @@ func (h *Handlers) HandleGetResource(ctx context.Context, _ *mcp.CallToolRequest
 		}
 	}
 
-	return jsonResult(results)
+	if results == nil {
+		results = []map[string]any{}
+	}
+
+	return jsonResult(resourceList{Items: results})
 }
 
 // HandleResourceDefinitions implements the talos_resource_definitions tool.
@@ -90,11 +141,11 @@ func (h *Handlers) HandleResourceDefinitions(ctx context.Context, _ *mcp.CallToo
 		return nil, nil, fmt.Errorf("list resource definitions: %w", err)
 	}
 
-	var defs []map[string]any
+	defs := []map[string]any{}
 
 	for rd := range list.All() {
 		defs = append(defs, marshal.ResourceDefinition(rd))
 	}
 
-	return jsonResult(defs)
+	return jsonResult(resourceDefinitionList{Items: defs})
 }

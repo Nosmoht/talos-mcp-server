@@ -4,10 +4,28 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/siderolabs/talos/pkg/machinery/config/configloader"
 	"github.com/siderolabs/talos/pkg/machinery/config/validation"
 )
+
+// validateResult is the structured output for talos_validate. Note: the prior
+// inline-map shape used a singular "error" string field on failure; the new
+// schema exposes "errors" as an array of strings for consistency with
+// "warnings". Callers that parsed the prior key must migrate.
+type validateResult struct {
+	Valid    bool     `json:"valid"`
+	Mode     string   `json:"mode"`
+	Strict   bool     `json:"strict"`
+	Warnings []string `json:"warnings"`
+	Errors   []string `json:"errors,omitzero"`
+}
+
+var validateOutputSchema = mustDeriveSchema[validateResult]()
+
+// ValidateOutputSchema returns the JSON schema for HandleValidate.
+func ValidateOutputSchema() *jsonschema.Schema { return validateOutputSchema }
 
 // ValidateArgs defines input for talos_validate.
 type ValidateArgs struct {
@@ -68,14 +86,14 @@ func (h *Handlers) HandleValidate(_ context.Context, _ *mcp.CallToolRequest, arg
 		warnings = []string{}
 	}
 
-	result := map[string]any{
-		"valid":    valErr == nil,
-		"mode":     mode.String(),
-		"strict":   args.Strict,
-		"warnings": warnings,
+	result := validateResult{
+		Valid:    valErr == nil,
+		Mode:     mode.String(),
+		Strict:   args.Strict,
+		Warnings: warnings,
 	}
 	if valErr != nil {
-		result["error"] = valErr.Error()
+		result.Errors = []string{valErr.Error()}
 	}
 
 	return jsonResult(result)

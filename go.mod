@@ -4,7 +4,7 @@ go 1.26.2
 
 require (
 	github.com/cosi-project/runtime v1.14.1
-	github.com/modelcontextprotocol/go-sdk v1.4.1
+	github.com/modelcontextprotocol/go-sdk v1.5.0
 	github.com/siderolabs/talos/pkg/machinery v1.12.6
 	go.yaml.in/yaml/v4 v4.0.0-rc.4
 	golang.org/x/sync v0.20.0

@@ -3,6 +3,7 @@ package talos
 import (
 	"fmt"
 	"net"
+	"sort"
 	"strings"
 )
 
@@ -86,6 +87,22 @@ func (a *NodeAllowlist) Len() int {
 		return 0
 	}
 	return len(a.exact) + len(a.cidrs)
+}
+
+// Exact returns a sorted copy of the exact-match allowlist entries (normalized
+// IPs and lowercased hostnames). CIDR ranges are omitted — they cannot be
+// enumerated as discrete completion candidates. Returns nil when the allowlist
+// is disabled.
+func (a *NodeAllowlist) Exact() []string {
+	if a == nil {
+		return nil
+	}
+	out := make([]string, 0, len(a.exact))
+	for k := range a.exact {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
 }
 
 // CheckNodes returns the first error from CheckNode across all nodes, or nil

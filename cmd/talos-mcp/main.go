@@ -43,6 +43,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/auth"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/Nosmoht/talos-mcp-server/internal/completions"
 	"github.com/Nosmoht/talos-mcp-server/internal/prompts"
 	"github.com/Nosmoht/talos-mcp-server/internal/resources"
 	"github.com/Nosmoht/talos-mcp-server/internal/talos"
@@ -146,6 +147,7 @@ func main() {
 			"All tools accept an optional 'nodes' field to target specific node IPs; " +
 			"omit it to use the active context from talosconfig. " +
 			"Destructive tools (talos_reboot, talos_upgrade) require confirm=true and explicit nodes.",
+		CompletionHandler: completions.NewHandler(allowedNodes),
 	}
 
 	if httpAddr == "" {

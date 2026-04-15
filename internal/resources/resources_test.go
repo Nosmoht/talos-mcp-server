@@ -90,15 +90,15 @@ func TestParseCOSIURI(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			node, ns, typ, id, err := parseCOSIURI(tc.uri)
+			node, ns, typ, id, err := ParseCOSIURI(tc.uri)
 			if tc.wantErr {
 				if err == nil {
-					t.Fatalf("parseCOSIURI(%q) = nil error, want error", tc.uri)
+					t.Fatalf("ParseCOSIURI(%q) = nil error, want error", tc.uri)
 				}
 				return
 			}
 			if err != nil {
-				t.Fatalf("parseCOSIURI(%q) error: %v", tc.uri, err)
+				t.Fatalf("ParseCOSIURI(%q) error: %v", tc.uri, err)
 			}
 			if node != tc.wantNode {
 				t.Errorf("node = %q, want %q", node, tc.wantNode)

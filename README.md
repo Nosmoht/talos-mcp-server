@@ -51,6 +51,8 @@ Reads `~/.talos/config` by default (the same file `talosctl` uses). Override via
 | `TALOS_MCP_RATE_BURST` | `20` | HTTP mode: token-bucket burst capacity (int) |
 | `TALOS_MCP_MAX_BODY_SIZE` | `4194304` | HTTP mode: max POST request body size in bytes (4 MiB default) |
 | `TALOS_MCP_MAX_CONCURRENT` | `20` | HTTP mode: max concurrent POST handlers (fail-fast 503 on overload) |
+| `TALOS_MCP_SUBSCRIPTION_RATE` | `1s` | Minimum interval between delivered `resources/updated` notifications per `(session, URI)` pair (Go duration, e.g. `500ms`) |
+| `TALOS_MCP_SUBSCRIPTION_BURST` | `3` | Initial notification burst per `(session, URI)` before the rate kicks in |
 
 ## Compatibility
 
@@ -156,6 +158,27 @@ These tools modify cluster state and have explicit safety guards.
 | `talos_patch_config` | Apply a machine config patch (JSON or YAML strategic merge). | `dry_run` defaults to `true`; `confirm=true` required when `dry_run=false` |
 
 All tools accept an optional `nodes` field (list of node IPs or hostnames). When omitted, the active context from talosconfig is used.
+
+### Resources and Subscriptions
+
+The server exposes Talos COSI resources as MCP resources:
+
+- `talos://cluster/version` — static cluster version info.
+- `talos://cluster/resource-definitions` — discover resource types.
+- `talos://{node}/resource/{namespace}/{type}[/{id}]` — list or get COSI resources on a specific node.
+
+MCP clients that implement `resources/subscribe` (Claude Desktop, Cursor) receive `notifications/resources/updated` whenever the underlying resource changes — no polling required. Subscriptions are backed by the Talos COSI `Watch` / `WatchKindAggregated` streams and honour the same `TALOS_MCP_ALLOWED_NODES` allowlist as reads.
+
+Subscribable resource types (canonical names):
+
+- `MachineStatuses.runtime.talos.dev` (`MachineStatus`)
+- `Members.cluster.talos.dev` (`Member`)
+- `NodeAddresses.net.talos.dev` (`NodeAddress`)
+- `Services.v1alpha1.talos.dev` (`Service`)
+
+Aliases resolve to the canonical type before the allowlist check, so a client subscribing to `talos://{node}/resource/runtime/ms/...` (alias for `MachineStatus`) succeeds. Other COSI types reject with `resource type %q is not subscribable`. Static `talos://cluster/*` URIs are not subscribable (no COSI backing).
+
+Delivery is rate-limited per `(session, URI)` via `TALOS_MCP_SUBSCRIPTION_RATE` / `TALOS_MCP_SUBSCRIPTION_BURST`; over-rate events are dropped and the client re-reads the resource to catch up. The initial `Bootstrapped` event is intentionally not forwarded — the client is expected to call `resources/read` once after subscribe for initial state.
 
 ## Security Model
 

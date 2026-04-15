@@ -51,7 +51,7 @@ func Register(server *mcp.Server, client *talos.Client, allowedNodes *talos.Node
 	}, h.handleCOSIResource)
 }
 
-// parseCOSIURI parses a COSI resource URI of the form:
+// ParseCOSIURI parses a COSI resource URI of the form:
 //
 //	talos://{node}/resource/{namespace}/{type}
 //	talos://{node}/resource/{namespace}/{type}/{id}
@@ -65,7 +65,7 @@ func Register(server *mcp.Server, client *talos.Client, allowedNodes *talos.Node
 // Hostname() (not Host) is used so that an optional port — e.g.
 // talos://10.0.0.1:50000/... — is stripped before passing the node
 // address to the Talos client.
-func parseCOSIURI(rawURI string) (node, namespace, resourceType, resourceID string, err error) {
+func ParseCOSIURI(rawURI string) (node, namespace, resourceType, resourceID string, err error) {
 	u, err := url.Parse(rawURI)
 	if err != nil {
 		return "", "", "", "", fmt.Errorf("parse URI: %w", err)

@@ -15,7 +15,7 @@ import (
 const maxListResults = 100
 
 func (h *Handlers) handleCOSIResource(ctx context.Context, req *mcp.ReadResourceRequest) (*mcp.ReadResourceResult, error) {
-	node, ns, resType, resID, err := parseCOSIURI(req.Params.URI)
+	node, ns, resType, resID, err := ParseCOSIURI(req.Params.URI)
 	if err != nil {
 		return nil, fmt.Errorf("parse resource URI %q: %w", req.Params.URI, err)
 	}

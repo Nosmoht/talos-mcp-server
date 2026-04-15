@@ -24,6 +24,10 @@
 //   - TALOS_MCP_RATE_BURST: HTTP mode burst capacity (int, default 20)
 //   - TALOS_MCP_MAX_BODY_SIZE: HTTP mode max POST body bytes (int, default 4194304)
 //   - TALOS_MCP_MAX_CONCURRENT: HTTP mode max concurrent POST handlers (int, default 20)
+//   - TALOS_MCP_SUBSCRIPTION_RATE: minimum interval between delivered
+//     resources/updated notifications per (session, URI) (duration, default 1s)
+//   - TALOS_MCP_SUBSCRIPTION_BURST: initial notification burst per (session, URI)
+//     (int, default 3)
 package main
 
 import (
@@ -36,6 +40,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -46,6 +51,7 @@ import (
 	"github.com/Nosmoht/talos-mcp-server/internal/completions"
 	"github.com/Nosmoht/talos-mcp-server/internal/prompts"
 	"github.com/Nosmoht/talos-mcp-server/internal/resources"
+	"github.com/Nosmoht/talos-mcp-server/internal/subscriptions"
 	"github.com/Nosmoht/talos-mcp-server/internal/talos"
 	"github.com/Nosmoht/talos-mcp-server/internal/tools"
 	talosversion "github.com/Nosmoht/talos-mcp-server/internal/version"
@@ -138,6 +144,14 @@ func main() {
 		BlockedConfigPaths: blockedConfigPaths,
 	}
 
+	subRate, subBurst, err := parseSubscriptionLimits(os.Getenv("TALOS_MCP_SUBSCRIPTION_RATE"), os.Getenv("TALOS_MCP_SUBSCRIPTION_BURST"))
+	if err != nil {
+		stop()
+		log.Fatalf("%v", err) //nolint:gocritic // exitAfterDefer: stop() called explicitly above
+	}
+	subMgr := subscriptions.NewManager(tc, allowedNodes, subRate, subBurst)
+	defer subMgr.Shutdown()
+
 	serverOpts := &mcp.ServerOptions{
 		Instructions: "Talos Linux cluster management server. " +
 			"MCP Resources: read talos://cluster/resource-definitions to discover COSI resource types, " +
@@ -147,14 +161,17 @@ func main() {
 			"All tools accept an optional 'nodes' field to target specific node IPs; " +
 			"omit it to use the active context from talosconfig. " +
 			"Destructive tools (talos_reboot, talos_upgrade) require confirm=true and explicit nodes.",
-		CompletionHandler: completions.NewHandler(allowedNodes),
+		CompletionHandler:  completions.NewHandler(allowedNodes),
+		SubscribeHandler:   subMgr.Subscribe,
+		UnsubscribeHandler: subMgr.Unsubscribe,
 	}
 
+	// Wrap InitializedHandler. The supervisor goroutine runs unconditionally
+	// (subscriptions are per-session by SDK contract, unlike the logger which
+	// is stdio-only because multi-session HTTP would race the shared logger).
+	var priorInit func(context.Context, *mcp.InitializedRequest)
 	if httpAddr == "" {
-		// Stdio is single-session: wire per-session MCP log notifications.
-		// HTTP mode omits this — multiple concurrent sessions would race on the
-		// shared atomic.Pointer[slog.Logger], misdirecting notifications.
-		serverOpts.InitializedHandler = func(initCtx context.Context, req *mcp.InitializedRequest) {
+		priorInit = func(initCtx context.Context, req *mcp.InitializedRequest) {
 			logger := slog.New(mcp.NewLoggingHandler(req.Session, &mcp.LoggingHandlerOptions{
 				LoggerName: "talos-mcp",
 			}))
@@ -170,11 +187,21 @@ func main() {
 			}
 		}
 	}
+	serverOpts.InitializedHandler = func(initCtx context.Context, req *mcp.InitializedRequest) {
+		if priorInit != nil {
+			priorInit(initCtx, req)
+		}
+		go subMgr.SuperviseSession(req.Session)
+	}
 
 	server := mcp.NewServer(&mcp.Implementation{
 		Name:    "talos",
 		Version: version,
 	}, serverOpts)
+
+	// BindServer must happen-before any session can issue resources/subscribe.
+	// Sessions start inside runServer below; binding here is sufficient.
+	subMgr.BindServer(server)
 
 	// All tools operate on a specific configured Talos cluster (closed world).
 	closedWorld := boolPtr(false)
@@ -486,6 +513,35 @@ func runServer(ctx context.Context, server *mcp.Server, addr, token string, hc h
 }
 
 // splitNonEmpty splits s by sep and returns non-empty, trimmed tokens.
+// parseSubscriptionLimits parses the rate/burst knobs for the subscription
+// manager, applying defaults when the env vars are unset. Returns an error
+// when a value is present but unparseable.
+func parseSubscriptionLimits(rateStr, burstStr string) (time.Duration, int, error) {
+	rate := time.Second
+	if rateStr != "" {
+		d, err := time.ParseDuration(rateStr)
+		if err != nil {
+			return 0, 0, fmt.Errorf("invalid TALOS_MCP_SUBSCRIPTION_RATE: %w", err)
+		}
+		if d <= 0 {
+			return 0, 0, fmt.Errorf("TALOS_MCP_SUBSCRIPTION_RATE must be > 0, got %s", rateStr)
+		}
+		rate = d
+	}
+	burst := 3
+	if burstStr != "" {
+		n, err := strconv.Atoi(burstStr)
+		if err != nil {
+			return 0, 0, fmt.Errorf("invalid TALOS_MCP_SUBSCRIPTION_BURST: %w", err)
+		}
+		if n <= 0 {
+			return 0, 0, fmt.Errorf("TALOS_MCP_SUBSCRIPTION_BURST must be > 0, got %d", n)
+		}
+		burst = n
+	}
+	return rate, burst, nil
+}
+
 // Returns nil when s is empty.
 func splitNonEmpty(s, sep string) []string {
 	if s == "" {

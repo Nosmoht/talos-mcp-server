@@ -11,6 +11,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/Nosmoht/talos-mcp-server/internal/talos"
@@ -77,14 +78,44 @@ func textResult(text string) *mcp.CallToolResult {
 	}
 }
 
-// jsonResult marshals v to compact JSON and returns the MCP tool result tuple.
+// jsonResult returns v as the structured output of the tool call.
+// The go-sdk auto-populates StructuredContent from the second return value and
+// renders a JSON-text Content fallback for clients that don't consume
+// structured output. See go-sdk mcp.CallToolResult.StructuredContent.
 func jsonResult(v any) (*mcp.CallToolResult, any, error) {
-	out, err := json.Marshal(v)
-	if err != nil {
-		return nil, nil, fmt.Errorf("marshal JSON: %w", err)
-	}
+	return nil, v, nil
+}
 
-	return textResult(string(out)), nil, nil
+// jsonWithTextResult returns v as structured output and humanText as a
+// human-readable Content block. Use for tools whose output is fundamentally
+// prose (logs, file contents) but benefits from a machine-readable schema.
+// The MCP spec's dual-content pattern:
+// https://modelcontextprotocol.io/specification/draft/server/tools#structured-content.
+func jsonWithTextResult(v any, humanText string) (*mcp.CallToolResult, any, error) {
+	return &mcp.CallToolResult{
+		Content: []mcp.Content{&mcp.TextContent{Text: humanText}},
+	}, v, nil
+}
+
+// mustDeriveSchema derives a JSON schema for type T or panics. Intended for
+// package-level var initialisation; the output_schema_test.go ensures every
+// accessor resolves in CI so panics cannot reach production.
+func mustDeriveSchema[T any]() *jsonschema.Schema {
+	s, err := jsonschema.For[T](nil)
+	if err != nil {
+		panic(fmt.Sprintf("derive schema for %T: %v", *new(T), err))
+	}
+	return s
+}
+
+// permissiveObjectSchema returns a schema that accepts any JSON object.
+// Used for tools whose output shape is dictated by upstream Talos protobufs
+// (whose reflective schema is noisy) or is genuinely polymorphic.
+func permissiveObjectSchema() *jsonschema.Schema {
+	return &jsonschema.Schema{
+		Type:                 "object",
+		AdditionalProperties: &jsonschema.Schema{},
+	}
 }
 
 // auditLog emits a structured audit record at INFO level.

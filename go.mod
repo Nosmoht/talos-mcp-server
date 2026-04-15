@@ -4,6 +4,7 @@ go 1.26.2
 
 require (
 	github.com/cosi-project/runtime v1.14.1
+	github.com/google/jsonschema-go v0.4.2
 	github.com/modelcontextprotocol/go-sdk v1.5.0
 	github.com/siderolabs/talos/pkg/machinery v1.12.6
 	go.yaml.in/yaml/v4 v4.0.0-rc.4
@@ -30,7 +31,6 @@ require (
 	github.com/ghodss/yaml v1.0.0 // indirect
 	github.com/google/cel-go v0.26.1 // indirect
 	github.com/google/go-cmp v0.7.0 // indirect
-	github.com/google/jsonschema-go v0.4.2 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.28.0 // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
 	github.com/hashicorp/go-multierror v1.1.1 // indirect

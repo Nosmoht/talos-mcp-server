@@ -180,69 +180,80 @@ func main() {
 	// ── Read-only tools ──────────────────────────────────────────────────────
 
 	mcp.AddTool(server, &mcp.Tool{
-		Name:        "talos_resource_definitions",
-		Description: "List all available Talos resource types with their aliases. Call this first to discover what resources can be queried with talos_get.",
-		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, OpenWorldHint: closedWorld},
+		Name:         "talos_resource_definitions",
+		Description:  "List all available Talos resource types with their aliases. Call this first to discover what resources can be queried with talos_get.",
+		Annotations:  &mcp.ToolAnnotations{ReadOnlyHint: true, OpenWorldHint: closedWorld},
+		OutputSchema: tools.ResourceDefinitionsOutputSchema(),
 	}, h.HandleResourceDefinitions)
 
 	mcp.AddTool(server, &mcp.Tool{
-		Name:        "talos_get",
-		Description: "Get Talos resources by type. Use talos_resource_definitions to discover available types. Examples: MachineStatus, Member, NodeAddress, LinkStatus, Route, Service, Extension.",
-		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, OpenWorldHint: closedWorld},
+		Name:         "talos_get",
+		Description:  "Get Talos resources by type. Use talos_resource_definitions to discover available types. Examples: MachineStatus, Member, NodeAddress, LinkStatus, Route, Service, Extension.",
+		Annotations:  &mcp.ToolAnnotations{ReadOnlyHint: true, OpenWorldHint: closedWorld},
+		OutputSchema: tools.GetResourceOutputSchema(),
 	}, h.HandleGetResource)
 
 	mcp.AddTool(server, &mcp.Tool{
-		Name:        "talos_version",
-		Description: "Get Talos version information from the target nodes.",
-		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, OpenWorldHint: closedWorld},
+		Name:         "talos_version",
+		Description:  "Get Talos version information from the target nodes.",
+		Annotations:  &mcp.ToolAnnotations{ReadOnlyHint: true, OpenWorldHint: closedWorld},
+		OutputSchema: tools.VersionOutputSchema(),
 	}, h.HandleVersion)
 
 	mcp.AddTool(server, &mcp.Tool{
-		Name:        "talos_services",
-		Description: "List all Talos services and their current state (running, stopped, health status).",
-		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, OpenWorldHint: closedWorld},
+		Name:         "talos_services",
+		Description:  "List all Talos services and their current state (running, stopped, health status).",
+		Annotations:  &mcp.ToolAnnotations{ReadOnlyHint: true, OpenWorldHint: closedWorld},
+		OutputSchema: tools.ServicesOutputSchema(),
 	}, h.HandleServices)
 
 	mcp.AddTool(server, &mcp.Tool{
-		Name:        "talos_containers",
-		Description: "List containers running in the specified namespace. Defaults to the 'k8s.io' namespace (Kubernetes containers).",
-		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, OpenWorldHint: closedWorld},
+		Name:         "talos_containers",
+		Description:  "List containers running in the specified namespace. Defaults to the 'k8s.io' namespace (Kubernetes containers).",
+		Annotations:  &mcp.ToolAnnotations{ReadOnlyHint: true, OpenWorldHint: closedWorld},
+		OutputSchema: tools.ContainersOutputSchema(),
 	}, h.HandleContainers)
 
 	mcp.AddTool(server, &mcp.Tool{
-		Name:        "talos_processes",
-		Description: "List running processes on the target nodes.",
-		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, OpenWorldHint: closedWorld},
+		Name:         "talos_processes",
+		Description:  "List running processes on the target nodes.",
+		Annotations:  &mcp.ToolAnnotations{ReadOnlyHint: true, OpenWorldHint: closedWorld},
+		OutputSchema: tools.ProcessesOutputSchema(),
 	}, h.HandleProcesses)
 
 	mcp.AddTool(server, &mcp.Tool{
-		Name:        "talos_health",
-		Description: "Check the health of the Talos cluster (etcd, Kubernetes API, node readiness). Waits up to wait_timeout for all checks to pass.",
-		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, OpenWorldHint: closedWorld},
+		Name:         "talos_health",
+		Description:  "Check the health of the Talos cluster (etcd, Kubernetes API, node readiness). Waits up to wait_timeout for all checks to pass.",
+		Annotations:  &mcp.ToolAnnotations{ReadOnlyHint: true, OpenWorldHint: closedWorld},
+		OutputSchema: tools.HealthOutputSchema(),
 	}, h.HandleHealth)
 
 	mcp.AddTool(server, &mcp.Tool{
-		Name:        "talos_logs",
-		Description: "Stream recent service logs from the target nodes. Returns the last tail_lines lines without following.",
-		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, OpenWorldHint: closedWorld},
+		Name:         "talos_logs",
+		Description:  "Stream recent service logs from the target nodes. Returns the last tail_lines lines without following.",
+		Annotations:  &mcp.ToolAnnotations{ReadOnlyHint: true, OpenWorldHint: closedWorld},
+		OutputSchema: tools.LogsOutputSchema(),
 	}, h.HandleLogs)
 
 	mcp.AddTool(server, &mcp.Tool{
-		Name:        "talos_dmesg",
-		Description: "Read kernel ring buffer (dmesg) messages from the target nodes.",
-		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, OpenWorldHint: closedWorld},
+		Name:         "talos_dmesg",
+		Description:  "Read kernel ring buffer (dmesg) messages from the target nodes.",
+		Annotations:  &mcp.ToolAnnotations{ReadOnlyHint: true, OpenWorldHint: closedWorld},
+		OutputSchema: tools.DmesgOutputSchema(),
 	}, h.HandleDmesg)
 
 	mcp.AddTool(server, &mcp.Tool{
-		Name:        "talos_events",
-		Description: "Fetch recent Talos runtime events (node lifecycle, service changes, config changes). Returns the last tail_count events.",
-		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, OpenWorldHint: closedWorld},
+		Name:         "talos_events",
+		Description:  "Fetch recent Talos runtime events (node lifecycle, service changes, config changes). Returns the last tail_count events.",
+		Annotations:  &mcp.ToolAnnotations{ReadOnlyHint: true, OpenWorldHint: closedWorld},
+		OutputSchema: tools.EventsOutputSchema(),
 	}, h.HandleEvents)
 
 	mcp.AddTool(server, &mcp.Tool{
-		Name:        "talos_etcd",
-		Description: "Query etcd cluster information. Use subcommand='members' (default) or subcommand='status'.",
-		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, OpenWorldHint: closedWorld},
+		Name:         "talos_etcd",
+		Description:  "Query etcd cluster information. Use subcommand='members' (default) or subcommand='status'.",
+		Annotations:  &mcp.ToolAnnotations{ReadOnlyHint: true, OpenWorldHint: closedWorld},
+		OutputSchema: tools.EtcdOutputSchema(),
 	}, h.HandleEtcd)
 
 	mcp.AddTool(server, &mcp.Tool{
@@ -251,19 +262,22 @@ func main() {
 			"Returns the file path and byte count on success. " +
 			"Requires exactly one control plane node in nodes[]. " +
 			"Snapshot may take up to 5 minutes for large clusters.",
-		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, OpenWorldHint: closedWorld},
+		Annotations:  &mcp.ToolAnnotations{ReadOnlyHint: true, OpenWorldHint: closedWorld},
+		OutputSchema: tools.EtcdSnapshotOutputSchema(),
 	}, h.HandleEtcdSnapshot)
 
 	mcp.AddTool(server, &mcp.Tool{
-		Name:        "talos_list_files",
-		Description: "List files and directories on a target node filesystem.",
-		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, OpenWorldHint: closedWorld},
+		Name:         "talos_list_files",
+		Description:  "List files and directories on a target node filesystem.",
+		Annotations:  &mcp.ToolAnnotations{ReadOnlyHint: true, OpenWorldHint: closedWorld},
+		OutputSchema: tools.ListFilesOutputSchema(),
 	}, h.HandleListFiles)
 
 	mcp.AddTool(server, &mcp.Tool{
-		Name:        "talos_read_file",
-		Description: "Read the contents of a file from a target node filesystem (e.g. /etc/os-release, /etc/machine-config.yaml).",
-		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, OpenWorldHint: closedWorld},
+		Name:         "talos_read_file",
+		Description:  "Read the contents of a file from a target node filesystem (e.g. /etc/os-release, /etc/machine-config.yaml).",
+		Annotations:  &mcp.ToolAnnotations{ReadOnlyHint: true, OpenWorldHint: closedWorld},
+		OutputSchema: tools.ReadFileOutputSchema(),
 	}, h.HandleReadFile)
 
 	mcp.AddTool(server, &mcp.Tool{
@@ -272,7 +286,8 @@ func main() {
 			"Use mode='metal' (default), 'cloud', or 'container'. " +
 			"Set strict=true to treat warnings as errors. " +
 			"Returns {valid, mode, strict, warnings} and on failure also {errors}.",
-		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, OpenWorldHint: closedWorld},
+		Annotations:  &mcp.ToolAnnotations{ReadOnlyHint: true, OpenWorldHint: closedWorld},
+		OutputSchema: tools.ValidateOutputSchema(),
 	}, h.HandleValidate)
 
 	// ── Write / mutating tools ───────────────────────────────────────────────

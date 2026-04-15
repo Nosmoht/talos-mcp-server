@@ -1,0 +1,36 @@
+// TODO: Go template for a new Talos MCP tool handler.
+// Pattern source: internal/tools/lifecycle.go
+//
+// Replace placeholders:
+//   {{ToolName}}      PascalCase handler name (e.g. RebootNode)
+//   {{tool_name}}     snake_case MCP tool id (e.g. talos_reboot_node)
+//   {{Description}}   one-line description
+//
+// Mutating tools MUST include: Confirm bool, Nodes []string, DryRun bool (where applicable).
+
+package tools
+
+import (
+	"context"
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
+)
+
+// {{ToolName}}Args — arguments for the {{tool_name}} tool.
+type {{ToolName}}Args struct {
+	Nodes   []string `json:"nodes"`             // explicit target nodes (required for mutating)
+	Confirm bool     `json:"confirm,omitempty"` // must be true for mutating operations
+	DryRun  bool     `json:"dry_run,omitempty"` // default true for config-mutating tools
+}
+
+// Handle{{ToolName}} — {{Description}}
+func (h *Handlers) Handle{{ToolName}}(
+	ctx context.Context,
+	req *mcp.CallToolRequest,
+	args {{ToolName}}Args,
+) (*mcp.CallToolResult, any, error) {
+	// TODO: validate safety guards (confirm, nodes non-empty) for mutating tools.
+	// TODO: call Talos client.
+	// TODO: return structured result.
+	return nil, nil, nil
+}

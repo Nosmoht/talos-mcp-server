@@ -18,7 +18,9 @@
     "talos-mcp": "bin/talos-mcp"
   },
   "files": [
-    "bin/talos-mcp"
+    "bin/talos-mcp",
+    "README.md",
+    "LICENSE"
   ],
   "publishConfig": {
     "access": "public"

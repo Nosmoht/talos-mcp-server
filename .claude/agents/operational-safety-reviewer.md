@@ -69,7 +69,7 @@ For every mutating tool (`talos_reboot`, `talos_upgrade`, `talos_rollback`, `tal
 
 ### TALOS_MCP_READ_ONLY Enforcement
 
-- [ ] **New mutating tools registered conditionally**: Any new mutating tool must be registered inside the `if !readOnly { ... }` block in `cmd/talos-mcp/main.go`
+- [ ] **New mutating tools registered conditionally**: Any new mutating tool must be registered inside the `if !readOnly { ... }` block in `internal/tools/register.go`
 - [ ] **Not registered in read-only mode**: Verify by reading the server registration code
 
 ## Output Format

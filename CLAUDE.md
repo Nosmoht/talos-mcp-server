@@ -20,6 +20,8 @@ Mutating tools require explicit guards — missing any of these will error or ca
 - `talos_patch_config` defaults `dry_run=true`; pass `dry_run=false` + `confirm=true` to apply.
 - `talos_apply_config` takes `config_file` (absolute local path to YAML/JSON, max 1 MiB — secrets never enter context). Defaults `dry_run=true`, requires exactly one node. Replaces entire machine config — prefer `talos_patch_config` for targeted changes.
 
+Quorum/member-count invariants for preflight helpers: see `.claude/rules/quorum-member-counting.md` (auto-loaded when editing `internal/tools/etcd_preflight.go` or any `*_preflight.go`).
+
 ### Safety Profile
 
 `TALOS_MCP_SAFETY_PROFILE` seeds four gating flags at startup. Individual env vars override the profile. When the profile var is unset, each flag defaults to its own env var (backwards-compatible).

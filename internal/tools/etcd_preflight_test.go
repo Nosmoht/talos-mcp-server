@@ -116,6 +116,43 @@ func TestPreflightEtcdQuorum_OneUnhealthy(t *testing.T) {
 	}
 }
 
+// TestPreflightEtcdQuorum_DedupByID verifies that fetchEtcdMemberCount
+// deduplicates EtcdMembers by their raft Id. A Talos API proxy can
+// emit the same member across Messages[] entries — without dedup the
+// reported `configured` count is inflated and the strict-majority
+// check (healthy - N) > configured/2 can pass when it must fail.
+func TestPreflightEtcdQuorum_DedupByID(t *testing.T) {
+	// Three distinct members (IDs 1, 2, 3) emitted twice: once in a
+	// single Messages[] entry with duplicates, once split across two
+	// Messages[] entries. Naive len(Members) = 6; dedup = 3.
+	dup := &machineapi.EtcdMemberListResponse{
+		Messages: []*machineapi.EtcdMembers{
+			{Members: []*machineapi.EtcdMember{
+				{Id: 1}, {Id: 2}, {Id: 3}, {Id: 1},
+			}},
+			{Members: []*machineapi.EtcdMember{
+				{Id: 2}, {Id: 3},
+			}},
+		},
+	}
+	h := &Handlers{Client: &preflightMock{
+		mockClient: &mockClient{},
+		memberList: func(_ context.Context, _ *machineapi.EtcdMemberListRequest) (*machineapi.EtcdMemberListResponse, error) {
+			return dup, nil
+		},
+		status: func(_ context.Context) (*machineapi.EtcdStatusResponse, error) {
+			return &machineapi.EtcdStatusResponse{}, nil
+		},
+	}}
+	configured, _, err := h.preflightEtcdQuorum(context.Background(), fakeCPNodes)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if configured != 3 {
+		t.Errorf("configured = %d, want 3 (unique IDs)", configured)
+	}
+}
+
 // TestPreflightEtcdQuorum_MemberListFirstFailsSecondSucceeds verifies the
 // fallback loop: if the first apiNode rejects member-list, the helper tries
 // the next one instead of bailing out.

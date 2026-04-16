@@ -65,18 +65,20 @@ func (h *Handlers) fetchEtcdMemberCount(ctx context.Context, apiNodes []string) 
 			lastErr = rErr
 			continue
 		}
-		// Each EtcdMembers entry is one node's view of the cluster; etcd
-		// membership is consistent across members, so any non-empty view is
-		// authoritative. Take the max to survive a node that reports an
-		// empty placeholder.
-		maxMembers := 0
+		// Dedup by the raft node Id (uint64) — etcd's canonical member
+		// identity. A Talos API proxy or stream aggregation can emit the
+		// same EtcdMember across multiple Messages[] entries, so trusting
+		// len(msg.GetMembers()) would inflate the count and let the
+		// strict-majority rule (healthy-N) > configured/2 pass when it
+		// must fail. Empty-placeholder messages contribute zero IDs.
+		seen := make(map[uint64]struct{})
 		for _, msg := range resp.GetMessages() {
-			if n := len(msg.GetMembers()); n > maxMembers {
-				maxMembers = n
+			for _, m := range msg.GetMembers() {
+				seen[m.GetId()] = struct{}{}
 			}
 		}
-		if maxMembers > 0 {
-			return maxMembers, nil
+		if n := len(seen); n > 0 {
+			return n, nil
 		}
 	}
 	return 0, fmt.Errorf("preflightEtcdQuorum: no apiNode returned a non-empty member list: %w", lastErr)

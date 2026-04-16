@@ -8,6 +8,11 @@ import "github.com/modelcontextprotocol/go-sdk/mcp"
 // The server caller is still responsible for setting the server's Instructions,
 // completion handlers, and subscribe/unsubscribe handlers; Register only wires
 // the tool handlers.
+//
+// The readOnly bool signature is a P0 constraint. Phases D (cluster CA / K8s
+// rotation) and E (offline PKI gen) will widen it to *config.SafetyProfile so
+// AllowClusterWide and EnableGen can also gate registration. Do not depend on
+// the bool shape as stable API.
 func Register(server *mcp.Server, h *Handlers, readOnly bool) {
 	// All tools operate on a specific configured Talos cluster (closed world).
 	closedWorld := boolPtr(false)
@@ -203,7 +208,7 @@ func Register(server *mcp.Server, h *Handlers, readOnly bool) {
 	}
 }
 
-// boolPtr returns a pointer to a bool value. Mirrors the helper in cmd/talos-mcp.
+// boolPtr returns a pointer to a bool value.
 func boolPtr(b bool) *bool {
 	return &b
 }

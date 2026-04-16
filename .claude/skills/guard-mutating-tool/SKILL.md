@@ -30,10 +30,11 @@ git rev-parse --verify "${BASE:-origin/main}" >/dev/null \
    ```bash
    git diff --name-only "${BASE:-origin/main}"...HEAD -- 'internal/tools/*.go'
    ```
-   Filter by basename to one of: `lifecycle`, `files`, `patch_blocklist`
-   (files that implement `reboot`, `upgrade`, `rollback`, `reset`,
-   `patch_config`, `apply_config`). Exit early with verdict `GO` if the
-   filtered list is empty.
+   Filter by basename to one of: `lifecycle`, `files`, `patch_blocklist`,
+   or any `*_preflight` (files that implement `reboot`, `upgrade`,
+   `rollback`, `reset`, `patch_config`, `apply_config`, or preflight
+   helpers that gate those mutations). Exit early with verdict `GO` if
+   the filtered list is empty.
 
 2. **Load the guard matrix.** Read `references/guard-matrix.md`. Its
    `required_args` and `default_values` columns are the ground truth.
@@ -50,6 +51,13 @@ git rev-parse --verify "${BASE:-origin/main}" >/dev/null \
    - a default literal changed (e.g. `dry_run: true` → `dry_run: false`),
    - a new control-flow path reaches the mutating gRPC call without passing
      through the guard check.
+
+4b. **Preflight helper check.** For any `*_preflight.go` in the filtered
+    set, load `.claude/rules/quorum-member-counting.md` and apply its
+    invariants against the diff (dedup by member `Id` before counting,
+    `map[<id-type>]struct{}` structure, no reliance on
+    `len(msg.GetMembers())`). Flag as regression if a preflight helper
+    is introduced or modified without the dedup pattern.
 
 5. **Emit the report.** Use the exact template below.
 
@@ -81,3 +89,4 @@ Omit rows for tools whose file was not touched.
 ## References
 
 - `references/guard-matrix.md` — guard matrix mirrored verbatim from repo-root `CLAUDE.md` § Safety.
+- `.claude/rules/quorum-member-counting.md` — preflight helper invariants (member-ID dedup, strict-majority rule).

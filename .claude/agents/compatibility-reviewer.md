@@ -57,7 +57,7 @@ For each modified tool handler and its `Args` struct:
 ### Tool Naming and Registration
 
 - [ ] **Consistent naming pattern**: Tool names follow `talos_<verb>` or `talos_<noun>_<verb>` convention
-- [ ] **Tool registered in correct mode**: Mutating tools only in `if !readOnly { }` block in `cmd/talos-mcp/main.go`
+- [ ] **Tool registered in correct mode**: Mutating tools only in `if !readOnly { }` block in `internal/tools/register.go`
 - [ ] **README.md tool table updated**: New tools appear in the tool list; count and description are accurate
 
 ### Prompt and Resource Compatibility

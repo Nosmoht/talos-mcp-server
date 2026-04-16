@@ -27,7 +27,7 @@ Approved output:
 
 <example>
 Context: New talos_drain_node mutating tool added.
-Input: New handler in internal/tools/lifecycle.go, registered in cmd/talos-mcp/main.go.
+Input: New handler in internal/tools/lifecycle.go, registered in internal/tools/register.go.
 Escalation output:
   change-id: add-drain-node-tool
   review-type: review

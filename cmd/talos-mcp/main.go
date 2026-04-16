@@ -9,6 +9,14 @@
 //   - TALOS_CONTEXT: context name to use (default: active context in config)
 //   - TALOS_ENDPOINTS: comma-separated endpoint overrides
 //   - TALOS_MCP_READ_ONLY: set to "true" to disable all mutating tools
+//   - TALOS_MCP_ALLOW_CLUSTER_WIDE: set to "true" to register cluster-wide
+//     tools (reserved for Phase D; no tools consume the flag yet)
+//   - TALOS_MCP_ENABLE_GEN: set to "true" to register offline gen_* tools
+//     (reserved for Phase E; no tools consume the flag yet)
+//   - TALOS_MCP_SAFETY_PROFILE: conservative|standard|expert preset that seeds
+//     the four gating flags above. Individual flags override the profile. When
+//     unset, the four flags default to their individual-env-var values
+//     (backwards-compatible).
 //   - TALOS_MCP_HTTP_ADDR: if set (e.g. ":8080"), serve HTTP instead of stdio
 //   - TALOS_MCP_AUTH_TOKEN: required bearer token when HTTP mode is active
 //   - TALOS_MCP_ALLOWED_NODES: comma-separated list of permitted node IPs, hostnames,
@@ -49,6 +57,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/Nosmoht/talos-mcp-server/internal/completions"
+	"github.com/Nosmoht/talos-mcp-server/internal/config"
 	"github.com/Nosmoht/talos-mcp-server/internal/prompts"
 	"github.com/Nosmoht/talos-mcp-server/internal/resources"
 	"github.com/Nosmoht/talos-mcp-server/internal/subscriptions"
@@ -70,7 +79,14 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	readOnly := os.Getenv("TALOS_MCP_READ_ONLY") == "true"
+	safety, err := config.LoadSafetyProfile()
+	if err != nil {
+		stop()
+		log.Fatalf("%v", err) //nolint:gocritic // exitAfterDefer: stop() called explicitly above
+	}
+	readOnly := safety.ReadOnly
+	skipVersionCheck := safety.SkipVersionCheck
+
 	httpAddr := os.Getenv("TALOS_MCP_HTTP_ADDR")
 	authToken := os.Getenv("TALOS_MCP_AUTH_TOKEN")
 	os.Unsetenv("TALOS_MCP_AUTH_TOKEN") //nolint:errcheck // remove token from /proc/<pid>/environ
@@ -82,7 +98,6 @@ func main() {
 	}
 
 	allowedPaths := tools.ParseAllowedPaths(os.Getenv("TALOS_MCP_ALLOWED_PATHS"))
-	skipVersionCheck := os.Getenv("TALOS_MCP_SKIP_VERSION_CHECK") == "true"
 	blockedConfigPaths := splitNonEmpty(os.Getenv("TALOS_MCP_BLOCKED_CONFIG_PATHS"), ",")
 
 	if err := validateHTTPConfig(httpAddr, authToken); err != nil {
@@ -98,6 +113,7 @@ func main() {
 	defer tc.Close() //nolint:errcheck
 
 	slog.Info("talos-mcp started", "version", version, "commit", commit, "date", date, "read_only", readOnly) //nolint:gosec // G706 false positive: version/commit/date are build-time ldflags constants injected by GoReleaser, not runtime user input
+	slog.Info("safety profile", safety.LogFields()...)
 
 	// Best-effort cluster version compatibility check. Non-fatal — the server
 	// starts regardless and operators can set TALOS_MCP_SKIP_VERSION_CHECK=true
@@ -203,210 +219,13 @@ func main() {
 	// Sessions start inside runServer below; binding here is sufficient.
 	subMgr.BindServer(server)
 
-	// All tools operate on a specific configured Talos cluster (closed world).
-	closedWorld := boolPtr(false)
-
-	// ── Read-only tools ──────────────────────────────────────────────────────
-
-	mcp.AddTool(server, &mcp.Tool{
-		Name:         "talos_resource_definitions",
-		Description:  "List all available Talos resource types with their aliases. Call this first to discover what resources can be queried with talos_get.",
-		Annotations:  &mcp.ToolAnnotations{ReadOnlyHint: true, OpenWorldHint: closedWorld},
-		OutputSchema: tools.ResourceDefinitionsOutputSchema(),
-	}, h.HandleResourceDefinitions)
-
-	mcp.AddTool(server, &mcp.Tool{
-		Name:         "talos_get",
-		Description:  "Get Talos resources by type. Use talos_resource_definitions to discover available types. Examples: MachineStatus, Member, NodeAddress, LinkStatus, Route, Service, Extension.",
-		Annotations:  &mcp.ToolAnnotations{ReadOnlyHint: true, OpenWorldHint: closedWorld},
-		OutputSchema: tools.GetResourceOutputSchema(),
-	}, h.HandleGetResource)
-
-	mcp.AddTool(server, &mcp.Tool{
-		Name:         "talos_version",
-		Description:  "Get Talos version information from the target nodes.",
-		Annotations:  &mcp.ToolAnnotations{ReadOnlyHint: true, OpenWorldHint: closedWorld},
-		OutputSchema: tools.VersionOutputSchema(),
-	}, h.HandleVersion)
-
-	mcp.AddTool(server, &mcp.Tool{
-		Name:         "talos_services",
-		Description:  "List all Talos services and their current state (running, stopped, health status).",
-		Annotations:  &mcp.ToolAnnotations{ReadOnlyHint: true, OpenWorldHint: closedWorld},
-		OutputSchema: tools.ServicesOutputSchema(),
-	}, h.HandleServices)
-
-	mcp.AddTool(server, &mcp.Tool{
-		Name:         "talos_containers",
-		Description:  "List containers running in the specified namespace. Defaults to the 'k8s.io' namespace (Kubernetes containers).",
-		Annotations:  &mcp.ToolAnnotations{ReadOnlyHint: true, OpenWorldHint: closedWorld},
-		OutputSchema: tools.ContainersOutputSchema(),
-	}, h.HandleContainers)
-
-	mcp.AddTool(server, &mcp.Tool{
-		Name:         "talos_processes",
-		Description:  "List running processes on the target nodes.",
-		Annotations:  &mcp.ToolAnnotations{ReadOnlyHint: true, OpenWorldHint: closedWorld},
-		OutputSchema: tools.ProcessesOutputSchema(),
-	}, h.HandleProcesses)
-
-	mcp.AddTool(server, &mcp.Tool{
-		Name:         "talos_health",
-		Description:  "Check the health of the Talos cluster (etcd, Kubernetes API, node readiness). Waits up to wait_timeout for all checks to pass.",
-		Annotations:  &mcp.ToolAnnotations{ReadOnlyHint: true, OpenWorldHint: closedWorld},
-		OutputSchema: tools.HealthOutputSchema(),
-	}, h.HandleHealth)
-
-	mcp.AddTool(server, &mcp.Tool{
-		Name:         "talos_logs",
-		Description:  "Stream recent service logs from the target nodes. Returns the last tail_lines lines without following.",
-		Annotations:  &mcp.ToolAnnotations{ReadOnlyHint: true, OpenWorldHint: closedWorld},
-		OutputSchema: tools.LogsOutputSchema(),
-	}, h.HandleLogs)
-
-	mcp.AddTool(server, &mcp.Tool{
-		Name:         "talos_dmesg",
-		Description:  "Read kernel ring buffer (dmesg) messages from the target nodes.",
-		Annotations:  &mcp.ToolAnnotations{ReadOnlyHint: true, OpenWorldHint: closedWorld},
-		OutputSchema: tools.DmesgOutputSchema(),
-	}, h.HandleDmesg)
-
-	mcp.AddTool(server, &mcp.Tool{
-		Name:         "talos_events",
-		Description:  "Fetch recent Talos runtime events (node lifecycle, service changes, config changes). Returns the last tail_count events.",
-		Annotations:  &mcp.ToolAnnotations{ReadOnlyHint: true, OpenWorldHint: closedWorld},
-		OutputSchema: tools.EventsOutputSchema(),
-	}, h.HandleEvents)
-
-	mcp.AddTool(server, &mcp.Tool{
-		Name:         "talos_etcd",
-		Description:  "Query etcd cluster information. Use subcommand='members' (default) or subcommand='status'.",
-		Annotations:  &mcp.ToolAnnotations{ReadOnlyHint: true, OpenWorldHint: closedWorld},
-		OutputSchema: tools.EtcdOutputSchema(),
-	}, h.HandleEtcd)
-
-	mcp.AddTool(server, &mcp.Tool{
-		Name: "talos_etcd_snapshot",
-		Description: "Take an etcd snapshot from a single control plane node and write it to a local file. " +
-			"Returns the file path and byte count on success. " +
-			"Requires exactly one control plane node in nodes[]. " +
-			"Snapshot may take up to 5 minutes for large clusters.",
-		Annotations:  &mcp.ToolAnnotations{ReadOnlyHint: true, OpenWorldHint: closedWorld},
-		OutputSchema: tools.EtcdSnapshotOutputSchema(),
-	}, h.HandleEtcdSnapshot)
-
-	mcp.AddTool(server, &mcp.Tool{
-		Name:         "talos_list_files",
-		Description:  "List files and directories on a target node filesystem.",
-		Annotations:  &mcp.ToolAnnotations{ReadOnlyHint: true, OpenWorldHint: closedWorld},
-		OutputSchema: tools.ListFilesOutputSchema(),
-	}, h.HandleListFiles)
-
-	mcp.AddTool(server, &mcp.Tool{
-		Name:         "talos_read_file",
-		Description:  "Read the contents of a file from a target node filesystem (e.g. /etc/os-release, /etc/machine-config.yaml).",
-		Annotations:  &mcp.ToolAnnotations{ReadOnlyHint: true, OpenWorldHint: closedWorld},
-		OutputSchema: tools.ReadFileOutputSchema(),
-	}, h.HandleReadFile)
-
-	mcp.AddTool(server, &mcp.Tool{
-		Name: "talos_validate",
-		Description: "Validate a Talos machine config (YAML or JSON) offline — no cluster connection required. " +
-			"Use mode='metal' (default), 'cloud', or 'container'. " +
-			"Set strict=true to treat warnings as errors. " +
-			"Returns {valid, mode, strict, warnings} and on failure also {errors}.",
-		Annotations:  &mcp.ToolAnnotations{ReadOnlyHint: true, OpenWorldHint: closedWorld},
-		OutputSchema: tools.ValidateOutputSchema(),
-	}, h.HandleValidate)
-
-	// ── Write / mutating tools ───────────────────────────────────────────────
-	// Skipped when TALOS_MCP_READ_ONLY=true.
-
-	if !readOnly {
-		destructive := boolPtr(true)
-
-		mcp.AddTool(server, &mcp.Tool{
-			Name: "talos_service_action",
-			Description: "Start, stop, or restart a Talos service on the target nodes. " +
-				"NOTE: restarting 'etcd' is not supported by the Talos API and will return an error; " +
-				"use talos_reboot or the investigate-etcd prompt to recover etcd.",
-			Annotations: &mcp.ToolAnnotations{DestructiveHint: destructive, OpenWorldHint: closedWorld},
-		}, h.HandleServiceAction)
-
-		mcp.AddTool(server, &mcp.Tool{
-			Name: "talos_reboot",
-			Description: "Reboot the specified nodes. Requires explicit nodes and confirm=true. " +
-				"All listed nodes are rebooted simultaneously — reboot one node at a time to avoid a full cluster outage. " +
-				"Use mode='powercycle' for a full power cycle or mode='force' to skip graceful shutdown on stuck nodes. " +
-				"Set wait=true to block until all node(s) complete reboot and are back up (verified via boot ID change). " +
-				"Use timeout to control max wait time (default: '5m').",
-			Annotations: &mcp.ToolAnnotations{DestructiveHint: destructive, OpenWorldHint: closedWorld},
-		}, h.HandleReboot)
-
-		mcp.AddTool(server, &mcp.Tool{
-			Name: "talos_upgrade",
-			Description: "Upgrade Talos on the specified nodes. Requires explicit nodes, an installer image reference, and confirm=true. " +
-				"Set preserve=true (default) to keep the EPHEMERAL partition intact. " +
-				"Use stage=true to defer the upgrade to the next reboot. " +
-				"Use reboot_mode='powercycle' for a full power cycle after upgrade. " +
-				"Use talos_health after upgrade to verify cluster state.",
-			Annotations: &mcp.ToolAnnotations{DestructiveHint: destructive, OpenWorldHint: closedWorld},
-		}, h.HandleUpgrade)
-
-		mcp.AddTool(server, &mcp.Tool{
-			Name: "talos_rollback",
-			Description: "Roll back the last Talos upgrade on the specified nodes, reverting to the previous boot asset. " +
-				"Requires explicit nodes and confirm=true. " +
-				"Only works if the previous installation is still intact (i.e. no second upgrade was performed). " +
-				"Use talos_health after rollback to verify cluster state.",
-			Annotations: &mcp.ToolAnnotations{DestructiveHint: destructive, OpenWorldHint: closedWorld},
-		}, h.HandleRollback)
-
-		mcp.AddTool(server, &mcp.Tool{
-			Name: "talos_patch_config",
-			Description: "Apply a machine config patch to the target nodes. " +
-				"Defaults to dry_run=true — set dry_run=false to actually apply. " +
-				"Requires confirm=true when dry_run=false. " +
-				"Patch can be a JSON or YAML strategic merge patch.",
-			Annotations: &mcp.ToolAnnotations{DestructiveHint: destructive, OpenWorldHint: closedWorld},
-		}, h.HandlePatchConfig)
-
-		mcp.AddTool(server, &mcp.Tool{
-			Name: "talos_reset",
-			Description: "Wipe and factory-reset the specified nodes. IRREVERSIBLE: all data on the system disk is permanently destroyed. " +
-				"Requires explicit nodes and confirm=true. " +
-				"All listed nodes are reset simultaneously — reset one node at a time to avoid a full cluster outage. " +
-				"Set graceful=false only on nodes that are already unresponsive. " +
-				"Provide system_labels_to_wipe to wipe only specific partitions (e.g. ['EPHEMERAL']) instead of the full system disk. " +
-				"Set reboot=true to have nodes come back up automatically after wiping.",
-			Annotations: &mcp.ToolAnnotations{DestructiveHint: destructive, OpenWorldHint: closedWorld},
-		}, h.HandleReset)
-
-		mcp.AddTool(server, &mcp.Tool{
-			Name: "talos_apply_config",
-			Description: "Apply a complete machine config document to a single target node. " +
-				"config_file must be an absolute path to a local YAML/JSON file — the server reads it " +
-				"directly so secrets (CA keys, tokens, encryption keys) never enter the conversation. " +
-				"Reads from the local host filesystem (not Talos nodes); TALOS_MCP_ALLOWED_PATHS does not apply. " +
-				"Use this to deliver a full config (e.g. output of talosctl gen config) rather than a patch. " +
-				"Defaults to dry_run=true — set dry_run=false to actually apply. " +
-				"Requires confirm=true when dry_run=false. " +
-				"Config must target exactly one node — each node has a unique machine config.",
-			Annotations: &mcp.ToolAnnotations{DestructiveHint: destructive, OpenWorldHint: closedWorld},
-		}, h.HandleApplyConfig)
-	}
-
+	tools.Register(server, h, readOnly)
 	resources.Register(server, tc, allowedNodes)
 	prompts.Register(server, readOnly)
 
 	if err := runServer(ctx, server, httpAddr, authToken, newHTTPTransportConfig(), tc.Ping); err != nil {
 		slog.Error("server stopped with error", "error", err)
 	}
-}
-
-// boolPtr returns a pointer to a bool value.
-func boolPtr(b bool) *bool {
-	return &b
 }
 
 // validateHTTPConfig returns an error if HTTP mode is requested without an auth token.

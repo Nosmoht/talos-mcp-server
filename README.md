@@ -127,6 +127,7 @@ The server speaks the [MCP protocol](https://modelcontextprotocol.io) over stdio
 
 ## Tools
 
+<!-- inventory:tools:start -->
 ### Read-only
 
 | Tool | Description |
@@ -158,8 +159,23 @@ These tools modify cluster state and have explicit safety guards.
 | `talos_patch_config` | Apply a machine config patch (JSON or YAML strategic merge). | `dry_run` defaults to `true`; `confirm=true` required when `dry_run=false` |
 
 All tools accept an optional `nodes` field (list of node IPs or hostnames). When omitted, the active context from talosconfig is used.
+<!-- inventory:tools:end -->
+
+### Prompts
+
+<!-- inventory:prompts:start -->
+| Prompt | Description |
+|---|---|
+| `diagnose-node` | Guided diagnosis workflow for a single node. |
+| `investigate-etcd` | Focused investigation of an etcd cluster anomaly. |
+| `debug-service` | Service-specific diagnostic workflow (kubelet, containerd, etcd, …). |
+| `pre-upgrade-checklist` | Pre-flight verification before a Talos upgrade. |
+| `apply-config` | Guided flow for applying a machine config patch (registered only when `TALOS_MCP_READ_ONLY` is unset). |
+<!-- inventory:prompts:end -->
 
 ### Resources and Subscriptions
+
+<!-- inventory:resources:start -->
 
 The server exposes Talos COSI resources as MCP resources:
 
@@ -179,6 +195,7 @@ Subscribable resource types (canonical names):
 Aliases resolve to the canonical type before the allowlist check, so a client subscribing to `talos://{node}/resource/runtime/ms/...` (alias for `MachineStatus`) succeeds. Other COSI types reject with `resource type %q is not subscribable`. Static `talos://cluster/*` URIs are not subscribable (no COSI backing).
 
 Delivery is rate-limited per `(session, URI)` via `TALOS_MCP_SUBSCRIPTION_RATE` / `TALOS_MCP_SUBSCRIPTION_BURST`; over-rate events are dropped and the client re-reads the resource to catch up. The initial `Bootstrapped` event is intentionally not forwarded — the client is expected to call `resources/read` once after subscribe for initial state.
+<!-- inventory:resources:end -->
 
 ## Security Model
 

@@ -20,6 +20,18 @@ Mutating tools require explicit guards — missing any of these will error or ca
 - `talos_patch_config` defaults `dry_run=true`; pass `dry_run=false` + `confirm=true` to apply.
 - `talos_apply_config` takes `config_file` (absolute local path to YAML/JSON, max 1 MiB — secrets never enter context). Defaults `dry_run=true`, requires exactly one node. Replaces entire machine config — prefer `talos_patch_config` for targeted changes.
 
+### Safety Profile
+
+`TALOS_MCP_SAFETY_PROFILE` seeds four gating flags at startup. Individual env vars override the profile. When the profile var is unset, each flag defaults to its own env var (backwards-compatible).
+
+| Profile | `READ_ONLY` | `ALLOW_CLUSTER_WIDE` | `ENABLE_GEN` | `SKIP_VERSION_CHECK` |
+|---|---|---|---|---|
+| `conservative` | `true` | `false` | `false` | `false` |
+| `standard` | `false` | `false` | `false` | `false` |
+| `expert` | `false` | `true` | `true` | `false` |
+
+`ALLOW_CLUSTER_WIDE` and `ENABLE_GEN` are reserved for future phases (D — cluster CA/K8s rotation, E — offline PKI gen) and currently gate no tools. The effective profile is logged at startup (`slog.Info("safety profile", ...)`).
+
 ## Development Workflow
 
 Every change that results in a commit must use a git worktree — never commit directly on `main`.

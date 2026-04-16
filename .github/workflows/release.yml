@@ -161,14 +161,25 @@ jobs:
   # main and the just-published npm tarball. Commits go through the Contents
   # API, which produces web-flow-signed commits — required because branch
   # protection on main sets required_signatures: true. A plain `git push` with
-  # GITHUB_TOKEN would be rejected as unsigned.
+  # GITHUB_TOKEN would be rejected as unsigned. The `gh pr create` call uses the
+  # RELEASE_APP installation token rather than the default GITHUB_TOKEN because
+  # repo policy sets can_approve_pull_request_reviews: false, which also blocks
+  # PR creation by the default token. The RELEASE_APP token already drives
+  # auto-tag.yml and bypasses that restriction; it must carry pull_requests:write
+  # and contents:write on this repo.
   changelog-pr:
     needs: mcp-registry-publish
     runs-on: ubuntu-latest
     permissions:
-      contents: write
-      pull-requests: write
+      contents: read
+      pull-requests: read
     steps:
+      - uses: actions/create-github-app-token@1b10c78c7865c340bc4f6099eb2f838309f1e8c3 # v3
+        id: app-token
+        with:
+          app-id: ${{ vars.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v4
         with:
           fetch-depth: 0
@@ -179,7 +190,7 @@ jobs:
 
       - name: Open PR with updated CHANGELOG
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
           VERSION: ${{ github.ref_name }}
         run: |
           set -euo pipefail

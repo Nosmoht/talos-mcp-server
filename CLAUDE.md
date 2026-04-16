@@ -50,7 +50,7 @@ git worktree add -b feat/<slug> .claude/worktrees/<slug> origin/main
 
 ## Project Management
 
-Issue lifecycle, coding conventions, and multi-agent coordination: [AGENTS.md](./AGENTS.md).
+Issue lifecycle, agent tooling, planning discipline, coding conventions, and multi-agent coordination: [AGENTS.md](./AGENTS.md).
 
 Find ready issues: `repo:Nosmoht/talos-mcp-server is:issue is:open label:"status: ready" sort:created-asc`
 

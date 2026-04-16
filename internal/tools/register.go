@@ -139,6 +139,7 @@ func Register(server *mcp.Server, h *Handlers, readOnly bool) {
 		mcp.AddTool(server, &mcp.Tool{
 			Name: "talos_service_action",
 			Description: "Start, stop, or restart a Talos service on the target nodes. " +
+				"Requires confirm=true. " +
 				"NOTE: restarting 'etcd' is not supported by the Talos API and will return an error; " +
 				"use talos_reboot or the investigate-etcd prompt to recover etcd.",
 			Annotations: &mcp.ToolAnnotations{DestructiveHint: destructive, OpenWorldHint: closedWorld},

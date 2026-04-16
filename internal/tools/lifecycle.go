@@ -37,12 +37,17 @@ const (
 type ServiceActionArgs struct {
 	ServiceName string   `json:"service_name" jsonschema:"Name of the service to act on (e.g. 'kubelet'\\, 'containerd'\\, 'etcd')."`
 	Action      string   `json:"action" jsonschema:"Action to perform: 'start'\\, 'stop'\\, or 'restart'."`
+	Confirm     bool     `json:"confirm" jsonschema:"REQUIRED: Must be explicitly set to true to confirm the service action."`
 	Nodes       []string `json:"nodes,omitempty" jsonschema:"Target node IPs or hostnames. Omit to use the default nodes from talosconfig."`
 }
 
 // HandleServiceAction implements the talos_service_action tool.
 func (h *Handlers) HandleServiceAction(ctx context.Context, _ *mcp.CallToolRequest, args ServiceActionArgs) (*mcp.CallToolResult, any, error) {
 	h.auditLog("talos_service_action", args, args.Nodes)
+
+	if !args.Confirm {
+		return nil, nil, fmt.Errorf("service_action refused: confirm must be explicitly set to true")
+	}
 
 	if args.ServiceName == "" {
 		return nil, nil, fmt.Errorf("service_name is required")

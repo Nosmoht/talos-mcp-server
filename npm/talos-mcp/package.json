@@ -27,11 +27,15 @@
   "engines": {
     "node": ">=18"
   },
+  "main": "bin/run.js",
   "bin": {
     "talos-mcp": "bin/run.js"
   },
   "files": [
-    "bin/run.js"
+    "bin/run.js",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md"
   ],
   "optionalDependencies": {
     "@talos-mcp/linux-x64": "0.22.0",

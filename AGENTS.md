@@ -15,6 +15,30 @@ work concurrently on this repository via git worktrees. This document defines:
 
 ---
 
+## Agent Tooling
+
+GitHub operations use the `mcp__github__*` MCP tools, not the `gh` CLI. MCP tools are semantically richer, participate in the permission model, and are the intended interface for GitHub in an agent session.
+
+Reserve `gh` CLI for operations without an MCP equivalent:
+
+- `gh pr checks <n>` — CI check-run status
+- `gh auth login` — interactive auth setup
+- `gh run view` — workflow run inspection
+
+Never use `gh` for issues, PRs, reviews, comments, branches, labels, or search when an `mcp__github__*` tool exists. In particular, prefer `mcp__github__pull_request_read` with `method=get` over `gh pr view` for state and merged-at checks.
+
+---
+
+## Planning Discipline
+
+Non-trivial plans must pass `senior-plan-reviewer` **and** one adversarial pass before `ExitPlanMode`. Non-trivial = multi-phase, multi-PR, touches mutating tools, or proposes an architectural change.
+
+- Run the two reviewers in parallel with distinct perspectives: `senior-plan-reviewer` for completeness and architecture; a `general-purpose` or `codex:codex-rescue` agent for adversarial risk surfaces the primary reviewer may endorse by default.
+- Fold every review finding into the plan file, or document why it is accepted as-is. Empirical note: adversarial passes have caught sequencing gaps, skill-filter dead paths, and invalid label taxonomy that the senior reviewer accepted — the two roles are complementary, not redundant.
+- Trivial plans (single-line fix, typo, rename) may `ExitPlanMode` direct.
+
+---
+
 ## Coding Conventions
 
 ### Baseline standards
@@ -379,6 +403,30 @@ git worktree remove .claude/worktrees/<change-id>
 git branch -d feat/<change-id>
 ```
 
+### Follow-up bake PRs
+
+When a review produces both code-level fixes and reusable lessons worth encoding into `.claude/rules/`, `.claude/skills/`, or `.claude/agents/`, split into two PRs:
+
+1. Code-fix PR on the original feature branch.
+2. Bake PR on a fresh branch off `main`, created **only after** the code-fix PR merges.
+
+**Why:** the primitive files reference specific code paths (new helpers, new test invariants, renamed packages). Branching the bake off an open PR leaves the rule or agent checklist pointing at files that do not yet exist on `main`.
+
+Verify the merge gate using an MCP call (not `gh pr view` — see § Agent Tooling):
+
+```
+mcp__github__pull_request_read method=get owner=<owner> repo=<repo> pullNumber=<n>
+→ verify .state == "MERGED" and .mergedAt != null
+```
+
+Then:
+
+```bash
+git worktree add -b feat/<bake-slug> .claude/worktrees/<bake-slug> origin/main
+```
+
+If the review also surfaced **deferred process debt** (a test-suite waiver, a known retrofit, a blocked guard invariant), file a real GitHub issue with valid label taxonomy (`type: chore` or `type: bug`, one `priority:` label, `area:` labels, `needs: triage`) and reference both the merged source PR **and** the tracking issue in the bake commit message and PR body. Test-code comments and `knownXxxGapTools` maps are waivers, not trackers — the tracker goes on GitHub.
+
 ---
 
 ## Review Governance
@@ -399,6 +447,10 @@ cp .claude/hooks/pre-commit .git/hooks/pre-commit && chmod +x .git/hooks/pre-com
    - `status: escalate` → invoke each listed escalation reviewer
 3. **Escalation** (if needed) — invoke the domain reviewer. Artifact: `.claude/reviews/{change-id}/review-{type}.md`
 4. **Commit** — only once all required artifacts show `status: approved`.
+
+### PR-level review before merge
+
+A PR that lacks an existing GitHub approval must be reviewed by a subagent (typically `staff-reviewer`) before merge. If the review surfaces findings, fix them and re-review until clean. Batch-merge flows do not waive the gate — every PR carries its own review. Commit-time reviews (pre-commit hook) are a separate gate; the merge step itself is manual and relies on this rule.
 
 ### Review depth
 

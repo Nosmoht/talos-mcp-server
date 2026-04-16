@@ -41,17 +41,20 @@ func TestInvariant_ReadOnlyGatesDestructiveTools(t *testing.T) {
 	}
 }
 
-// knownConfirmGapTools lists destructive tools that ship today WITHOUT a
-// confirm property in their InputSchema. Each entry is a documented debt:
-// the invariants test allowlists these so CI stays green, while adding a new
-// destructive tool without confirm still fails.
+// knownConfirmGapTools is the waiver registry for destructive tools that
+// legitimately cannot carry a `confirm` property in their InputSchema yet.
+// The map is currently empty — every destructive tool advertises confirm.
 //
-// Phase B of the talos-mcp coverage plan retrofits these tools with confirm
-// + risk_acknowledgements. When that PR lands, the corresponding entry is
-// removed from this map and the test starts enforcing on it.
-var knownConfirmGapTools = map[string]string{
-	"talos_service_action": "Phase B retrofit — add Confirm + RiskAcknowledgements to ServiceActionArgs (tracked in the talos-mcp coverage plan)",
-}
+// To add a waiver: insert `"talos_<name>": "<reason + tracking issue>"`. The
+// invariants test will then `t.Logf` the gap on every CI run instead of failing.
+// File a tracking GitHub issue per
+// .claude/skills/add-mcp-tool/references/safety-defaults.md before adding
+// the entry — the t.Logf line is not a tracker.
+//
+// Issue #156 was the canonical use of this mechanism: talos_service_action
+// shipped without confirm, was waived here, tracked as #156, and retrofitted
+// — at which point the entry was removed.
+var knownConfirmGapTools = map[string]string{}
 
 // TestInvariant_DestructiveToolsRequireConfirm enforces Invariant #2 (partial):
 // every destructive tool's InputSchema must expose a `confirm` property so

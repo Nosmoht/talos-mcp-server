@@ -13,7 +13,8 @@ make check   # full CI parity: fmt + vet + lint + test
 
 Mutating tools require explicit guards — missing any of these will error or cause irreversible cluster damage:
 
-- `talos_reboot`, `talos_upgrade`, `talos_rollback`, `talos_reset` all require `confirm=true` and explicit `nodes`.
+- `talos_reboot`, `talos_upgrade`, `talos_rollback`, `talos_reset` all require `confirm=true` and explicit `nodes`. `talos_service_action` requires `confirm=true` (nodes optional — falls back to talosconfig defaults).
+- `talos_service_action`: restarting `etcd` is not supported by the Talos API — use `talos_reboot` or the `investigate-etcd` prompt instead.
 - `talos_reboot` hits **all listed nodes simultaneously** — specify one at a time to avoid a full outage. Use `wait=true` to block until complete (default timeout `5m`).
 - `talos_upgrade` `preserve` defaults to `true` (keep EPHEMERAL partition) — differs from `talosctl` default of `false`.
 - `talos_reset` `graceful` defaults to `true` (drain workloads, leave etcd). Set `false` only on unresponsive nodes. `system_labels_to_wipe` empty = full disk wipe.

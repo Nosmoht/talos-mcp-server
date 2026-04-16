@@ -102,13 +102,33 @@ func TestHandleUpgrade_Guards(t *testing.T) {
 	}
 }
 
+// TestHandleServiceAction_NoConfirm verifies the confirm guard rejects calls
+// that omit confirm=true, before any other validation runs.
+func TestHandleServiceAction_NoConfirm(t *testing.T) {
+	h := safeH()
+	ctx := context.Background()
+
+	_, _, err := h.HandleServiceAction(ctx, nil, ServiceActionArgs{
+		ServiceName: "kubelet",
+		Action:      "restart",
+		Confirm:     false,
+	})
+	if err == nil {
+		t.Fatal("expected error for missing confirm, got nil")
+	}
+	if !strings.Contains(err.Error(), "confirm must be explicitly set to true") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
 // TestHandleServiceAction_EmptyServiceName verifies empty service name is rejected.
 func TestHandleServiceAction_EmptyServiceName(t *testing.T) {
 	h := safeH()
 	ctx := context.Background()
 
 	_, _, err := h.HandleServiceAction(ctx, nil, ServiceActionArgs{
-		Action: "restart",
+		Action:  "restart",
+		Confirm: true,
 	})
 	if err == nil {
 		t.Fatal("expected error for empty service_name, got nil")
@@ -126,6 +146,7 @@ func TestHandleServiceAction_InvalidAction(t *testing.T) {
 	_, _, err := h.HandleServiceAction(ctx, nil, ServiceActionArgs{
 		ServiceName: "kubelet",
 		Action:      "obliterate",
+		Confirm:     true,
 	})
 	if err == nil {
 		t.Fatal("expected error for unknown action, got nil")

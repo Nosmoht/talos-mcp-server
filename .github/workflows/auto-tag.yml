@@ -3,9 +3,13 @@ name: auto-tag
 on:
   push:
     branches: [main]
-    # Only tag when server code changes. npm/ is excluded intentionally: npm wrapper
-    # changes cannot alter the compiled binary and should not trigger a release without
-    # Go CI validation. NOTE: keep this path list in sync with ci.yml 'changes' job.
+    # Only tag when server code or release-relevant metadata changes. npm/ is excluded
+    # intentionally: npm wrapper changes cannot alter the compiled binary and should not
+    # trigger a release without Go CI validation. server.json IS included because the
+    # mcp-registry-publish job (in release.yml) consumes it — a description / metadata
+    # fix needs a patch release to reach the registry. NOTE: keep this path list in sync
+    # with ci.yml 'changes' job for Go-relevant entries; server.json is intentionally
+    # outside the Go filter (server.json-only PRs skip Go lint/test, which is correct).
     paths:
       - '*.go'
       - 'cmd/**'
@@ -14,6 +18,7 @@ on:
       - 'go.sum'
       - 'Makefile'
       - '.goreleaser.yaml'
+      - 'server.json'
 
 permissions:
   contents: read

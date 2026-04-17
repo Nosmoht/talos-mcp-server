@@ -6,6 +6,7 @@ dist/
 node_modules/
 .env
 .envrc
+.mcpregistry_*_token
 coverage.out
 .claire/
 .claude/worktrees/

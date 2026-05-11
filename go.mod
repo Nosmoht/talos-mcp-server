@@ -5,7 +5,7 @@ go 1.26.2
 toolchain go1.26.3
 
 require (
-	github.com/cosi-project/runtime v1.14.1
+	github.com/cosi-project/runtime v1.15.1
 	github.com/google/jsonschema-go v0.4.3
 	github.com/modelcontextprotocol/go-sdk v1.6.0
 	github.com/siderolabs/talos/pkg/machinery v1.12.6

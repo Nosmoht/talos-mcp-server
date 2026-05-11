@@ -302,10 +302,17 @@ func runServer(ctx context.Context, server *mcp.Server, addr, token string, hc h
 
 	// HTTP mode — DisableLocalhostProtection allows proxied requests whose Host
 	// header differs from the bind address (e.g. behind nginx/Caddy/Tailscale).
+	// CrossOriginProtection is set explicitly because go-sdk v1.6.0 no longer
+	// enables the zero-value http.CrossOriginProtection by default when the
+	// field is nil. The zero value rejects non-safe (POST/PUT/PATCH/DELETE)
+	// cross-origin browser requests via Sec-Fetch-Site / Origin-vs-Host checks
+	// — orthogonal to DisableLocalhostProtection (which targets DNS rebinding
+	// at the Host-header layer).
 	mcpHandler := mcp.NewStreamableHTTPHandler(func(_ *http.Request) *mcp.Server {
 		return server
 	}, &mcp.StreamableHTTPOptions{
 		DisableLocalhostProtection: true,
+		CrossOriginProtection:      &http.CrossOriginProtection{},
 		Logger:                     slog.Default(),
 	})
 

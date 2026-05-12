@@ -299,17 +299,33 @@ func buildHTTPMux(mcpHandler http.Handler, token string, hc httpTransportConfig,
 // DisableLocalhostProtection allows proxied requests whose Host header differs from
 // the bind address (e.g. behind nginx/Caddy/Tailscale).
 //
-// CrossOriginProtection is set explicitly because go-sdk v1.6.0 no longer enables
-// the zero-value http.CrossOriginProtection by default when the field is nil. The
-// zero value rejects non-safe (POST/PUT/PATCH/DELETE) cross-origin browser requests
-// via Sec-Fetch-Site / Origin-vs-Host checks — orthogonal to DisableLocalhostProtection
-// (which targets DNS rebinding at the Host-header layer).
+// Cross-origin protection is intentionally NOT set on this struct. go-sdk v1.6.0
+// deprecated the StreamableHTTPOptions.CrossOriginProtection field and v1.8.0 removes
+// it; the SDK directs callers to wrap the handler with the stdlib middleware instead.
+// newProtectedMCPHandler applies that wrapper. The cross-origin layer is orthogonal
+// to DisableLocalhostProtection (cross-origin non-safe-method denial vs. DNS rebinding
+// at the Host-header layer).
 func newStreamableHTTPOptions(logger *slog.Logger) *mcp.StreamableHTTPOptions {
 	return &mcp.StreamableHTTPOptions{
 		DisableLocalhostProtection: true,
-		CrossOriginProtection:      &http.CrossOriginProtection{},
 		Logger:                     logger,
 	}
+}
+
+// newProtectedMCPHandler wires the streamable HTTP handler together with the
+// stdlib cross-origin protection middleware. Consolidating both steps here
+// removes drift between production (runServer) and tests (buildTestHandler,
+// buildMuxForTest) — the same drift class that motivated newStreamableHTTPOptions.
+// See PR #177 and issue #179 for the regression this guards against.
+//
+// The wrapper form replaces the deprecated StreamableHTTPOptions.CrossOriginProtection
+// field (go-sdk v1.6.0 deprecation; v1.8.0 removal). Source-compatible with v1.6.x.
+func newProtectedMCPHandler(server *mcp.Server, logger *slog.Logger) http.Handler {
+	mcpHandler := mcp.NewStreamableHTTPHandler(func(_ *http.Request) *mcp.Server {
+		return server
+	}, newStreamableHTTPOptions(logger))
+	protection := http.NewCrossOriginProtection()
+	return protection.Handler(mcpHandler)
 }
 
 // runServer starts the server in either stdio or HTTP mode.
@@ -321,13 +337,11 @@ func runServer(ctx context.Context, server *mcp.Server, addr, token string, hc h
 		return server.Run(ctx, &mcp.StdioTransport{})
 	}
 
-	mcpHandler := mcp.NewStreamableHTTPHandler(func(_ *http.Request) *mcp.Server {
-		return server
-	}, newStreamableHTTPOptions(slog.Default()))
+	protectedHandler := newProtectedMCPHandler(server, slog.Default())
 
 	httpSrv := &http.Server{
 		Addr:              addr,
-		Handler:           buildHTTPMux(mcpHandler, token, hc, healthProbe),
+		Handler:           buildHTTPMux(protectedHandler, token, hc, healthProbe),
 		ReadHeaderTimeout: 30 * time.Second,
 	}
 

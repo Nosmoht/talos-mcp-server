@@ -275,20 +275,30 @@ func TestHTTPHandler_CrossOriginProtection_Integration(t *testing.T) {
 	defer ts.Close()
 
 	// Statuses that indicate the request reached MCP-layer processing or a
-	// legitimate non-CSRF rejection by earlier middleware. Anything outside
+	// legitimate non-CSRF rejection by content semantics. Anything outside
 	// this set on a "not denied" expectation indicates the assertion may be
 	// masking the cross-origin layer's behavior.
+	//
+	// 401 is deliberately NOT in this set: every case sets a valid bearer
+	// token, so 401 is never the legitimate outcome — admitting it would
+	// silently pass tests that regressed the auth chain.
+	//
+	// Coverage caveat: 4xx content-rejection statuses (400/406/415/422) are
+	// in the set because the test body is intentionally minimal (`{}`) and
+	// downstream MCP rejects it on content semantics. The "not denied"
+	// assertion therefore proves "cross-origin layer did not return 403",
+	// not "cross-origin layer affirmatively admitted the request to MCP
+	// processing." A stronger positive assertion would require a real
+	// JSON-RPC body, which exceeds the regression-guard scope of this test.
 	mcpReachable := map[int]struct{}{
 		http.StatusOK:                   {},
 		http.StatusAccepted:             {},
 		http.StatusNoContent:            {},
 		http.StatusBadRequest:           {},
-		http.StatusUnauthorized:         {},
 		http.StatusMethodNotAllowed:     {},
 		http.StatusNotAcceptable:        {},
 		http.StatusUnsupportedMediaType: {},
 		http.StatusUnprocessableEntity:  {},
-		http.StatusNotImplemented:       {},
 	}
 
 	cases := []struct {

@@ -9,6 +9,12 @@
 # commit reachable from that tag. That is intentional: it preserves initial-release
 # history and avoids needing a synthetic pre-v0.1.0 base.
 #
+# Scope vs. goreleaser changelog: this script produces the full human-readable
+# CHANGELOG.md (includes chore:, refactor:, etc. for audit). The goreleaser
+# changelog (.goreleaser.yaml § changelog.filters.exclude) is a separate
+# summary used for GitHub Release notes and intentionally hides administrative
+# types. The two views serve different consumers; the divergence is principled.
+#
 # Requires: bash 3.2+, git, sed, grep.
 
 set -euo pipefail

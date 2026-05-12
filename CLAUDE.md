@@ -57,7 +57,7 @@ Find ready issues: `repo:Nosmoht/talos-mcp-server is:issue is:open label:"status
 
 ## Release
 
-Conventional commit prefixes on merge to `main` (server paths only): `fix:` → patch · `feat:` → minor · `BREAKING CHANGE:`/`feat!:` → major · `docs:`/`ci:`/`chore:` → no release.
+Conventional commit prefixes on merge to `main` (server paths only): `feat:` → minor · `fix:` → patch · `perf:` → patch · `<any>!:` / `BREAKING CHANGE:` footer → major · `refactor:` / `chore:` / `docs:` / `test:` / `ci:` / `build:` / `style:` / `revert:` → no release. Full type table and the `chore:` vs `refactor:` decision rule: [CONTRIBUTING.md § Commit messages](./CONTRIBUTING.md#commit-messages).
 
 npm OIDC gotchas: see `.claude/rules/release-workflow.md` (auto-loaded when editing `release.yml`).
 

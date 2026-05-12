@@ -28,14 +28,37 @@ make check   # full CI parity (fmt + vet + lint + test)
 
 ## Commit messages
 
-This project uses [conventional commits](https://www.conventionalcommits.org/). All commits must use a scoped prefix:
+Commits follow [Conventional Commits v1.0.0](https://www.conventionalcommits.org/en/v1.0.0/) using the type vocabulary from [Angular's commit-message guidelines](https://github.com/angular/angular/blob/main/contributing-docs/commit-message-guidelines.md) (verbatim definitions live upstream; this table records release impact and repo-specific examples).
 
-| Prefix | Effect |
-|---|---|
-| `feat(scope):` | New feature → minor version bump |
-| `fix(scope):` | Bug fix → patch version bump |
-| `feat!:` / `BREAKING CHANGE:` | Breaking change → major version bump |
-| `docs:`, `ci:`, `chore:`, `refactor:`, `test:` | No release triggered |
+All commits use the form `<type>(<scope>): <subject>`. Types and scopes are lowercase ASCII (e.g. `fix(http):`, never `Fix(HTTP):`).
+
+| Type | Release impact | Repo example |
+|---|---|---|
+| `feat` | MINOR | `223a0c0 feat(subscriptions): add MCP resource subscriptions via COSI watch` |
+| `fix` | PATCH | `5dc4794 fix(http): restore cross-origin protection default after go-sdk v1.6.0 bump` |
+| `perf` | PATCH | `546339d perf(tools): replace json.MarshalIndent with json.Marshal for compact AI-agent responses` |
+| `refactor` | none | `ae16178 refactor(talos): introduce ClientInterface to decouple tool handlers from concrete client` |
+| `docs` | none | `ff8cf01 docs(agents): promote four process rules from local memory to repo` |
+| `test` | none | `1032816 test(transport): add CSRF regression test for cross-origin protection` |
+| `ci` | none | `c7d80a8 ci(lint): add exhaustive and thelper linters` |
+| `build` | none | `8a23dff build(deps): bump actions/upload-artifact from 7.0.0 to 7.0.1` |
+| `chore` | none | `0f09cd1 chore(safety): gitignore mcpregistry token files` |
+| `style` | none | gofmt-only diff with no semantic change |
+| `revert` | matches the reverted commit's type | `git revert` output (or manual revert with the same form) |
+
+**Breaking changes** trigger MAJOR regardless of type. Mark them either by appending `!` after the type/scope (`feat(api)!:`) **or** by adding a `BREAKING CHANGE: <description>` footer. Either form is accepted; both forms together is redundant but harmless.
+
+### Local rule — `chore:` vs `refactor:`
+
+Angular's guidelines do not formally include `chore:` and the boundary between `chore:` and `refactor:` is not codified upstream. This repo's local rule:
+
+- Use **`refactor:`** if the diff modifies code that ships in the compiled binary or its test fixtures — `cmd/`, `internal/`, `pkg/`, or `*_test.go` files alongside those packages. Example: replacing `log.Printf` with `slog` in `internal/tools/` is `refactor:`, not `chore:`.
+- Use **`chore:`** only when the diff is confined to repo housekeeping that does not affect the shipped binary: `.gitignore`, `.claude/`, `.github/`'s non-CI/non-build files, repo-metadata configs.
+- `.goreleaser.yaml`, `go.mod`, `go.sum`, `Makefile`, `npm/` packaging are **`build:`** (they affect the build system or distribution).
+- CI workflow files and scripts (`.github/workflows/**`, `.github/scripts/**`) are **`ci:`**.
+- Documentation-only changes are **`docs:`** regardless of file location (including godoc-comment-only edits).
+
+Anti-pattern, for clarity: `95a9161 chore(http): migrate off deprecated CrossOriginProtection field` modifies `cmd/talos-mcp/main.go` — under this rule, that commit would be `refactor(http):` (no release in either case, so no retroactive correction; cited only as a forward-looking example).
 
 ## Pull requests
 

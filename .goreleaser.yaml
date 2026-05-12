@@ -41,9 +41,17 @@ sboms:
   - artifacts: archive
 
 changelog:
+  # Excludes use the [(:] character class so each anchor matches both unscoped
+  # ("docs:") and scoped ("docs(agents):") commit subjects. Breaking variants
+  # ("docs!:") are deliberately NOT excluded — those are rare and a BREAKING
+  # CHANGE footer should always surface in the release notes.
   sort: asc
   filters:
     exclude:
-      - "^docs:"
-      - "^test:"
-      - "^ci:"
+      - "^docs[(:]"
+      - "^test[(:]"
+      - "^ci[(:]"
+      - "^chore[(:]"
+      - "^build[(:]"
+      - "^style[(:]"
+      - "^revert[(:]"

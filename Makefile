@@ -9,7 +9,7 @@ LDFLAGS    := -s -w \
 
 .DEFAULT_GOAL := help
 
-.PHONY: help build test test-integration bench lint fmt fmt-fix vet check clean coverage mod-tidy
+.PHONY: help build test test-integration bench lint fmt fmt-fix vet check clean clean-worktrees coverage mod-tidy
 
 help: ## Show available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | \
@@ -59,6 +59,41 @@ coverage: test ## Generate HTML coverage report and open in browser
 
 clean: ## Remove build artifacts
 	rm -f $(BINARY) coverage.out
+
+# clean-worktrees runs `git worktree prune` to drop admin entries whose working
+# trees are missing (e.g. cross-machine rsync remnants), then removes physical
+# directories under .claude/worktrees/ that no longer correspond to any live
+# worktree. The orphan-removal step refuses to run if `git worktree list`
+# returns no entries — a defensive guard against deleting every directory when
+# the live set cannot be enumerated.
+clean-worktrees: ## Prune stale worktree admin entries and remove orphan .claude/worktrees/ dirs
+	@echo "==> Pruning stale worktree admin entries..."
+	@git worktree prune --verbose
+	@if [ ! -d .claude/worktrees ]; then exit 0; fi
+	@echo ""
+	@echo "==> Scanning for orphan .claude/worktrees/ directories..."
+	@live=$$(git worktree list --porcelain | awk '/^worktree/ {n=split($$2,a,"/"); print a[n]}' | tr '\n' ' '); \
+	if [ -z "$$live" ]; then \
+		echo "ERROR: git worktree list returned no entries — refusing to proceed." >&2; \
+		exit 1; \
+	fi; \
+	orphans=""; \
+	for d in .claude/worktrees/*/; do \
+		[ -d "$$d" ] || continue; \
+		name=$$(basename "$$d"); \
+		case " $$live " in *" $$name "*) ;; \
+			*) orphans="$$orphans $$name" ;; \
+		esac; \
+	done; \
+	if [ -z "$$orphans" ]; then \
+		echo "  (no orphans)"; \
+		exit 0; \
+	fi; \
+	echo "  found:$$orphans"; \
+	for name in $$orphans; do \
+		echo "  removing .claude/worktrees/$$name"; \
+		rm -rf ".claude/worktrees/$$name"; \
+	done
 
 mod-tidy: ## Tidy go module dependencies
 	go mod tidy

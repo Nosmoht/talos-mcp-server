@@ -79,10 +79,8 @@ func TestBuildTokenVerifier(t *testing.T) {
 // security defaults (see issue #179 + PR #177).
 func buildTestHandler(secret string, hc httpTransportConfig) http.Handler {
 	server := mcp.NewServer(&mcp.Implementation{Name: "test", Version: "0"}, nil)
-	mcpHandler := mcp.NewStreamableHTTPHandler(func(_ *http.Request) *mcp.Server {
-		return server
-	}, newStreamableHTTPOptions(slog.Default()))
-	return buildHTTPMux(mcpHandler, secret, hc, func(_ context.Context) error { return nil })
+	protectedHandler := newProtectedMCPHandler(server, slog.Default())
+	return buildHTTPMux(protectedHandler, secret, hc, func(_ context.Context) error { return nil })
 }
 
 func TestHTTPHandler_Integration(t *testing.T) {
@@ -151,10 +149,8 @@ func TestHTTPHandler_RateLimit_Integration(t *testing.T) {
 
 func buildMuxForTest(probe func(context.Context) error) (*httptest.Server, func()) {
 	srv := mcp.NewServer(&mcp.Implementation{Name: "test", Version: "0"}, nil)
-	mcpHandler := mcp.NewStreamableHTTPHandler(func(_ *http.Request) *mcp.Server {
-		return srv
-	}, newStreamableHTTPOptions(slog.Default()))
-	ts := httptest.NewServer(buildHTTPMux(mcpHandler, "secret", newHTTPTransportConfig(), probe))
+	protectedHandler := newProtectedMCPHandler(srv, slog.Default())
+	ts := httptest.NewServer(buildHTTPMux(protectedHandler, "secret", newHTTPTransportConfig(), probe))
 	return ts, ts.Close
 }
 
@@ -258,17 +254,19 @@ func TestHealthzEndpoint(t *testing.T) {
 // SDK's zero-value http.CrossOriginProtection stops denying cross-origin non-safe
 // requests, this test fires. See issue #179.
 //
-// The test fixture goes through buildTestHandler → newStreamableHTTPOptions, the
-// same code path runServer uses in production. A regression that removes
-// CrossOriginProtection from the helper trips the assertions here; a regression
-// that inlines a divergent literal back into runServer is not caught by this
-// test (residual risk documented in #179's plan).
+// The test fixture goes through buildTestHandler → newProtectedMCPHandler →
+// newStreamableHTTPOptions, the same code path runServer uses in production.
+// A regression that removes the cross-origin wrapper from the helper trips the
+// assertions here; a regression that inlines a divergent handler construction
+// back into runServer is not caught by this test (residual risk documented in
+// #179's plan).
 func TestHTTPHandler_CrossOriginProtection_Integration(t *testing.T) {
 	const secret = "csrf-test-token" //nolint:gosec // G101 false positive: test-only bearer token, never reaches production
 
 	// Compile-time binding: the test depends on the shared helper. If
-	// newStreamableHTTPOptions is renamed or removed, this stops compiling.
-	_ = newStreamableHTTPOptions
+	// newProtectedMCPHandler (or transitively newStreamableHTTPOptions) is
+	// renamed or removed, this stops compiling.
+	_ = newProtectedMCPHandler
 
 	hc := newHTTPTransportConfig()
 	ts := httptest.NewServer(buildTestHandler(secret, hc))

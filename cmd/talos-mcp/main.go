@@ -291,6 +291,27 @@ func buildHTTPMux(mcpHandler http.Handler, token string, hc httpTransportConfig,
 	return mux
 }
 
+// newStreamableHTTPOptions returns the shared StreamableHTTPOptions used by runServer
+// in production and by buildTestHandler / buildMuxForTest in tests. Co-locating the
+// security-relevant fields keeps test fixtures from drifting away from production —
+// see issue #179 and PR #177.
+//
+// DisableLocalhostProtection allows proxied requests whose Host header differs from
+// the bind address (e.g. behind nginx/Caddy/Tailscale).
+//
+// CrossOriginProtection is set explicitly because go-sdk v1.6.0 no longer enables
+// the zero-value http.CrossOriginProtection by default when the field is nil. The
+// zero value rejects non-safe (POST/PUT/PATCH/DELETE) cross-origin browser requests
+// via Sec-Fetch-Site / Origin-vs-Host checks — orthogonal to DisableLocalhostProtection
+// (which targets DNS rebinding at the Host-header layer).
+func newStreamableHTTPOptions(logger *slog.Logger) *mcp.StreamableHTTPOptions {
+	return &mcp.StreamableHTTPOptions{
+		DisableLocalhostProtection: true,
+		CrossOriginProtection:      &http.CrossOriginProtection{},
+		Logger:                     logger,
+	}
+}
+
 // runServer starts the server in either stdio or HTTP mode.
 // healthProbe is called on each /healthz request to verify gRPC connectivity;
 // it is only used in HTTP mode and must be non-nil when addr is non-empty.
@@ -300,21 +321,9 @@ func runServer(ctx context.Context, server *mcp.Server, addr, token string, hc h
 		return server.Run(ctx, &mcp.StdioTransport{})
 	}
 
-	// HTTP mode — DisableLocalhostProtection allows proxied requests whose Host
-	// header differs from the bind address (e.g. behind nginx/Caddy/Tailscale).
-	// CrossOriginProtection is set explicitly because go-sdk v1.6.0 no longer
-	// enables the zero-value http.CrossOriginProtection by default when the
-	// field is nil. The zero value rejects non-safe (POST/PUT/PATCH/DELETE)
-	// cross-origin browser requests via Sec-Fetch-Site / Origin-vs-Host checks
-	// — orthogonal to DisableLocalhostProtection (which targets DNS rebinding
-	// at the Host-header layer).
 	mcpHandler := mcp.NewStreamableHTTPHandler(func(_ *http.Request) *mcp.Server {
 		return server
-	}, &mcp.StreamableHTTPOptions{
-		DisableLocalhostProtection: true,
-		CrossOriginProtection:      &http.CrossOriginProtection{},
-		Logger:                     slog.Default(),
-	})
+	}, newStreamableHTTPOptions(slog.Default()))
 
 	httpSrv := &http.Server{
 		Addr:              addr,

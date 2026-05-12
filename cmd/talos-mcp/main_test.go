@@ -264,7 +264,7 @@ func TestHealthzEndpoint(t *testing.T) {
 // that inlines a divergent literal back into runServer is not caught by this
 // test (residual risk documented in #179's plan).
 func TestHTTPHandler_CrossOriginProtection_Integration(t *testing.T) {
-	const secret = "csrf-test-token"
+	const secret = "csrf-test-token" //nolint:gosec // G101 false positive: test-only bearer token, never reaches production
 
 	// Compile-time binding: the test depends on the shared helper. If
 	// newStreamableHTTPOptions is renamed or removed, this stops compiling.
@@ -360,7 +360,7 @@ func TestHTTPHandler_CrossOriginProtection_Integration(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			if c.wantDenied {
 				if resp.StatusCode != http.StatusForbidden {

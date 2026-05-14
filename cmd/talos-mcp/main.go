@@ -28,6 +28,21 @@
 //     talos_patch_config refuses to modify (e.g. "machine.security,cluster.etcd").
 //     Unset or empty disables the blocklist (all paths allowed).
 //   - TALOS_MCP_SKIP_VERSION_CHECK: set to "true" to bypass upgrade path validation
+//   - TALOS_MCP_ENABLE_INSECURE: set to "true" to unlock maintenance-mode
+//     operations (insecure=true on talos_apply_config / talos_get / talos_version
+//     and the talos_meta tool). Bypasses mTLS — the transport is TLS-encrypted
+//     but the client presents no cert and (by default) does not verify the server.
+//     MUST be paired with TALOS_MCP_INSECURE_ALLOWED_NODES; main.go log.Fatalf-s
+//     if the allowlist is unset or over-permissive.
+//   - TALOS_MCP_INSECURE_ALLOWED_NODES: comma-separated list of permitted
+//     maintenance-mode endpoint IPs / hostnames / CIDR ranges. Required when
+//     TALOS_MCP_ENABLE_INSECURE=true. Hard refused: 0.0.0.0/0, ::/0, IPv4 mask
+//     <16, IPv6 mask <48. Broad-but-accepted (IPv4 <24, IPv6 <64) emits a warning.
+//   - TALOS_MCP_META_PRIVILEGED_KEYS: comma-separated META keys (decimal or
+//     0x-prefixed hex; bare leading zeros rejected) to unlock for talos_meta
+//     write/delete actions. UserReserved1/2/3 are always permitted; this var
+//     only widens the safelist for privileged keys like StateEncryptionConfig.
+//     Empty default = no privileged keys.
 //   - TALOS_MCP_RATE_LIMIT: HTTP mode requests/second (float, default 10)
 //   - TALOS_MCP_RATE_BURST: HTTP mode burst capacity (int, default 20)
 //   - TALOS_MCP_MAX_BODY_SIZE: HTTP mode max POST body bytes (int, default 4194304)
@@ -100,6 +115,39 @@ func main() {
 	allowedPaths := tools.ParseAllowedPaths(os.Getenv("TALOS_MCP_ALLOWED_PATHS"))
 	blockedConfigPaths := splitNonEmpty(os.Getenv("TALOS_MCP_BLOCKED_CONFIG_PATHS"), ",")
 
+	// Maintenance-mode (insecure) configuration. The allowlist is REQUIRED
+	// when EnableInsecure is true — the unauthenticated transport relies on
+	// it as the only network-layer defence. main.go log.Fatalf-s rather than
+	// silently treating an unset allowlist as "no restriction".
+	var (
+		insecureAllowedNodes *talos.NodeAllowlist
+		insecureBroadEntries []string
+	)
+	if safety.EnableInsecure {
+		rawAllowlist := os.Getenv("TALOS_MCP_INSECURE_ALLOWED_NODES")
+		inspection, err := config.CheckInsecureAllowlist(rawAllowlist)
+		if err != nil {
+			stop()
+			log.Fatalf("%v", err) //nolint:gocritic // exitAfterDefer: stop() called explicitly above
+		}
+		insecureBroadEntries = inspection.BroadEntries
+		insecureAllowedNodes, err = talos.ParseNodeAllowlist(rawAllowlist)
+		if err != nil {
+			stop()
+			log.Fatalf("invalid TALOS_MCP_INSECURE_ALLOWED_NODES: %v", err) //nolint:gocritic // exitAfterDefer: stop() called explicitly above
+		}
+		if insecureAllowedNodes == nil || insecureAllowedNodes.Len() == 0 {
+			stop()
+			log.Fatalf("TALOS_MCP_INSECURE_ALLOWED_NODES yielded no entries: cannot enable insecure mode") //nolint:gocritic // exitAfterDefer
+		}
+	}
+
+	metaPrivilegedKeys, err := config.ParseMetaPrivilegedKeys(os.Getenv("TALOS_MCP_META_PRIVILEGED_KEYS"))
+	if err != nil {
+		stop()
+		log.Fatalf("%v", err) //nolint:gocritic // exitAfterDefer: stop() called explicitly above
+	}
+
 	if err := validateHTTPConfig(httpAddr, authToken); err != nil {
 		stop()
 		log.Fatalf("%v", err) //nolint:gocritic // exitAfterDefer: stop() called explicitly above
@@ -152,12 +200,35 @@ func main() {
 		slog.Info("config path blocklist disabled")
 	}
 
+	if safety.EnableInsecure {
+		//nolint:gosec // G706: message is a constant; fields are integer count and operator-supplied CIDR, not user input
+		slog.Warn("maintenance-mode (insecure) operations ENABLED — bypasses mTLS; ensure the allowlist is tight",
+			"allowlist_entries", insecureAllowedNodes.Len(),
+		)
+		for _, broad := range insecureBroadEntries {
+			//nolint:gosec // G706: message is a constant; cidr is operator-supplied config, not user input
+			slog.Warn("insecure allowlist entry is broader than recommended", "cidr", broad)
+		}
+	} else {
+		slog.Info("maintenance-mode (insecure) operations disabled")
+	}
+
+	if len(metaPrivilegedKeys) > 0 {
+		//nolint:gosec // G706: message is a constant; field is an integer count, not user input
+		slog.Warn("META privileged-key safelist active — these keys are writable beyond UserReserved1/2/3",
+			"key_count", len(metaPrivilegedKeys),
+		)
+	}
+
 	h := &tools.Handlers{
-		Client:             tc,
-		AllowedNodes:       allowedNodes,
-		AllowedPaths:       allowedPaths,
-		SkipVersionCheck:   skipVersionCheck,
-		BlockedConfigPaths: blockedConfigPaths,
+		Client:               tc,
+		AllowedNodes:         allowedNodes,
+		AllowedPaths:         allowedPaths,
+		SkipVersionCheck:     skipVersionCheck,
+		BlockedConfigPaths:   blockedConfigPaths,
+		EnableInsecure:       safety.EnableInsecure,
+		InsecureAllowedNodes: insecureAllowedNodes,
+		MetaPrivilegedKeys:   metaPrivilegedKeys,
 	}
 
 	subRate, subBurst, err := parseSubscriptionLimits(os.Getenv("TALOS_MCP_SUBSCRIPTION_RATE"), os.Getenv("TALOS_MCP_SUBSCRIPTION_BURST"))

@@ -14,6 +14,7 @@ var profileEnvKeys = []string{
 	"TALOS_MCP_ALLOW_CLUSTER_WIDE",
 	"TALOS_MCP_ENABLE_GEN",
 	"TALOS_MCP_SKIP_VERSION_CHECK",
+	"TALOS_MCP_ENABLE_INSECURE",
 }
 
 // clearProfileEnv records each var's current state, unsets it, and registers a
@@ -42,6 +43,7 @@ func TestLoadSafetyProfile(t *testing.T) {
 		wantCluster   bool
 		wantGen       bool
 		wantSkipVer   bool
+		wantInsecure  bool
 		wantOverrides []string
 	}{
 		{
@@ -61,11 +63,34 @@ func TestLoadSafetyProfile(t *testing.T) {
 			wantProfile: ProfileStandard,
 		},
 		{
-			name:        "expert profile enables cluster_wide and gen",
-			env:         map[string]string{"TALOS_MCP_SAFETY_PROFILE": "expert"},
-			wantProfile: ProfileExpert,
-			wantCluster: true,
-			wantGen:     true,
+			name:         "expert profile enables cluster_wide, gen, and insecure",
+			env:          map[string]string{"TALOS_MCP_SAFETY_PROFILE": "expert"},
+			wantProfile:  ProfileExpert,
+			wantCluster:  true,
+			wantGen:      true,
+			wantInsecure: true,
+		},
+		{
+			name: "enable_insecure override on standard",
+			env: map[string]string{
+				"TALOS_MCP_SAFETY_PROFILE":  "standard",
+				"TALOS_MCP_ENABLE_INSECURE": "true",
+			},
+			wantProfile:   ProfileStandard,
+			wantInsecure:  true,
+			wantOverrides: []string{"enable_insecure=true"},
+		},
+		{
+			name: "enable_insecure=false override on expert",
+			env: map[string]string{
+				"TALOS_MCP_SAFETY_PROFILE":  "expert",
+				"TALOS_MCP_ENABLE_INSECURE": "false",
+			},
+			wantProfile:   ProfileExpert,
+			wantCluster:   true,
+			wantGen:       true,
+			wantInsecure:  false,
+			wantOverrides: []string{"enable_insecure=false"},
 		},
 		{
 			name: "individual override beats profile",
@@ -103,11 +128,12 @@ func TestLoadSafetyProfile(t *testing.T) {
 			wantErrSubstr: `invalid TALOS_MCP_SAFETY_PROFILE "paranoid"`,
 		},
 		{
-			name:        "profile name is case-insensitive",
-			env:         map[string]string{"TALOS_MCP_SAFETY_PROFILE": "EXPERT"},
-			wantProfile: ProfileExpert,
-			wantCluster: true,
-			wantGen:     true,
+			name:         "profile name is case-insensitive",
+			env:          map[string]string{"TALOS_MCP_SAFETY_PROFILE": "EXPERT"},
+			wantProfile:  ProfileExpert,
+			wantCluster:  true,
+			wantGen:      true,
+			wantInsecure: true,
 		},
 	}
 
@@ -147,6 +173,9 @@ func TestLoadSafetyProfile(t *testing.T) {
 			if got.SkipVersionCheck != tc.wantSkipVer {
 				t.Errorf("SkipVersionCheck = %t, want %t", got.SkipVersionCheck, tc.wantSkipVer)
 			}
+			if got.EnableInsecure != tc.wantInsecure {
+				t.Errorf("EnableInsecure = %t, want %t", got.EnableInsecure, tc.wantInsecure)
+			}
 			if tc.wantOverrides != nil && !slicesEqual(got.Overrides, tc.wantOverrides) {
 				t.Errorf("Overrides = %v, want %v", got.Overrides, tc.wantOverrides)
 			}
@@ -161,6 +190,7 @@ func TestSafetyProfileLogFields(t *testing.T) {
 		AllowClusterWide: true,
 		EnableGen:        true,
 		SkipVersionCheck: false,
+		EnableInsecure:   true,
 		Overrides:        []string{"read_only=false"},
 	}
 
@@ -175,6 +205,7 @@ func TestSafetyProfileLogFields(t *testing.T) {
 		"allow_cluster_wide": true,
 		"enable_gen":         true,
 		"skip_version_check": false,
+		"enable_insecure":    true,
 		"overrides":          "read_only=false",
 	}
 	seen := make(map[string]bool, len(want))

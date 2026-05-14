@@ -13,6 +13,8 @@ import (
 	"github.com/cosi-project/runtime/pkg/resource"
 	cosiprotobuf "github.com/cosi-project/runtime/pkg/resource/protobuf"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/Nosmoht/talos-mcp-server/internal/talos"
 )
 
 // safeH returns a Handlers with a mock Talos client.
@@ -997,5 +999,205 @@ func TestNodePatchMu_Serializes(t *testing.T) {
 
 	if maxSeen != 1 {
 		t.Errorf("concurrent lock holders: got max %d, want 1", maxSeen)
+	}
+}
+
+// TestHandleApplyConfig_InsecureGuards verifies that talos_apply_config rejects
+// invalid insecure-mode inputs at the gate (before any dial). The mock client
+// panics on ApplyConfiguration, so reaching the gRPC layer would surface as a
+// test failure. Each case targets one specific gate.
+func TestHandleApplyConfig_InsecureGuards(t *testing.T) {
+	ctx := context.Background()
+
+	validFile := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(validFile, []byte("machine: {}"), 0o600); err != nil {
+		t.Fatalf("setup: write temp config: %v", err)
+	}
+	allowlist, err := talos.ParseNodeAllowlist("192.0.2.5,2001:db8::1")
+	if err != nil {
+		t.Fatalf("setup: parse allowlist: %v", err)
+	}
+
+	enabledH := func() *Handlers {
+		return &Handlers{
+			Client:               &mockClient{},
+			EnableInsecure:       true,
+			InsecureAllowedNodes: allowlist,
+		}
+	}
+
+	tests := []struct {
+		name    string
+		h       *Handlers
+		args    ApplyConfigArgs
+		wantErr string
+	}{
+		{
+			name: "cert_fingerprint without insecure rejected",
+			h:    safeH(),
+			args: ApplyConfigArgs{
+				ConfigFile:      validFile,
+				CertFingerprint: strings.Repeat("ab", 32),
+			},
+			wantErr: "cert_fingerprint requires insecure=true",
+		},
+		{
+			name: "insecure without enable_insecure rejected",
+			h:    safeH(),
+			args: ApplyConfigArgs{
+				ConfigFile: validFile,
+				Insecure:   true,
+				Endpoint:   "192.0.2.5",
+			},
+			wantErr: "TALOS_MCP_ENABLE_INSECURE",
+		},
+		{
+			name: "insecure with nodes mutually exclusive",
+			h:    enabledH(),
+			args: ApplyConfigArgs{
+				ConfigFile: validFile,
+				Insecure:   true,
+				Endpoint:   "192.0.2.5",
+				Nodes:      []string{"192.0.2.6"},
+			},
+			wantErr: "mutually exclusive",
+		},
+		{
+			name: "insecure empty endpoint",
+			h:    enabledH(),
+			args: ApplyConfigArgs{
+				ConfigFile: validFile,
+				Insecure:   true,
+			},
+			wantErr: "endpoint is required",
+		},
+		{
+			name: "insecure non-IP endpoint",
+			h:    enabledH(),
+			args: ApplyConfigArgs{
+				ConfigFile: validFile,
+				Insecure:   true,
+				Endpoint:   "node-1.example.com",
+			},
+			wantErr: "not a bare IP",
+		},
+		{
+			name: "insecure loopback endpoint rejected",
+			h:    enabledH(),
+			args: ApplyConfigArgs{
+				ConfigFile: validFile,
+				Insecure:   true,
+				Endpoint:   "127.0.0.1",
+			},
+			wantErr: "loopback",
+		},
+		{
+			name: "insecure link-local IMDS rejected",
+			h:    enabledH(),
+			args: ApplyConfigArgs{
+				ConfigFile: validFile,
+				Insecure:   true,
+				Endpoint:   "169.254.169.254",
+			},
+			wantErr: "link-local",
+		},
+		{
+			name: "insecure endpoint not in allowlist",
+			h:    enabledH(),
+			args: ApplyConfigArgs{
+				ConfigFile: validFile,
+				Insecure:   true,
+				Endpoint:   "192.0.2.99",
+			},
+			wantErr: "not in TALOS_MCP_INSECURE_ALLOWED_NODES",
+		},
+		{
+			name: "insecure invalid fingerprint",
+			h:    enabledH(),
+			args: ApplyConfigArgs{
+				ConfigFile:      validFile,
+				Insecure:        true,
+				Endpoint:        "192.0.2.5",
+				CertFingerprint: "not-hex-not-64-chars",
+			},
+			wantErr: "exactly 64 hex",
+		},
+		{
+			name: "insecure confirm required when dry_run=false",
+			h:    enabledH(),
+			args: func() ApplyConfigArgs {
+				dryRunFalse := false
+				return ApplyConfigArgs{
+					ConfigFile: validFile,
+					Insecure:   true,
+					Endpoint:   "192.0.2.5",
+					DryRun:     &dryRunFalse,
+					Confirm:    false,
+				}
+			}(),
+			wantErr: "confirm must be explicitly set to true",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, err := tt.h.HandleApplyConfig(ctx, nil, tt.args)
+			if err == nil {
+				t.Fatalf("expected error, got nil")
+			}
+			if !strings.Contains(err.Error(), tt.wantErr) {
+				t.Errorf("expected error containing %q, got: %v", tt.wantErr, err)
+			}
+		})
+	}
+}
+
+// TestHandleApplyConfig_InsecureBlocklistBypassed verifies that the
+// authenticated-path blocklist (TALOS_MCP_BLOCKED_CONFIG_PATHS) does NOT gate
+// insecure-mode calls. Bootstrap of a fresh node has no cluster state to
+// protect; the blocklist is a post-bootstrap control. This is documented as
+// intentional in the design plan and the auditOutcome carries the bypass.
+//
+// We inject a short context deadline so the test fails fast at the dial step
+// (the test endpoint is TEST-NET-1, unreachable by construction). Without the
+// deadline, the 30s default dialTimeout would dominate test runtime.
+func TestHandleApplyConfig_InsecureBlocklistBypassed(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+
+	validFile := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(validFile, []byte("machine: {}"), 0o600); err != nil {
+		t.Fatalf("setup: write temp config: %v", err)
+	}
+	allowlist, err := talos.ParseNodeAllowlist("192.0.2.5")
+	if err != nil {
+		t.Fatalf("setup: parse allowlist: %v", err)
+	}
+
+	h := &Handlers{
+		Client:               &mockClient{},
+		EnableInsecure:       true,
+		InsecureAllowedNodes: allowlist,
+		// Authenticated path would be refused unconditionally here:
+		BlockedConfigPaths: []string{"machine.security"},
+	}
+
+	dryRunFalse := false
+	args := ApplyConfigArgs{
+		ConfigFile: validFile,
+		Insecure:   true,
+		Endpoint:   "192.0.2.5",
+		DryRun:     &dryRunFalse,
+		Confirm:    true,
+	}
+
+	// Reaches the dial step; the test endpoint is unreachable so the expected
+	// outcome is a dial/timeout error rather than a blocklist refusal.
+	_, _, err = h.HandleApplyConfig(ctx, nil, args)
+	if err == nil {
+		t.Fatalf("expected dial error, got nil")
+	}
+	if strings.Contains(err.Error(), "TALOS_MCP_BLOCKED_CONFIG_PATHS") {
+		t.Errorf("blocklist refused insecure call, but bypass is documented as intentional: %v", err)
 	}
 }

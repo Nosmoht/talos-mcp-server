@@ -61,6 +61,14 @@ type ClientInterface interface {
 	// ApplyConfiguration applies a machine configuration to the target node.
 	ApplyConfiguration(ctx context.Context, req *machineapi.ApplyConfigurationRequest, callOptions ...grpc.CallOption) (*machineapi.ApplyConfigurationResponse, error)
 
+	// MetaWrite writes a value to the META partition under the given uint8 key.
+	// Used by talos_meta in authenticated mode.
+	MetaWrite(ctx context.Context, key uint8, value []byte, callOptions ...grpc.CallOption) error
+
+	// MetaDelete deletes the META partition entry for the given uint8 key.
+	// Used by talos_meta in authenticated mode.
+	MetaDelete(ctx context.Context, key uint8, callOptions ...grpc.CallOption) error
+
 	// ResetGenericWithResponse wipes and factory-resets the target node(s).
 	ResetGenericWithResponse(ctx context.Context, req *machineapi.ResetRequest) (*machineapi.ResetResponse, error)
 

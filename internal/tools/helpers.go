@@ -13,6 +13,7 @@ import (
 
 	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	talosclient "github.com/siderolabs/talos/pkg/machinery/client"
 
 	"github.com/Nosmoht/talos-mcp-server/internal/talos"
 )
@@ -27,6 +28,19 @@ type Handlers struct {
 	// talos_patch_config refuses to modify. Empty means no restriction.
 	// Set once at startup; read-only afterward.
 	BlockedConfigPaths []string
+	// EnableInsecure unlocks maintenance-mode operations (insecure=true) on
+	// tools that accept the flag. Bypasses mTLS — every insecure call also
+	// requires an entry in InsecureAllowedNodes. Set once at startup.
+	EnableInsecure bool
+	// InsecureAllowedNodes restricts the set of endpoints that maintenance-mode
+	// tool calls may target. main.go enforces a permissiveness ceiling (no
+	// 0.0.0.0/0, no /<16 IPv4, no /<48 IPv6) before constructing the allowlist.
+	// Nil only when EnableInsecure is false. Set once at startup.
+	InsecureAllowedNodes *talos.NodeAllowlist
+	// MetaPrivilegedKeys is the set of META keys (beyond UserReserved1/2/3)
+	// that talos_meta is allowed to write or delete. Empty means only the
+	// reserved keys are writable. Set once at startup.
+	MetaPrivilegedKeys map[uint8]struct{}
 	// patchMu serialises concurrent HandlePatchConfig calls on a per-node basis.
 	// In HTTP multi-session mode two agents could otherwise both fetch the current
 	// config, each merge their own patch, and the second apply would silently
@@ -188,6 +202,102 @@ func resolvePreserve(v *bool) bool {
 // Defaults to true — AI agents that omit the field should not skip graceful drain.
 func resolveGraceful(v *bool) bool {
 	return v == nil || *v
+}
+
+// Outcome values for auditOutcome — every insecure-mode handler exit path
+// records exactly one of these strings, paired with the auditLog entry that
+// was emitted at handler entry. Defenders can join (audit-line, outcome-line)
+// by tool + nodes + a per-call correlation field.
+const (
+	OutcomeOK                     = "ok"
+	OutcomeRefusedEnable          = "refused:enable-insecure-unset"
+	OutcomeRefusedConfirm         = "refused:confirm-required"
+	OutcomeRefusedNodesExclusive  = "refused:nodes-and-endpoint-exclusive"
+	OutcomeRefusedFPWithoutInsec  = "refused:fingerprint-requires-insecure"
+	OutcomeRefusedEndpointEmpty   = "refused:endpoint-empty"
+	OutcomeRefusedEndpointInvalid = "refused:endpoint-not-canonical-ip"
+	OutcomeRefusedAllowlist       = "refused:endpoint-not-in-allowlist"
+	OutcomeRefusedFingerprint     = "refused:fingerprint-invalid"
+	OutcomeRefusedMetaKey         = "refused:meta-key-not-privileged"
+	OutcomeDialError              = "dial-error"
+	OutcomeRPCError               = "rpc-error"
+	OutcomeRefusedArgs            = "refused:args-invalid"
+)
+
+// auditOutcome emits a paired log line for every auditLog call, recording
+// the final outcome (success, refused-at-gate, dial-error, rpc-error) so an
+// IR responder can distinguish reconnaissance from action. Callers use:
+//
+//	defer func() { h.auditOutcome("talos_apply_config", outcome, returnErr) }()
+//
+// outcome is set by the handler to one of the Outcome* constants above
+// before each return.
+func (h *Handlers) auditOutcome(tool, outcome string, err error) {
+	errStr := ""
+	if err != nil {
+		errStr = err.Error()
+	}
+	slog.Default().Info("AUDIT_OUTCOME",
+		"tool", tool,
+		"outcome", outcome,
+		"error", errStr,
+	)
+	if l := h.logger.Load(); l != nil {
+		l.Info("tool outcome",
+			"tool", tool,
+			"outcome", outcome,
+			"error", errStr,
+		)
+	}
+}
+
+// canonicalizeAndCheckInsecure validates the common gating for any
+// maintenance-mode tool call. It returns the canonical endpoint string used
+// uniformly for allowlist match, lock-key derivation, and gRPC dial; the
+// decoded fingerprint bytes (nil when no fingerprint was supplied); and the
+// outcome code identifying which gate failed (empty when all gates pass).
+//
+// The validation order is deliberate: consistency checks before format checks
+// (so an LLM that sets cert_fingerprint without insecure=true gets the
+// semantically-correct error, not a hex-format error).
+func (h *Handlers) canonicalizeAndCheckInsecure(endpoint, certFingerprint string, nodesProvided bool) (canonicalEndpoint string, fp []byte, outcome string, err error) {
+	if !h.EnableInsecure {
+		return "", nil, OutcomeRefusedEnable, fmt.Errorf("insecure mode refused: TALOS_MCP_ENABLE_INSECURE must be set to true at server startup")
+	}
+	if nodesProvided {
+		return "", nil, OutcomeRefusedNodesExclusive, fmt.Errorf("insecure mode refused: nodes[] and endpoint are mutually exclusive — use endpoint only when insecure=true")
+	}
+	if endpoint == "" {
+		return "", nil, OutcomeRefusedEndpointEmpty, fmt.Errorf("insecure mode refused: endpoint is required when insecure=true")
+	}
+	canon, err := talos.CanonicalIP(endpoint)
+	if err != nil {
+		return "", nil, OutcomeRefusedEndpointInvalid, fmt.Errorf("insecure mode refused: %w", err)
+	}
+	if h.InsecureAllowedNodes != nil {
+		if err := h.InsecureAllowedNodes.CheckNode(canon); err != nil {
+			return "", nil, OutcomeRefusedAllowlist, fmt.Errorf("insecure mode refused: endpoint %q is not in TALOS_MCP_INSECURE_ALLOWED_NODES", canon)
+		}
+	}
+	if certFingerprint != "" {
+		fpBytes, err := talos.ParseFingerprint(certFingerprint)
+		if err != nil {
+			return "", nil, OutcomeRefusedFingerprint, fmt.Errorf("insecure mode refused: %w", err)
+		}
+		fp = fpBytes
+	}
+	return canon, fp, "", nil
+}
+
+// dialInsecure builds a one-shot maintenance-mode client. Errors are returned
+// to the caller verbatim; the caller is responsible for emitting auditOutcome
+// with OutcomeDialError on failure.
+//
+// The caller MUST Close() the returned client when done — the per-call factory
+// shape is intentional. Maintenance-mode endpoints are short-lived and each
+// call targets a different fresh node IP, so a shared pool would buy nothing.
+func (h *Handlers) dialInsecure(ctx context.Context, canonicalEndpoint string, fp []byte) (*talosclient.Client, error) {
+	return talos.NewInsecureClient(ctx, canonicalEndpoint, fp)
 }
 
 // notifyProgress sends a progress notification to the client if the request

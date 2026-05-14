@@ -12,7 +12,8 @@ import (
 // Values can be set three ways, listed highest-priority first:
 //
 //  1. Individual env vars (TALOS_MCP_READ_ONLY, TALOS_MCP_ALLOW_CLUSTER_WIDE,
-//     TALOS_MCP_ENABLE_GEN, TALOS_MCP_SKIP_VERSION_CHECK) — override any profile.
+//     TALOS_MCP_ENABLE_GEN, TALOS_MCP_SKIP_VERSION_CHECK, TALOS_MCP_ENABLE_INSECURE)
+//     — override any profile.
 //  2. TALOS_MCP_SAFETY_PROFILE=conservative|standard|expert presets.
 //  3. Defaults matching pre-profile behaviour when neither is set.
 //
@@ -24,6 +25,13 @@ type SafetyProfile struct {
 	AllowClusterWide bool
 	EnableGen        bool
 	SkipVersionCheck bool
+	// EnableInsecure unlocks maintenance-mode operations on tools that accept
+	// insecure=true (talos_apply_config, talos_get, talos_version, talos_meta).
+	// Bypasses mTLS — the transport is TLS-encrypted but the client presents no
+	// cert and (by default) does not verify the server. Operators MUST also set
+	// TALOS_MCP_INSECURE_ALLOWED_NODES; main.go log.Fatalf-s on EnableInsecure=true
+	// with an unset/empty/over-permissive allowlist.
+	EnableInsecure bool
 
 	// Profile records which profile preset was applied before overrides
 	// (for startup logging). "none" when TALOS_MCP_SAFETY_PROFILE was unset.
@@ -48,8 +56,10 @@ const (
 	// access but not CA rotation or offline secret generation.
 	ProfileStandard = "standard"
 
-	// ProfileExpert sets READ_ONLY=false, ALLOW_CLUSTER_WIDE=true, ENABLE_GEN=true.
-	// All gated tool categories are registered.
+	// ProfileExpert sets READ_ONLY=false, ALLOW_CLUSTER_WIDE=true, ENABLE_GEN=true,
+	// ENABLE_INSECURE=true. All gated tool categories are registered, and
+	// maintenance-mode operations are unlocked subject to the required
+	// TALOS_MCP_INSECURE_ALLOWED_NODES allowlist (enforced in main.go).
 	ProfileExpert = "expert"
 )
 
@@ -72,6 +82,7 @@ func LoadSafetyProfile() (*SafetyProfile, error) {
 		p.Profile = ProfileExpert
 		p.AllowClusterWide = true
 		p.EnableGen = true
+		p.EnableInsecure = true
 	default:
 		return nil, fmt.Errorf("invalid TALOS_MCP_SAFETY_PROFILE %q: must be one of %s, %s, %s",
 			profile, ProfileConservative, ProfileStandard, ProfileExpert)
@@ -81,6 +92,7 @@ func LoadSafetyProfile() (*SafetyProfile, error) {
 	applyOverride("TALOS_MCP_ALLOW_CLUSTER_WIDE", &p.AllowClusterWide, "allow_cluster_wide", &p.Overrides)
 	applyOverride("TALOS_MCP_ENABLE_GEN", &p.EnableGen, "enable_gen", &p.Overrides)
 	applyOverride("TALOS_MCP_SKIP_VERSION_CHECK", &p.SkipVersionCheck, "skip_version_check", &p.Overrides)
+	applyOverride("TALOS_MCP_ENABLE_INSECURE", &p.EnableInsecure, "enable_insecure", &p.Overrides)
 
 	return p, nil
 }
@@ -107,6 +119,7 @@ func (p *SafetyProfile) LogFields() []any {
 		"allow_cluster_wide", p.AllowClusterWide,
 		"enable_gen", p.EnableGen,
 		"skip_version_check", p.SkipVersionCheck,
+		"enable_insecure", p.EnableInsecure,
 		"overrides", strings.Join(p.Overrides, ","),
 	}
 }

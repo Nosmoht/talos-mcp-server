@@ -655,80 +655,111 @@ func readConfigFile(path string) ([]byte, error) {
 
 // ApplyConfigArgs defines input for talos_apply_config.
 type ApplyConfigArgs struct {
-	ConfigFile string   `json:"config_file" jsonschema:"Absolute path to a local machine config file (YAML or JSON). Must be absolute\\, no '..' components\\, regular file (symlinks are rejected)\\, max 1 MiB. The file is read server-side — secrets never enter the conversation context."`
-	Mode       string   `json:"mode,omitempty" jsonschema:"Apply mode: 'auto' (default)\\, 'reboot'\\, 'no_reboot'\\, 'staged'\\, or 'try'."`
-	DryRun     *bool    `json:"dry_run,omitempty" jsonschema:"Run in dry-run mode without applying changes. Defaults to true. Set explicitly to false to actually apply."`
-	Confirm    bool     `json:"confirm" jsonschema:"REQUIRED when dry_run is false: Must be explicitly set to true to confirm applying the config. Not required for dry-run mode."`
-	Nodes      []string `json:"nodes,omitempty" jsonschema:"Target node IP or hostname (exactly one). Omit to use the default node from talosconfig."`
+	ConfigFile      string   `json:"config_file" jsonschema:"Absolute path to a local machine config file (YAML or JSON). Must be absolute\\, no '..' components\\, regular file (symlinks are rejected)\\, max 1 MiB. The file is read server-side — secrets never enter the conversation context."`
+	Mode            string   `json:"mode,omitempty" jsonschema:"Apply mode: 'auto' (default)\\, 'reboot'\\, 'no_reboot'\\, 'staged'\\, or 'try'."`
+	DryRun          *bool    `json:"dry_run,omitempty" jsonschema:"Run in dry-run mode without applying changes. Defaults to true. Set explicitly to false to actually apply."`
+	Confirm         bool     `json:"confirm" jsonschema:"REQUIRED when dry_run is false: Must be explicitly set to true to confirm applying the config. Not required for dry-run mode."`
+	Nodes           []string `json:"nodes,omitempty" jsonschema:"Authenticated mode: target node IP or hostname (exactly one). Omit to use the default node from talosconfig. Mutually exclusive with endpoint."`
+	Insecure        bool     `json:"insecure,omitempty" jsonschema:"Maintenance-mode insecure connection (bypasses mTLS). Requires endpoint (bare IP) and TALOS_MCP_ENABLE_INSECURE=true. The transport is TLS-encrypted; server cert verified by cert_fingerprint if provided\\, otherwise accepted without verification."`
+	Endpoint        string   `json:"endpoint,omitempty" jsonschema:"Required when insecure=true: bare IPv4 or IPv6 address of the maintenance-mode node. No port\\, no scheme\\, no hostname. Ignored otherwise."`
+	CertFingerprint string   `json:"cert_fingerprint,omitempty" jsonschema:"Optional SHA-256 server cert fingerprint (hex; 64 chars after stripping colons/whitespace) for TOFU pinning. Only valid when insecure=true. Recommended for non-loopback endpoints to mitigate MITM."`
 }
 
 // HandleApplyConfig implements the talos_apply_config tool.
 func (h *Handlers) HandleApplyConfig(ctx context.Context, req *mcp.CallToolRequest, args ApplyConfigArgs) (*mcp.CallToolResult, any, error) {
-	// Log the file path only — file content is never logged (may contain TLS keys, tokens, or
-	// registry passwords). No redaction needed since the path itself is not sensitive.
+	// AUDIT-FIRST: emit the audit log BEFORE any guard runs so refused-at-gate
+	// attempts still produce an audit trail. Paired with auditOutcome (deferred
+	// below) so defenders can distinguish refused / success / dial-error /
+	// rpc-error from the log alone.
 	h.auditLog("talos_apply_config", struct {
-		ConfigFile string   `json:"config_file"`
-		Mode       string   `json:"mode,omitempty"`
-		DryRun     *bool    `json:"dry_run,omitempty"`
-		Confirm    bool     `json:"confirm"`
-		Nodes      []string `json:"nodes,omitempty"`
+		ConfigFile        string   `json:"config_file"`
+		Mode              string   `json:"mode,omitempty"`
+		DryRun            *bool    `json:"dry_run,omitempty"`
+		Confirm           bool     `json:"confirm"`
+		Nodes             []string `json:"nodes,omitempty"`
+		Insecure          bool     `json:"insecure,omitempty"`
+		Endpoint          string   `json:"endpoint,omitempty"`
+		FingerprintPinned bool     `json:"fingerprint_pinned,omitempty"`
 	}{
-		ConfigFile: args.ConfigFile,
-		Mode:       args.Mode,
-		DryRun:     args.DryRun,
-		Confirm:    args.Confirm,
-		Nodes:      args.Nodes,
+		ConfigFile:        args.ConfigFile,
+		Mode:              args.Mode,
+		DryRun:            args.DryRun,
+		Confirm:           args.Confirm,
+		Nodes:             args.Nodes,
+		Insecure:          args.Insecure,
+		Endpoint:          args.Endpoint,
+		FingerprintPinned: args.CertFingerprint != "",
 	}, args.Nodes)
+
+	var (
+		outcome  = OutcomeOK
+		finalErr error
+	)
+	defer func() { h.auditOutcome("talos_apply_config", outcome, finalErr) }()
+
+	// Consistency check FIRST (before format / file I/O / blocklist):
+	// surface fingerprint-without-insecure cleanly.
+	if args.CertFingerprint != "" && !args.Insecure {
+		outcome = OutcomeRefusedFPWithoutInsec
+		finalErr = fmt.Errorf("apply_config refused: cert_fingerprint requires insecure=true")
+		return nil, nil, finalErr
+	}
+
+	if args.Insecure {
+		return h.handleApplyConfigInsecure(ctx, req, args, &outcome, &finalErr)
+	}
+
+	// ── Authenticated (mTLS) path — pre-existing behaviour ─────────────────
 
 	// Blocklist guard: talos_apply_config replaces the entire machine config document,
 	// so it cannot be safely allowed when a path blocklist is active — any blocked path
 	// would be silently overwritten. Direct the caller to talos_patch_config instead,
 	// which supports targeted modifications that the blocklist can inspect.
 	if len(h.BlockedConfigPaths) > 0 {
-		return nil, nil, fmt.Errorf("talos_apply_config is disabled while TALOS_MCP_BLOCKED_CONFIG_PATHS is set: use talos_patch_config for targeted changes that respect the blocklist")
+		outcome = OutcomeRefusedArgs
+		finalErr = fmt.Errorf("talos_apply_config is disabled while TALOS_MCP_BLOCKED_CONFIG_PATHS is set: use talos_patch_config for targeted changes that respect the blocklist")
+		return nil, nil, finalErr
 	}
 
 	// Require exactly one node: each node has a unique machine config.
 	// Applying the same full config to multiple nodes risks overwriting node-specific settings
 	// (e.g. hostname, network interface names, node-specific certificates).
 	if len(args.Nodes) > 1 {
-		return nil, nil, fmt.Errorf("talos_apply_config requires exactly one target node (got %d); apply each node individually", len(args.Nodes))
+		outcome = OutcomeRefusedArgs
+		finalErr = fmt.Errorf("talos_apply_config requires exactly one target node (got %d); apply each node individually", len(args.Nodes))
+		return nil, nil, finalErr
 	}
 
 	// Confirm guard: require explicit confirmation for non-dry-run applies.
 	// Dry-run mode (the default) does not require confirmation.
 	if !resolveDryRun(args.DryRun) && !args.Confirm {
-		return nil, nil, fmt.Errorf("apply_config refused: confirm must be explicitly set to true when dry_run is false")
+		outcome = OutcomeRefusedConfirm
+		finalErr = fmt.Errorf("apply_config refused: confirm must be explicitly set to true when dry_run is false")
+		return nil, nil, finalErr
 	}
 
 	var err error
 	ctx, err = talos.WithNodes(ctx, args.Nodes, h.AllowedNodes)
 	if err != nil {
-		return nil, nil, err
+		outcome = OutcomeRefusedAllowlist
+		finalErr = err
+		return nil, nil, finalErr
 	}
 
 	// Read config file after all guard checks pass — guards are cheap structural
 	// validations; file I/O should not run until the call is authorized.
 	configData, err := readConfigFile(args.ConfigFile)
 	if err != nil {
-		return nil, nil, err
+		outcome = OutcomeRefusedArgs
+		finalErr = err
+		return nil, nil, finalErr
 	}
 
-	var mode machineapi.ApplyConfigurationRequest_Mode
-
-	switch args.Mode {
-	case "reboot":
-		mode = machineapi.ApplyConfigurationRequest_REBOOT
-	case "no_reboot":
-		mode = machineapi.ApplyConfigurationRequest_NO_REBOOT
-	case "staged":
-		mode = machineapi.ApplyConfigurationRequest_STAGED
-	case "try":
-		mode = machineapi.ApplyConfigurationRequest_TRY
-	case "auto", "":
-		mode = machineapi.ApplyConfigurationRequest_AUTO
-	default:
-		return nil, nil, fmt.Errorf("unknown mode %q: must be 'auto', 'reboot', 'no_reboot', 'staged', or 'try'", args.Mode)
+	mode, err := parseApplyConfigMode(args.Mode)
+	if err != nil {
+		outcome = OutcomeRefusedArgs
+		finalErr = err
+		return nil, nil, finalErr
 	}
 
 	dryRun := resolveDryRun(args.DryRun)
@@ -764,12 +795,113 @@ func (h *Handlers) HandleApplyConfig(ctx context.Context, req *mcp.CallToolReque
 
 	resp, err := h.Client.ApplyConfiguration(ctx, applyReq)
 	if err != nil {
+		outcome = OutcomeRPCError
+		finalErr = fmt.Errorf("apply configuration: %w", err)
 		h.mcpLogError("talos_apply_config", err)
-		return nil, nil, fmt.Errorf("apply configuration: %w", err)
+		return nil, nil, finalErr
 	}
 
 	notifyProgress(ctx, req, doneMsg, 2, 2)
 
+	return jsonResult(resp)
+}
+
+// parseApplyConfigMode maps the public string mode to the protobuf enum.
+// Returns an error for unknown modes; empty string defaults to AUTO.
+func parseApplyConfigMode(mode string) (machineapi.ApplyConfigurationRequest_Mode, error) {
+	switch mode {
+	case "reboot":
+		return machineapi.ApplyConfigurationRequest_REBOOT, nil
+	case "no_reboot":
+		return machineapi.ApplyConfigurationRequest_NO_REBOOT, nil
+	case "staged":
+		return machineapi.ApplyConfigurationRequest_STAGED, nil
+	case "try":
+		return machineapi.ApplyConfigurationRequest_TRY, nil
+	case "auto", "":
+		return machineapi.ApplyConfigurationRequest_AUTO, nil
+	default:
+		return 0, fmt.Errorf("unknown mode %q: must be 'auto', 'reboot', 'no_reboot', 'staged', or 'try'", mode)
+	}
+}
+
+// handleApplyConfigInsecure executes talos_apply_config against a maintenance-
+// mode node via the insecure transport. The blocklist and cluster allowlist
+// gates do NOT apply: maintenance-mode bootstrap necessarily replaces the
+// entire config (there is no post-bootstrap state to protect) and the fresh
+// node is not in TALOS_MCP_ALLOWED_NODES (which gates the configured cluster).
+// The insecure allowlist (TALOS_MCP_INSECURE_ALLOWED_NODES) and bare-IP
+// canonical-form check substitute for those defences.
+func (h *Handlers) handleApplyConfigInsecure(ctx context.Context, req *mcp.CallToolRequest, args ApplyConfigArgs, outcome *string, finalErr *error) (*mcp.CallToolResult, any, error) {
+	canonicalEndpoint, fp, gateOutcome, err := h.canonicalizeAndCheckInsecure(args.Endpoint, args.CertFingerprint, len(args.Nodes) > 0)
+	if err != nil {
+		*outcome = gateOutcome
+		*finalErr = err
+		return nil, nil, err
+	}
+
+	// Confirm-vs-dry_run mirrors the authenticated path: confirm only required
+	// when dry_run=false. Maintenance-mode ApplyConfiguration honours DryRun
+	// per the talosctl source (verified against apply-config.go).
+	if !resolveDryRun(args.DryRun) && !args.Confirm {
+		*outcome = OutcomeRefusedConfirm
+		*finalErr = fmt.Errorf("apply_config refused: confirm must be explicitly set to true when dry_run is false (insecure mode)")
+		return nil, nil, *finalErr
+	}
+
+	configData, err := readConfigFile(args.ConfigFile)
+	if err != nil {
+		*outcome = OutcomeRefusedArgs
+		*finalErr = err
+		return nil, nil, err
+	}
+
+	mode, err := parseApplyConfigMode(args.Mode)
+	if err != nil {
+		*outcome = OutcomeRefusedArgs
+		*finalErr = err
+		return nil, nil, err
+	}
+
+	dryRun := resolveDryRun(args.DryRun)
+
+	// Per-endpoint lock keyed on the canonical IP — different string forms
+	// (::ffff:1.2.3.4 vs 1.2.3.4) of the same physical address collapse to a
+	// single key so concurrent calls actually serialise.
+	mu := h.nodePatchMu("insecure:" + canonicalEndpoint)
+	mu.Lock()
+	defer mu.Unlock()
+
+	applyMsg := "Applying configuration (maintenance mode)"
+	doneMsg := "Configuration applied (maintenance mode)"
+	if dryRun {
+		applyMsg = "Validating configuration (maintenance mode, dry run)"
+		doneMsg = "Configuration validated (maintenance mode, dry run)"
+	}
+	notifyProgress(ctx, req, applyMsg, 1, 2)
+
+	insecureClient, err := h.dialInsecure(ctx, canonicalEndpoint, fp)
+	if err != nil {
+		*outcome = OutcomeDialError
+		*finalErr = err
+		h.mcpLogError("talos_apply_config", err)
+		return nil, nil, err
+	}
+	defer func() { _ = insecureClient.Close() }()
+
+	resp, err := insecureClient.ApplyConfiguration(ctx, &machineapi.ApplyConfigurationRequest{
+		Data:   configData,
+		Mode:   mode,
+		DryRun: dryRun,
+	})
+	if err != nil {
+		*outcome = OutcomeRPCError
+		*finalErr = fmt.Errorf("apply configuration (insecure): %w", err)
+		h.mcpLogError("talos_apply_config", err)
+		return nil, nil, *finalErr
+	}
+
+	notifyProgress(ctx, req, doneMsg, 2, 2)
 	return jsonResult(resp)
 }
 

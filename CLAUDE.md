@@ -25,15 +25,19 @@ Quorum/member-count invariants for preflight helpers: see `.claude/rules/quorum-
 
 ### Safety Profile
 
-`TALOS_MCP_SAFETY_PROFILE` seeds four gating flags at startup. Individual env vars override the profile. When the profile var is unset, each flag defaults to its own env var (backwards-compatible).
+`TALOS_MCP_SAFETY_PROFILE` seeds five gating flags at startup. Individual env vars override the profile. When the profile var is unset, each flag defaults to its own env var (backwards-compatible).
 
-| Profile | `READ_ONLY` | `ALLOW_CLUSTER_WIDE` | `ENABLE_GEN` | `SKIP_VERSION_CHECK` |
-|---|---|---|---|---|
-| `conservative` | `true` | `false` | `false` | `false` |
-| `standard` | `false` | `false` | `false` | `false` |
-| `expert` | `false` | `true` | `true` | `false` |
+| Profile | `READ_ONLY` | `ALLOW_CLUSTER_WIDE` | `ENABLE_GEN` | `SKIP_VERSION_CHECK` | `ENABLE_INSECURE` |
+|---|---|---|---|---|---|
+| `conservative` | `true` | `false` | `false` | `false` | `false` |
+| `standard` | `false` | `false` | `false` | `false` | `false` |
+| `expert` | `false` | `true` | `true` | `false` | `true` |
 
-`ALLOW_CLUSTER_WIDE` and `ENABLE_GEN` are reserved for future phases (D — cluster CA/K8s rotation, E — offline PKI gen) and currently gate no tools. The effective profile is logged at startup (`slog.Info("safety profile", ...)`).
+`ALLOW_CLUSTER_WIDE` and `ENABLE_GEN` are reserved for future phases (D — cluster CA/K8s rotation, E — offline PKI gen) and currently gate no tools.
+
+`ENABLE_INSECURE` unlocks maintenance-mode operations (`insecure=true` on `talos_apply_config` / `talos_get` / `talos_version` / `talos_meta`). Bypasses mTLS — the server REQUIRES `TALOS_MCP_INSECURE_ALLOWED_NODES` and refuses to start with an empty or over-permissive allowlist (no `0.0.0.0/0`, IPv4 mask must be `≥/16`, IPv6 `≥/48`). Endpoint addresses must be bare IPs (no hostnames, ports, schemes, link-local, loopback). See [.claude/rules/insecure-mode.md](.claude/rules/insecure-mode.md).
+
+The effective profile is logged at startup (`slog.Info("safety profile", ...)`).
 
 ## Development Workflow
 

@@ -47,6 +47,10 @@ Reads `~/.talos/config` by default (the same file `talosctl` uses). Override via
 | `TALOS_MCP_ALLOWED_NODES` | (unset) | Comma-separated IPs, hostnames, and CIDR ranges permitted as tool targets. Unset allows all. |
 | `TALOS_MCP_ALLOWED_PATHS` | *(all)* | Comma-separated path prefixes allowed for `talos_read_file` and `talos_list_files` (e.g. `/etc,/proc`) |
 | `TALOS_MCP_SKIP_VERSION_CHECK` | `false` | Set to `true` to bypass upgrade path validation (e.g. for factory images or custom tags) |
+| `TALOS_MCP_ENABLE_INSECURE` | `false` | Unlock `insecure=true` on `talos_apply_config` / `talos_get` / `talos_version` / `talos_meta`. Bypasses mTLS — REQUIRES `TALOS_MCP_INSECURE_ALLOWED_NODES`. |
+| `TALOS_MCP_INSECURE_ALLOWED_NODES` | (unset) | Comma-separated IPs / CIDRs permitted as maintenance-mode endpoints. Required when `TALOS_MCP_ENABLE_INSECURE=true`. Refused: `0.0.0.0/0`, `::/0`, IPv4 mask `<16`, IPv6 mask `<48`. |
+| `TALOS_MCP_META_PRIVILEGED_KEYS` | *(none)* | Comma-separated META keys (decimal or `0x`-prefixed hex) that `talos_meta` is allowed to write/delete beyond `UserReserved1/2/3`. |
+| `TALOS_MCP_SAFETY_PROFILE` | (unset) | `conservative` / `standard` / `expert` preset that seeds gating flags. `expert` enables `EnableInsecure`. |
 | `TALOS_MCP_RATE_LIMIT` | `10` | HTTP mode: token-bucket refill rate (requests/second, float) |
 | `TALOS_MCP_RATE_BURST` | `20` | HTTP mode: token-bucket burst capacity (int) |
 | `TALOS_MCP_MAX_BODY_SIZE` | `4194304` | HTTP mode: max POST request body size in bytes (4 MiB default) |
@@ -133,8 +137,8 @@ The server speaks the [MCP protocol](https://modelcontextprotocol.io) over stdio
 | Tool | Description |
 |---|---|
 | `talos_resource_definitions` | List all available resource types and their aliases. Call this first to discover what can be queried. |
-| `talos_get` | Get or list any COSI resource by type (e.g. `MachineStatus`, `Member`, `NodeAddress`, `Service`). |
-| `talos_version` | Get Talos version info from target nodes. |
+| `talos_get` | Get or list any COSI resource by type (e.g. `MachineStatus`, `Member`, `NodeAddress`, `Service`). Supports maintenance-mode (`insecure=true` + `endpoint`). |
+| `talos_version` | Get Talos version info from target nodes. Supports maintenance-mode (`insecure=true` + `endpoint`). |
 | `talos_services` | List all Talos services and their current state (running, stopped, health). |
 | `talos_containers` | List containers in a namespace (default: `k8s.io` for Kubernetes containers). |
 | `talos_processes` | List running processes on target nodes. |
@@ -143,8 +147,10 @@ The server speaks the [MCP protocol](https://modelcontextprotocol.io) over stdio
 | `talos_dmesg` | Read kernel ring buffer messages. |
 | `talos_events` | Fetch recent Talos runtime events (service changes, config changes). |
 | `talos_etcd` | Query etcd cluster: `members` (default) or `status`. |
+| `talos_etcd_snapshot` | Stream an etcd snapshot to a local file path. |
 | `talos_list_files` | List files and directories on a node filesystem. |
 | `talos_read_file` | Read file contents from a node filesystem. |
+| `talos_validate` | Validate a machine config (YAML/JSON) offline — no cluster connection. |
 
 ### Mutating
 
@@ -157,8 +163,21 @@ These tools modify cluster state and have explicit safety guards.
 | `talos_upgrade` | Upgrade Talos on target nodes. Supports `preserve` (default `true`), `stage`, `force`, `reboot_mode`. | `confirm=true` required; `nodes` and `image` required |
 | `talos_rollback` | Roll back the last upgrade on target nodes. | `confirm=true` required; `nodes` must be explicit |
 | `talos_patch_config` | Apply a machine config patch (JSON or YAML strategic merge). | `dry_run` defaults to `true`; `confirm=true` required when `dry_run=false` |
+| `talos_reset` | Wipe and factory-reset target nodes (irreversible). | `confirm=true` required; `nodes` must be explicit |
+| `talos_apply_config` | Apply a complete machine config to a single node. Supports maintenance-mode (`insecure=true` + `endpoint`) for fresh-node bootstrap. | `dry_run` defaults to `true`; `confirm=true` required when `dry_run=false` |
+| `talos_meta` | Read, write, or delete META partition key/value pairs. Supports maintenance-mode (`insecure=true` + `endpoint`). | `write`/`delete` require `confirm=true`; non-`UserReserved*` keys require enumeration in `TALOS_MCP_META_PRIVILEGED_KEYS` |
 
 All tools accept an optional `nodes` field (list of node IPs or hostnames). When omitted, the active context from talosconfig is used.
+
+#### Maintenance-mode (`--insecure`) operations
+
+`talos_apply_config`, `talos_get`, `talos_version`, and `talos_meta` accept an `insecure=true` flag that targets a node in maintenance mode (booted but not yet configured). The transport is TLS-encrypted but bypasses mTLS — there is no client certificate and (by default) no server-certificate verification. This is required for bootstrapping fresh nodes (`talosctl apply-config --insecure` equivalent).
+
+- **Operator opt-in required.** Set `TALOS_MCP_ENABLE_INSECURE=true` (or use the `expert` safety profile). Without it, every `insecure=true` call is refused.
+- **Endpoint allowlist required.** Set `TALOS_MCP_INSECURE_ALLOWED_NODES` to a comma-separated list of permitted maintenance-mode IPs / CIDRs. The startup is aborted if it is missing or contains `0.0.0.0/0`, `::/0`, an IPv4 mask `<16`, or an IPv6 mask `<48`. Use `/28` or narrower in production.
+- **Endpoint must be a bare IP.** No hostnames, no `host:port`, no scheme, no IPv6 zone. Link-local (incl. `169.254.169.254` IMDS), loopback, multicast, and unspecified addresses are rejected.
+- **MITM mitigation via TOFU pinning.** Pass `cert_fingerprint=<64-hex>` (server SHA-256 fingerprint, copied from the Talos console banner) to enable leaf-cert verification. Without it, the connection is MITMable by anyone on-path between the MCP server and the target node.
+- **META write/delete safelist.** `talos_meta` write/delete is restricted to `meta.UserReserved1`/`2`/`3`. Privileged keys (`Upgrade`, `StateEncryptionConfig`, …) must be enumerated in `TALOS_MCP_META_PRIVILEGED_KEYS` (per-key, not a blanket flag).
 <!-- inventory:tools:end -->
 
 ### Prompts

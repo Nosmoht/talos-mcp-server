@@ -69,19 +69,80 @@ type HealthArgs struct {
 	WorkerNodes       []string `json:"worker_nodes,omitempty" jsonschema:"Explicit list of worker node IPs. Overrides auto-detection from cluster discovery. Use when discovery is misconfigured or nodes have not yet joined."`
 }
 
+// VersionArgs extends NodesOnlyArgs with maintenance-mode insecure-connection
+// fields. The new fields are additive (omitempty) — strict MCP clients that
+// validate "no unknown fields" may need a schema refresh.
+type VersionArgs struct {
+	Nodes           []string `json:"nodes,omitempty" jsonschema:"Authenticated mode: target node IPs or hostnames. Omit to use the default nodes from talosconfig. Mutually exclusive with endpoint."`
+	Insecure        bool     `json:"insecure,omitempty" jsonschema:"Maintenance-mode insecure connection (bypasses mTLS). Requires endpoint and TALOS_MCP_ENABLE_INSECURE=true."`
+	Endpoint        string   `json:"endpoint,omitempty" jsonschema:"Required when insecure=true: bare IPv4 or IPv6 address of the maintenance-mode node."`
+	CertFingerprint string   `json:"cert_fingerprint,omitempty" jsonschema:"Optional SHA-256 server cert fingerprint (hex; 64 chars after stripping colons/whitespace) for TOFU pinning. Only valid when insecure=true."`
+}
+
 // HandleVersion implements the talos_version tool.
-func (h *Handlers) HandleVersion(ctx context.Context, _ *mcp.CallToolRequest, args NodesOnlyArgs) (*mcp.CallToolResult, any, error) {
+func (h *Handlers) HandleVersion(ctx context.Context, _ *mcp.CallToolRequest, args VersionArgs) (*mcp.CallToolResult, any, error) {
+	h.auditLog("talos_version", struct {
+		Nodes             []string `json:"nodes,omitempty"`
+		Insecure          bool     `json:"insecure,omitempty"`
+		Endpoint          string   `json:"endpoint,omitempty"`
+		FingerprintPinned bool     `json:"fingerprint_pinned,omitempty"`
+	}{
+		Nodes:             args.Nodes,
+		Insecure:          args.Insecure,
+		Endpoint:          args.Endpoint,
+		FingerprintPinned: args.CertFingerprint != "",
+	}, args.Nodes)
+
+	var (
+		outcome  = OutcomeOK
+		finalErr error
+	)
+	defer func() { h.auditOutcome("talos_version", outcome, finalErr) }()
+
+	if args.CertFingerprint != "" && !args.Insecure {
+		outcome = OutcomeRefusedFPWithoutInsec
+		finalErr = fmt.Errorf("talos_version refused: cert_fingerprint requires insecure=true")
+		return nil, nil, finalErr
+	}
+
 	ctx, cancel := withToolTimeout(ctx)
 	defer cancel()
 
+	if args.Insecure {
+		canonicalEndpoint, fp, gateOutcome, err := h.canonicalizeAndCheckInsecure(args.Endpoint, args.CertFingerprint, len(args.Nodes) > 0)
+		if err != nil {
+			outcome = gateOutcome
+			finalErr = err
+			return nil, nil, err
+		}
+		client, err := h.dialInsecure(ctx, canonicalEndpoint, fp)
+		if err != nil {
+			outcome = OutcomeDialError
+			finalErr = err
+			return nil, nil, err
+		}
+		defer func() { _ = client.Close() }()
+		resp, err := client.Version(ctx)
+		if err != nil {
+			outcome = OutcomeRPCError
+			finalErr = fmt.Errorf("version (insecure): %w", err)
+			return nil, nil, finalErr
+		}
+		return jsonResult(resp)
+	}
+
 	ctx, err := talos.WithNodes(ctx, args.Nodes, h.AllowedNodes)
 	if err != nil {
+		outcome = OutcomeRefusedAllowlist
+		finalErr = err
 		return nil, nil, err
 	}
 
 	resp, err := h.Client.Version(ctx)
 	if err != nil {
-		return nil, nil, fmt.Errorf("version: %w", err)
+		outcome = OutcomeRPCError
+		finalErr = fmt.Errorf("version: %w", err)
+		return nil, nil, finalErr
 	}
 
 	return jsonResult(resp)

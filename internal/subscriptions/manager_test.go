@@ -191,6 +191,12 @@ func (f *fakeClient) GetClusterVersion(context.Context) (*version.TalosVersion, 
 }
 func (f *fakeClient) InvalidateVersionCache()    { panic("InvalidateVersionCache unused") }
 func (f *fakeClient) Ping(context.Context) error { panic("Ping unused") }
+func (f *fakeClient) MetaWrite(context.Context, uint8, []byte, ...grpc.CallOption) error {
+	panic("MetaWrite unused")
+}
+func (f *fakeClient) MetaDelete(context.Context, uint8, ...grpc.CallOption) error {
+	panic("MetaDelete unused")
+}
 
 // ── Test setup helpers ──────────────────────────────────────────────────────
 

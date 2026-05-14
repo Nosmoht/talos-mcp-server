@@ -74,6 +74,14 @@ func (m *mockClient) ApplyConfiguration(_ context.Context, _ *machineapi.ApplyCo
 	panic("mockClient.ApplyConfiguration called — test reached gRPC layer unexpectedly")
 }
 
+func (m *mockClient) MetaWrite(_ context.Context, _ uint8, _ []byte, _ ...grpc.CallOption) error {
+	panic("mockClient.MetaWrite called — test reached gRPC layer unexpectedly")
+}
+
+func (m *mockClient) MetaDelete(_ context.Context, _ uint8, _ ...grpc.CallOption) error {
+	panic("mockClient.MetaDelete called — test reached gRPC layer unexpectedly")
+}
+
 func (m *mockClient) ResetGenericWithResponse(_ context.Context, _ *machineapi.ResetRequest) (*machineapi.ResetResponse, error) {
 	panic("mockClient.ResetGenericWithResponse called — test reached gRPC layer unexpectedly")
 }

@@ -203,9 +203,22 @@ func Register(server *mcp.Server, h *Handlers, readOnly bool) {
 				"Use this to deliver a full config (e.g. output of talosctl gen config) rather than a patch. " +
 				"Defaults to dry_run=true — set dry_run=false to actually apply. " +
 				"Requires confirm=true when dry_run=false. " +
-				"Config must target exactly one node — each node has a unique machine config.",
+				"Config must target exactly one node — each node has a unique machine config. " +
+				"For bootstrapping a fresh node in maintenance mode, set insecure=true + endpoint=<node-IP>; " +
+				"requires TALOS_MCP_ENABLE_INSECURE=true and an entry in TALOS_MCP_INSECURE_ALLOWED_NODES.",
 			Annotations: &mcp.ToolAnnotations{DestructiveHint: destructive, OpenWorldHint: closedWorld},
 		}, h.HandleApplyConfig)
+
+		mcp.AddTool(server, &mcp.Tool{
+			Name: "talos_meta",
+			Description: "Read, write, or delete META partition key/value pairs. " +
+				"action ∈ {read, write, delete}. write/delete require confirm=true. " +
+				"Reading is unrestricted; write/delete are restricted to meta.UserReserved1/2/3 " +
+				"unless the key is enumerated in TALOS_MCP_META_PRIVILEGED_KEYS. " +
+				"Supports maintenance-mode (insecure=true + endpoint) for fresh nodes — " +
+				"requires TALOS_MCP_ENABLE_INSECURE=true.",
+			Annotations: &mcp.ToolAnnotations{DestructiveHint: destructive, OpenWorldHint: closedWorld},
+		}, h.HandleMeta)
 	}
 }
 

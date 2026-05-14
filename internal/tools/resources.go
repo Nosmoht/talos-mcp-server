@@ -7,6 +7,7 @@ import (
 	"github.com/cosi-project/runtime/pkg/resource"
 	"github.com/cosi-project/runtime/pkg/resource/meta"
 	"github.com/cosi-project/runtime/pkg/safe"
+	"github.com/cosi-project/runtime/pkg/state"
 	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -62,28 +63,95 @@ func ResourceDefinitionsOutputSchema() *jsonschema.Schema { return resourceDefin
 
 // GetResourceArgs defines input for talos_get.
 type GetResourceArgs struct {
-	ResourceType string   `json:"resource_type" jsonschema:"Talos resource type, e.g. MachineStatus\\, Member\\, LinkStatus. Use talos_resource_definitions to discover all types."`
-	ResourceID   string   `json:"resource_id,omitempty" jsonschema:"Optional specific resource ID. Omit to list all resources of this type."`
-	Namespace    string   `json:"namespace,omitempty" jsonschema:"Resource namespace. Omit to use the default namespace for the resource type."`
-	Nodes        []string `json:"nodes,omitempty" jsonschema:"Target node IPs or hostnames. Omit to use the default nodes from talosconfig."`
+	ResourceType    string   `json:"resource_type" jsonschema:"Talos resource type, e.g. MachineStatus\\, Member\\, LinkStatus. Use talos_resource_definitions to discover all types."`
+	ResourceID      string   `json:"resource_id,omitempty" jsonschema:"Optional specific resource ID. Omit to list all resources of this type."`
+	Namespace       string   `json:"namespace,omitempty" jsonschema:"Resource namespace. Omit to use the default namespace for the resource type."`
+	Nodes           []string `json:"nodes,omitempty" jsonschema:"Authenticated mode: target node IPs or hostnames. Omit to use the default nodes from talosconfig. Mutually exclusive with endpoint."`
+	Insecure        bool     `json:"insecure,omitempty" jsonschema:"Maintenance-mode insecure connection (bypasses mTLS). Requires endpoint and TALOS_MCP_ENABLE_INSECURE=true. Maintenance mode exposes a restricted COSI resource set — types that only exist post-config will surface 'not found' errors verbatim."`
+	Endpoint        string   `json:"endpoint,omitempty" jsonschema:"Required when insecure=true: bare IPv4 or IPv6 address of the maintenance-mode node."`
+	CertFingerprint string   `json:"cert_fingerprint,omitempty" jsonschema:"Optional SHA-256 server cert fingerprint (hex; 64 chars after stripping colons/whitespace) for TOFU pinning. Only valid when insecure=true."`
 }
 
 // HandleGetResource implements the talos_get tool.
 func (h *Handlers) HandleGetResource(ctx context.Context, _ *mcp.CallToolRequest, args GetResourceArgs) (*mcp.CallToolResult, any, error) {
+	h.auditLog("talos_get", struct {
+		ResourceType      string   `json:"resource_type"`
+		ResourceID        string   `json:"resource_id,omitempty"`
+		Namespace         string   `json:"namespace,omitempty"`
+		Nodes             []string `json:"nodes,omitempty"`
+		Insecure          bool     `json:"insecure,omitempty"`
+		Endpoint          string   `json:"endpoint,omitempty"`
+		FingerprintPinned bool     `json:"fingerprint_pinned,omitempty"`
+	}{
+		ResourceType:      args.ResourceType,
+		ResourceID:        args.ResourceID,
+		Namespace:         args.Namespace,
+		Nodes:             args.Nodes,
+		Insecure:          args.Insecure,
+		Endpoint:          args.Endpoint,
+		FingerprintPinned: args.CertFingerprint != "",
+	}, args.Nodes)
+
+	var (
+		outcome  = OutcomeOK
+		finalErr error
+	)
+	defer func() { h.auditOutcome("talos_get", outcome, finalErr) }()
+
+	if args.CertFingerprint != "" && !args.Insecure {
+		outcome = OutcomeRefusedFPWithoutInsec
+		finalErr = fmt.Errorf("talos_get refused: cert_fingerprint requires insecure=true")
+		return nil, nil, finalErr
+	}
+
 	ctx, cancel := withToolTimeout(ctx)
 	defer cancel()
 
+	if args.Insecure {
+		canonicalEndpoint, fp, gateOutcome, err := h.canonicalizeAndCheckInsecure(args.Endpoint, args.CertFingerprint, len(args.Nodes) > 0)
+		if err != nil {
+			outcome = gateOutcome
+			finalErr = err
+			return nil, nil, err
+		}
+		client, err := h.dialInsecure(ctx, canonicalEndpoint, fp)
+		if err != nil {
+			outcome = OutcomeDialError
+			finalErr = err
+			return nil, nil, err
+		}
+		defer func() { _ = client.Close() }()
+		return h.getResourceFromCOSI(ctx, args, client.COSI, client.ResolveResourceKind, &outcome, &finalErr)
+	}
+
 	ctx, err := talos.WithNodes(ctx, args.Nodes, h.AllowedNodes)
 	if err != nil {
+		outcome = OutcomeRefusedAllowlist
+		finalErr = err
 		return nil, nil, err
 	}
 
+	return h.getResourceFromCOSI(ctx, args, h.Client.COSIState(), h.Client.ResolveResourceKind, &outcome, &finalErr)
+}
+
+// getResourceFromCOSI runs the COSI Get/List against the supplied state and
+// resolver. Used by both the authenticated and insecure paths so the resource
+// query logic stays in one place.
+func (h *Handlers) getResourceFromCOSI(
+	ctx context.Context,
+	args GetResourceArgs,
+	st state.State,
+	resolveKind func(context.Context, *resource.Namespace, resource.Type) (*meta.ResourceDefinition, error),
+	outcome *string,
+	finalErr *error,
+) (*mcp.CallToolResult, any, error) {
 	ns := resource.Namespace(args.Namespace)
 
-	// Resolve the resource type (handles aliases like "ms" → "MachineStatus")
-	rd, err := h.Client.ResolveResourceKind(ctx, &ns, args.ResourceType)
+	rd, err := resolveKind(ctx, &ns, args.ResourceType)
 	if err != nil {
-		return nil, nil, fmt.Errorf("resolve resource kind %q: %w", args.ResourceType, err)
+		*outcome = OutcomeRPCError
+		*finalErr = fmt.Errorf("resolve resource kind %q: %w", args.ResourceType, err)
+		return nil, nil, *finalErr
 	}
 
 	resourceType := rd.TypedSpec().Type
@@ -91,35 +159,33 @@ func (h *Handlers) HandleGetResource(ctx context.Context, _ *mcp.CallToolRequest
 	var results []map[string]any
 
 	if args.ResourceID != "" {
-		// Get a single specific resource
-		r, err := h.Client.COSIState().Get(ctx,
-			resource.NewMetadata(ns, resourceType, args.ResourceID, resource.VersionUndefined),
-		)
+		r, err := st.Get(ctx, resource.NewMetadata(ns, resourceType, args.ResourceID, resource.VersionUndefined))
 		if err != nil {
-			return nil, nil, fmt.Errorf("get resource %s/%s/%s: %w", ns, resourceType, args.ResourceID, err)
+			*outcome = OutcomeRPCError
+			*finalErr = fmt.Errorf("get resource %s/%s/%s: %w", ns, resourceType, args.ResourceID, err)
+			return nil, nil, *finalErr
 		}
-
 		data, err := marshal.Resource(r)
 		if err != nil {
-			return nil, nil, fmt.Errorf("marshal resource: %w", err)
+			*outcome = OutcomeRPCError
+			*finalErr = fmt.Errorf("marshal resource: %w", err)
+			return nil, nil, *finalErr
 		}
-
 		results = []map[string]any{data}
 	} else {
-		// List all resources of this type
-		list, err := h.Client.COSIState().List(ctx,
-			resource.NewMetadata(ns, resourceType, "", resource.VersionUndefined),
-		)
+		list, err := st.List(ctx, resource.NewMetadata(ns, resourceType, "", resource.VersionUndefined))
 		if err != nil {
-			return nil, nil, fmt.Errorf("list resources %s/%s: %w", ns, resourceType, err)
+			*outcome = OutcomeRPCError
+			*finalErr = fmt.Errorf("list resources %s/%s: %w", ns, resourceType, err)
+			return nil, nil, *finalErr
 		}
-
 		for _, r := range list.Items {
 			data, err := marshal.Resource(r)
 			if err != nil {
-				return nil, nil, fmt.Errorf("marshal resource: %w", err)
+				*outcome = OutcomeRPCError
+				*finalErr = fmt.Errorf("marshal resource: %w", err)
+				return nil, nil, *finalErr
 			}
-
 			results = append(results, data)
 		}
 	}

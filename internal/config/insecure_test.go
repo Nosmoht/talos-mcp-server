@@ -31,6 +31,9 @@ func TestCheckInsecureAllowlist(t *testing.T) {
 		{name: "ipv6 /0 refused", input: "::/0", wantErr: "too permissive"},
 		{name: "mixed entries", input: "192.0.2.5, 192.0.2.0/24, 2001:db8::/64"},
 		{name: "first entry refused before broad", input: "192.0.2.0/8, 192.0.2.0/24", wantErr: "too permissive"},
+		{name: "hostname rejected", input: "node-1.lan", wantErr: "not a bare IP or CIDR"},
+		{name: "malformed cidr rejected", input: "192.0.2.0/notanumber", wantErr: "invalid CIDR"},
+		{name: "garbage entry rejected", input: "garbage", wantErr: "not a bare IP or CIDR"},
 	}
 
 	for _, tc := range tests {

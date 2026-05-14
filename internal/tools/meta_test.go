@@ -5,6 +5,12 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/cosi-project/runtime/pkg/resource"
+	"github.com/cosi-project/runtime/pkg/state"
+	"github.com/cosi-project/runtime/pkg/state/impl/inmem"
+	"github.com/cosi-project/runtime/pkg/state/impl/namespaced"
+	runtimeres "github.com/siderolabs/talos/pkg/machinery/resources/runtime"
+
 	"github.com/Nosmoht/talos-mcp-server/internal/talos"
 )
 
@@ -189,6 +195,92 @@ func TestHandleMeta_Guards(t *testing.T) {
 				t.Errorf("expected error containing %q, got: %v", tt.wantErr, err)
 			}
 		})
+	}
+}
+
+// TestReadMetaFromCOSI_ResourceIdentity verifies that readMetaFromCOSI looks
+// up the META key using the canonical upstream resource type AND id format.
+// This is the regression test for a critical bug found in code review where
+// the type was "MetaKeys.meta.talos.dev" (wrong: should be "...runtime...")
+// and the id was decimal "6" (wrong: should be "0x06" via MetaKeyTagToID).
+//
+// The test seeds a real in-memory COSI state with one MetaKey resource at the
+// correct identity, calls readMetaFromCOSI through the production code path,
+// and asserts the value round-trips. If either the type string OR the id
+// format drift, this test fails with a "resource not found" error.
+func TestReadMetaFromCOSI_ResourceIdentity(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+
+	// Seed an in-memory COSI state with one MetaKey resource using the
+	// canonical upstream constants. This is what a real Talos node exposes.
+	st := state.WrapCore(namespaced.NewState(inmem.Build))
+	const testKey uint8 = 6 // meta.Upgrade
+	mk := runtimeres.NewMetaKey(runtimeres.NamespaceName, runtimeres.MetaKeyTagToID(testKey))
+	mk.TypedSpec().Value = "v1.12.0"
+	if err := st.Create(ctx, mk); err != nil {
+		t.Fatalf("seed MetaKey: %v", err)
+	}
+
+	var (
+		outcome  = OutcomeOK
+		finalErr error
+	)
+
+	_, structured, err := readMetaFromCOSI(ctx, st, testKey, &outcome, &finalErr)
+	if err != nil {
+		t.Fatalf("readMetaFromCOSI: %v (outcome=%s) — does the resource type or id format match upstream pkg/machinery/resources/runtime?", err, outcome)
+	}
+	if outcome != OutcomeOK {
+		t.Errorf("outcome = %q, want %q", outcome, OutcomeOK)
+	}
+	if structured == nil {
+		t.Fatal("expected non-nil structured result")
+	}
+	resultMap, ok := structured.(map[string]any)
+	if !ok {
+		t.Fatalf("structured result is not map[string]any: %T", structured)
+	}
+	if resultMap["action"] != "read" {
+		t.Errorf("action = %v, want read", resultMap["action"])
+	}
+	if got, want := resultMap["key"], testKey; got != want {
+		t.Errorf("key = %v, want %v", got, want)
+	}
+	if resultMap["resource"] == nil {
+		t.Error("resource payload missing")
+	}
+
+	// Sanity: the seeded resource ID must match what MetaKeyTagToID returned.
+	if got := mk.Metadata().ID(); got != resource.ID("0x06") {
+		t.Errorf("MetaKeyTagToID drift: id=%q, expected 0x06", got)
+	}
+}
+
+// TestReadMetaFromCOSI_NotFound verifies that querying a non-existent key
+// surfaces the upstream error with the outcome correctly set, so the
+// auditOutcome pair records "rpc-error" not "ok".
+func TestReadMetaFromCOSI_NotFound(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	st := state.WrapCore(namespaced.NewState(inmem.Build))
+
+	var (
+		outcome  = OutcomeOK
+		finalErr error
+	)
+
+	_, _, err := readMetaFromCOSI(ctx, st, 99, &outcome, &finalErr)
+	if err == nil {
+		t.Fatal("expected error for non-existent key, got nil")
+	}
+	if outcome != OutcomeRPCError {
+		t.Errorf("outcome = %q, want %q", outcome, OutcomeRPCError)
+	}
+	if finalErr == nil {
+		t.Error("finalErr should be set when err is non-nil")
 	}
 }
 

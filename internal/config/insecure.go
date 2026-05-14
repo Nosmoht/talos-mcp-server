@@ -57,14 +57,20 @@ func CheckInsecureAllowlist(raw string) (*InsecureAllowlistInspection, error) {
 		hasEntry = true
 
 		if !strings.Contains(entry, "/") {
-			continue // bare IP / hostname — not subject to CIDR ceiling
+			// Bare entry — must be an IP. Hostnames are accepted by
+			// NodeAllowlist's string match but never reachable on the
+			// insecure path because CanonicalIP only emits IPs. Fail loudly
+			// so an operator who pastes a hostname gets a clear error
+			// rather than a silent "endpoint not allowlisted" later.
+			if net.ParseIP(entry) == nil {
+				return nil, fmt.Errorf("TALOS_MCP_INSECURE_ALLOWED_NODES entry %q is not a bare IP or CIDR — hostnames are not honoured here because CanonicalIP only emits IPs", entry)
+			}
+			continue
 		}
 
 		_, cidr, err := net.ParseCIDR(entry)
 		if err != nil {
-			// Defer the parse error to ParseNodeAllowlist; here we only
-			// care about the permissiveness ceiling.
-			continue
+			return nil, fmt.Errorf("TALOS_MCP_INSECURE_ALLOWED_NODES entry %q: invalid CIDR: %w", entry, err)
 		}
 
 		ones, bits := cidr.Mask.Size()

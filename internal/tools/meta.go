@@ -10,6 +10,7 @@ import (
 	"github.com/cosi-project/runtime/pkg/state"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/siderolabs/talos/pkg/machinery/meta"
+	runtimeres "github.com/siderolabs/talos/pkg/machinery/resources/runtime"
 
 	"github.com/Nosmoht/talos-mcp-server/internal/marshal"
 	"github.com/Nosmoht/talos-mcp-server/internal/talos"
@@ -207,11 +208,12 @@ func parseMetaKey(s string) (uint8, error) {
 	return uint8(v), nil
 }
 
-// readMetaFromCOSI fetches the META key/value pair from the COSI state. The
-// resource type name "MetaKey" is the canonical COSI representation in Talos
-// — if it ever drifts, the upstream "resource type not found" error is
-// surfaced verbatim and the caller can discover the current name via
-// talos_resource_definitions.
+// readMetaFromCOSI fetches the META key/value pair from the COSI state.
+// Resource identity uses the canonical upstream constants from
+// pkg/machinery/resources/runtime (MetaKeyType = "MetaKeys.runtime.talos.dev",
+// id = "0x06" via MetaKeyTagToID). If the talos runtime renames the
+// resource, the upstream error surfaces verbatim and the caller can rediscover
+// the type via talos_resource_definitions.
 func readMetaFromCOSI(
 	ctx context.Context,
 	st state.State,
@@ -219,11 +221,9 @@ func readMetaFromCOSI(
 	outcome *string,
 	finalErr *error,
 ) (*mcp.CallToolResult, any, error) {
-	ns := resource.Namespace("runtime")
-	resourceType := resource.Type("MetaKeys.meta.talos.dev")
-	id := strconv.FormatUint(uint64(key), 10)
+	id := runtimeres.MetaKeyTagToID(key)
 
-	r, err := st.Get(ctx, resource.NewMetadata(ns, resourceType, id, resource.VersionUndefined))
+	r, err := st.Get(ctx, resource.NewMetadata(runtimeres.NamespaceName, runtimeres.MetaKeyType, id, resource.VersionUndefined))
 	if err != nil {
 		*outcome = OutcomeRPCError
 		*finalErr = fmt.Errorf("get MetaKey/%d: %w (discover the current resource type with talos_resource_definitions)", key, err)

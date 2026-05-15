@@ -20,6 +20,28 @@ Connects to your cluster via the native Talos gRPC API using the same mTLS crede
 npx talos-mcp
 ```
 
+**Via npm (global install)** for persistent invocation from `$PATH`:
+
+```bash
+npm install -g talos-mcp
+```
+
+Installs the binary as `<npm-prefix>/bin/talos-mcp`. Verify with:
+
+```bash
+which talos-mcp        # path
+talos-mcp --version    # version + commit hash
+npm list -g talos-mcp  # npm's view of the installed version
+```
+
+Upgrade to the latest published release:
+
+```bash
+npm install -g talos-mcp@latest
+```
+
+New releases appear on npmjs.com within minutes of every `feat:` / `fix:` / `perf:` (or breaking) merge to `main` — see [CONTRIBUTING.md § Post-merge release pipeline](./CONTRIBUTING.md#post-merge-release-pipeline) for the mechanism.
+
 **Download binary** (Linux/macOS, amd64/arm64):
 
 Download the latest release from [GitHub Releases](https://github.com/Nosmoht/talos-mcp-server/releases), extract, and place the binary in your `$PATH`.

@@ -15,6 +15,28 @@ work concurrently on this repository via git worktrees. This document defines:
 
 ---
 
+## Operator install / upgrade
+
+The **maintainer-as-operator** persona — a contributor running their own MCP server locally and wanting the latest merged change live in their MCP client — uses the global npm install path:
+
+```bash
+# After your change merges to main and the auto-tag → release pipeline publishes the new version:
+npm install -g talos-mcp@latest
+talos-mcp --version    # verify the commit hash matches HEAD on origin/main
+```
+
+Discovery commands if the install path is unclear on a given machine:
+
+```bash
+which talos-mcp                     # e.g. /opt/homebrew/bin/talos-mcp (macOS, npm-global)
+readlink $(which talos-mcp)         # symlink target → npm-prefix/lib/node_modules/talos-mcp/bin/run.js
+npm list -g talos-mcp               # currently installed version
+```
+
+Full distribution-side docs (npx / binary / build-from-source variants) live in [README.md § Installation](./README.md#installation). The auto-publish mechanism that makes `@latest` meaningful within minutes of a merge is in [CONTRIBUTING.md § Post-merge release pipeline](./CONTRIBUTING.md#post-merge-release-pipeline).
+
+---
+
 ## Agent Tooling
 
 GitHub operations use the `mcp__github__*` MCP tools, not the `gh` CLI. MCP tools are semantically richer, participate in the permission model, and are the intended interface for GitHub in an agent session.

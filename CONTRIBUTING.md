@@ -60,6 +60,16 @@ Angular's guidelines do not formally include `chore:` and the boundary between `
 
 Anti-pattern, for clarity: `95a9161 chore(http): migrate off deprecated CrossOriginProtection field` modifies `cmd/talos-mcp/main.go` — under this rule, that commit would be `refactor(http):` (no release in either case, so no retroactive correction; cited only as a forward-looking example).
 
+### Post-merge release pipeline
+
+Every merge to `main` whose commit type triggers a version bump (`feat:` → MINOR, `fix:` → PATCH, `perf:` → PATCH, any `!`-marked or `BREAKING CHANGE:`-footer → MAJOR) drives an automatic release — *provided the commit touched server-relevant paths* (`*.go`, `cmd/**`, `internal/**`, `go.mod`, `go.sum`, `Makefile`, `.goreleaser.yaml`, `server.json`; see `.github/workflows/auto-tag.yml` for the canonical path filter):
+
+1. `auto-tag.yml` inspects the pushed commit's conventional-commit type via `mathieudutour/github-tag-action` and pushes a `v<next>` tag to the repo (no intermediate release PR).
+2. The `v*` tag triggers `release.yml`, which runs `goreleaser` (binary artifacts + provenance attestations + a GitHub Release) and then `npm publish --provenance` via OIDC Trusted Publishing (no long-lived npm tokens; see `.claude/rules/release-workflow.md` for OIDC gotchas).
+3. Operators upgrade via `npm install -g talos-mcp@latest` once the npm-publish job succeeds.
+
+`docs:` / `chore:` / `refactor:` / `test:` / `ci:` / `build:` / `style:` / `revert:` merges do **not** trigger a release (the type is excluded from version bumps and/or the touched paths fall outside the auto-tag filter). The full type → release-impact table is above.
+
 ## Pull requests
 
 1. Fork the repo and create a branch from `main`

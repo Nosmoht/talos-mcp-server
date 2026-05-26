@@ -21,13 +21,6 @@ syntax.
 `talos-mcp` is a Go MCP server for Talos Linux cluster management through the
 native Talos gRPC API.
 
-## Fast Commands
-
-- `make check` - full local verification before PRs
-- `make build` - build the binary
-- `go test ./...` - quick test pass
-- `go test ./internal/tools -run TestName` - focused test iteration
-
 ## Claude Review Artifacts
 
 - Reviewer agents live in `.claude/agents/`.

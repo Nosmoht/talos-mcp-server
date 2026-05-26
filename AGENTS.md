@@ -7,11 +7,75 @@ Read this file before starting any work.
 
 ## Overview
 
+`talos-mcp` is a Go MCP server that exposes Talos Linux cluster management to
+AI agents through the native Talos gRPC API.
+
 Multiple AI agents (Claude Code, OpenAI Codex, GitHub Copilot, Cursor, and others) may
 work concurrently on this repository via git worktrees. This document defines:
 
 - **Coding conventions** — how to write consistent Go code
 - **Workflow conventions** — how to discover work, claim issues, and coordinate
+- **Verification conventions** — which commands and review gates are required
+
+---
+
+## Scope And Source Of Truth
+
+`AGENTS.md` is the canonical cross-agent instruction file for this repository.
+It is plain Markdown, not a generated manifest, and there is no required schema.
+For this repo it must contain the durable instructions every coding agent needs:
+
+- Project purpose and repository-specific boundaries
+- Build, test, lint, and verification commands
+- Coding, testing, logging, and security conventions
+- Multi-agent worktree, issue, commit, review, and PR workflow
+- The split between agent instructions and human/operator documentation
+
+`CLAUDE.md` imports this file with Claude Code's `@AGENTS.md` import syntax and
+contains only Claude-specific memory hygiene and local adapter notes. Do not
+duplicate cross-agent policy there.
+
+`README.md` is the human/operator entry point. Put product usage, installation,
+configuration, tool catalogs, compatibility tables, release notes, and end-user
+examples in `README.md` or purpose-built docs, not in `AGENTS.md`.
+
+If nested `AGENTS.md` files are added later, the closest file to the edited path
+wins for that subtree. Explicit user instructions in chat override this file.
+
+### Do Not Put In AGENTS.md
+
+- Secrets, tokens, credentials, or machine-local private state
+- One-off investigation notes, transient TODOs, command output, or scratch plans
+- Detailed product/user documentation that belongs in `README.md`
+- Claude-only subagent prompts, memory notes, or UI-specific instructions
+- Long release postmortems or issue-specific analysis
+
+---
+
+## Commands
+
+Use `make` targets unless a narrower raw command is useful while iterating:
+
+```bash
+make build      # build binary with version info
+make test       # run tests with race detector + coverage
+make lint       # run golangci-lint
+make fmt        # check formatting
+make check      # full CI parity (fmt + vet + lint + test)
+make help       # list available targets
+```
+
+Raw equivalents:
+
+```bash
+go build -o talos-mcp ./cmd/talos-mcp
+go test -race ./...
+go vet ./...
+gofmt -l .
+```
+
+Always run `make check` before opening a PR. For narrow edits, run focused tests
+first, then run `make check` once the change is ready.
 
 ---
 
@@ -103,6 +167,26 @@ import (
 - Audit logs redact sensitive content (patch bodies, credentials)
 - File reads bounded by `io.LimitReader`
 - No panics in handler code — return errors; reserve `panic` for init-time programmer bugs
+
+### Output trust boundaries
+
+LLM-generated and user-provided strings entering this MCP server's handlers are
+untrusted. Talos-specific points:
+
+- **`talos_patch_config` `args.Patch`** — never pass to gRPC without UTF-8 and
+  non-empty validation. The `[]byte(args.Patch)` cast is safe for transport;
+  the Talos API performs schema validation server-side.
+- **Enum/action fields in tool args** — use exhaustive `switch` statements with
+  a `default` error case. Never pass through directly.
+- **No string interpolation into shell** — avoid `exec.Command("sh", "-c", X)`
+  entirely. Use argv arrays or strict allowlists for `talosctl`/`kubectl`
+  invocations.
+- **File-path arguments** — canonicalize via `filepath.Clean` plus an allowlist
+  `HasPrefix` check, and reject `..` segments.
+- **Tool-result data re-entering context** — gRPC responses (`talos_get`,
+  `talos_logs`) flow back into the LLM context. A compromised node could attempt
+  prompt injection; see `README.md` "What Is Not in the Threat Model". Never
+  `eval` or execute tool result content.
 
 ---
 
@@ -368,7 +452,8 @@ cp .claude/hooks/pre-commit .git/hooks/pre-commit && chmod +x .git/hooks/pre-com
 
 ### Change-id convention
 
-Use semantic slugs (e.g., `fix-health-timeout`, `add-etcd-defrag-tool`). Include in commit message:
+Use semantic slugs (e.g., `fix-health-timeout`, `add-etcd-defrag-tool`). Commit
+messages use scoped Conventional Commits and include the review tag:
 
 ```
 feat(etcd): add defrag tool [review:add-etcd-defrag-tool]
@@ -378,9 +463,39 @@ feat(etcd): add defrag tool [review:add-etcd-defrag-tool]
 
 The implementing agent must not serve as the approving reviewer for the same change.
 
+### Research
+
+When uncertain about API behavior, conventions, or prior decisions, use
+repo-first research and then official documentation. Prefer primary sources:
+Talos API/docs for Talos behavior, the MCP specification for MCP protocol
+behavior, and official SDK docs for dependency behavior.
+
+### Enforcement
+
+- `.claude/settings.json` hooks block `git commit` from Claude Code Bash usage
+  and block MCP GitHub push tools without valid review artifacts.
+- The native git `pre-commit` hook provides defense-in-depth for commits made
+  outside Claude Code.
+- Install the hook once per clone with:
+
+```bash
+cp .claude/hooks/pre-commit .git/hooks/pre-commit && chmod +x .git/hooks/pre-commit
+```
+
 ### Artifact storage
 
 Review artifacts (`.claude/reviews/`) are local-only (gitignored). They act as process gates
-for the pre-commit hook. The `[review:change-id]` tag in the commit message is the permanent
-audit trail. See [CLAUDE.md — Change Governance](./CLAUDE.md#change-governance) for the full
-artifact schema, hook enforcement details, and known limitations.
+for the pre-commit hook. Plan files (`.claude/plans/`) are also local-only when
+used. The `[review:change-id]` tag in the commit message is the permanent audit
+trail.
+
+### Known limitations
+
+- Hook enforcement covers Claude Code sessions and git CLI usage when the native
+  pre-commit hook is installed.
+- Review artifacts are process guards, not cryptographically signed artifacts.
+  Trust is enforced by role separation.
+- Post-review file modifications are not currently detected by content hashing.
+- Review artifacts are local-only and do not exist in fresh clones.
+- The hook uses the lexicographically last review directory; ensure change-id
+  slugs sort to the intended change.

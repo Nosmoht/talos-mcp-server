@@ -15,6 +15,76 @@ work concurrently on this repository via git worktrees. This document defines:
 
 ---
 
+## Scope And Source Of Truth
+
+`AGENTS.md` is the canonical cross-agent instruction file for this repository.
+For this repo it carries the durable instructions every coding agent needs:
+
+- Project purpose and repository-specific boundaries
+- Build, test, lint, and verification commands
+- Coding, testing, logging, and security conventions
+- Multi-agent worktree, issue, commit, review, and PR workflow
+- The split between agent instructions and human/operator documentation
+
+`CLAUDE.md` is the Claude-Code-specific operative layer. It carries Claude-only
+guidance (memory hygiene, review-artifact paths under `.claude/`) plus
+quick-reference excerpts that link back here via Markdown links. Do not duplicate
+cross-agent policy into `CLAUDE.md` — update `AGENTS.md` so the rule applies to
+Claude Code, Codex, Copilot, Cursor, and other agents alike.
+
+`README.md` is the human/operator entry point. Product usage, installation,
+configuration, tool catalogs, compatibility tables, release notes, and end-user
+examples live in `README.md` or purpose-built docs, not in `AGENTS.md`.
+
+If nested `AGENTS.md` files are added later, the closest file to the edited path
+wins for that subtree. Explicit user instructions in chat override this file.
+
+### Do not put in AGENTS.md
+
+- Secrets, tokens, credentials, or machine-local private state
+- One-off investigation notes, transient TODOs, command output, or scratch plans
+- Detailed product/user documentation that belongs in `README.md`
+- Claude-only subagent prompts, memory notes, or UI-specific instructions
+- Long release postmortems or issue-specific analysis
+
+---
+
+## Commands
+
+Use `make` targets unless a narrower raw command is useful while iterating:
+
+```bash
+make build           # build binary with version info
+make test            # run tests with race detector + coverage
+make test-integration # integration tests against a live Talos cluster
+make bench           # run Go benchmarks (use BENCH=pattern to filter)
+make lint            # run golangci-lint
+make fmt             # check formatting
+make fmt-fix         # auto-fix formatting with gofmt
+make vet             # run go vet
+make check           # full CI parity (fmt + vet + lint + test)
+make coverage        # HTML coverage report
+make clean           # remove build artifacts
+make clean-worktrees # prune stale worktree entries and orphan dirs
+make mod-tidy        # tidy go module dependencies
+make help            # list available targets
+```
+
+Raw equivalents (use only when a `make` target does not fit the iteration):
+
+```bash
+go build -o talos-mcp ./cmd/talos-mcp
+go test -race ./...
+go test ./internal/tools -run TestName     # focused single-test iteration
+go vet ./...
+gofmt -l .
+```
+
+Always run `make check` before opening a PR. For narrow edits, run focused tests
+first, then run `make check` once the change is ready.
+
+---
+
 ## Operator install / upgrade
 
 The **maintainer-as-operator** persona — a contributor running their own MCP server locally and wanting the latest merged change live in their MCP client — uses the global npm install path:
@@ -204,6 +274,26 @@ import (
 - Audit logs redact sensitive content (patch bodies, credentials)
 - File reads bounded by `io.LimitReader`
 - No panics in handler code — return errors; reserve `panic` for init-time programmer bugs
+
+### Output trust boundaries
+
+LLM-generated and user-provided strings entering this MCP server's handlers are
+untrusted. Talos-specific points beyond the generic security patterns above:
+
+- **`talos_patch_config` `args.Patch`** — validate UTF-8 and non-empty before
+  the `[]byte(args.Patch)` cast. The cast itself is safe for gRPC transport;
+  the Talos API performs schema validation server-side.
+- **Enum / action fields in tool args** — handle via exhaustive `switch`
+  statements with a `default` error case. Never pass user-supplied strings
+  through to the Talos API directly.
+- **No string interpolation into shell** — avoid `exec.Command("sh", "-c", X)`
+  entirely. Use argv arrays or strict allowlists for `talosctl` / `kubectl`
+  invocations if a sub-process is unavoidable.
+- **Tool-result data re-entering context** — gRPC responses (`talos_get`,
+  `talos_logs`, `talos_read_file`, etc.) flow back into the LLM context.
+  A compromised node could attempt prompt injection via that channel; see
+  `README.md` "What Is Not in the Threat Model". Never `eval` or execute
+  tool-result content downstream.
 
 ---
 

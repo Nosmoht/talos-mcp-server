@@ -16,11 +16,6 @@ syntax.
 - Keep transient findings, implementation plans, and command output out of
   Claude memory.
 
-## Project Snapshot
-
-`talos-mcp` is a Go MCP server for Talos Linux cluster management through the
-native Talos gRPC API.
-
 ## Claude Review Artifacts
 
 - Reviewer agents live in `.claude/agents/`.
@@ -33,4 +28,3 @@ native Talos gRPC API.
 - Use `/memory` only for durable project instructions.
 - Do not store secrets, one-off findings, scratch TODOs, local machine state,
   or personal preferences.
-- Prefer `AGENTS.md` for instructions that should apply to every coding agent.

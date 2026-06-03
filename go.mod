@@ -2,7 +2,7 @@ module github.com/Nosmoht/talos-mcp-server
 
 go 1.26.2
 
-toolchain go1.26.3
+toolchain go1.26.4
 
 require (
 	github.com/cosi-project/runtime v1.14.1

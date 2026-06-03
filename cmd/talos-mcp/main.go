@@ -186,6 +186,7 @@ func main() {
 
 	if len(allowedPaths) > 0 {
 		slog.Info("path allowlist active", "entries", len(allowedPaths)) //nolint:gosec // G706: entry count is an integer, not user-controlled string input
+		slog.Warn("path allowlist is defense-in-depth only: the prefix check runs on the MCP server host and does not resolve symlinks on the remote node, so a symlink under an allowed prefix that points elsewhere is not detected")
 	} else {
 		slog.Info("path allowlist disabled")
 	}

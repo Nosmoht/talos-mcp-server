@@ -60,14 +60,14 @@ func ReadFileOutputSchema() *jsonschema.Schema { return readFileOutputSchema }
 
 // ListFilesArgs defines input for talos_list_files.
 type ListFilesArgs struct {
-	Path    string   `json:"path" jsonschema:"Absolute path on the node to list (e.g. '/etc'\\, '/var/log')."`
+	Path    string   `json:"path" jsonschema:"Absolute path on the node to list (e.g. '/etc'\\, '/var/log'). When TALOS_MCP_ALLOWED_PATHS is set the prefix is enforced as defense-in-depth only; symlinks on the node are not resolved against the allowlist."`
 	Recurse bool     `json:"recurse,omitempty" jsonschema:"Recursively list subdirectories. Defaults to false."`
 	Nodes   []string `json:"nodes,omitempty" jsonschema:"Target node IPs or hostnames. Omit to use the default nodes from talosconfig."`
 }
 
 // ReadFileArgs defines input for talos_read_file.
 type ReadFileArgs struct {
-	Path     string   `json:"path" jsonschema:"Absolute path to the file on the node to read (e.g. '/etc/os-release')."`
+	Path     string   `json:"path" jsonschema:"Absolute path to the file on the node to read (e.g. '/etc/os-release'). When TALOS_MCP_ALLOWED_PATHS is set the prefix is enforced as defense-in-depth only; symlinks on the node are not resolved against the allowlist."`
 	MaxBytes int      `json:"max_bytes,omitempty" jsonschema:"Maximum number of bytes to return. Defaults to 32768 (32KB)."`
 	Nodes    []string `json:"nodes,omitempty" jsonschema:"Target node IPs or hostnames. Omit to use the default nodes from talosconfig."`
 }
@@ -262,6 +262,12 @@ func ParseAllowedPaths(raw string) []string {
 // It returns nil when allowed is empty (no allowlist configured).
 // Prefix matching is directory-boundary-safe: "/etc" does not match "/etc-evil".
 // The path is canonicalized via filepath.Clean to prevent ".." traversal bypass.
+//
+// Limitation: this check runs on the MCP server host against the requested path.
+// It does NOT resolve symlinks on the remote Talos node — a request for a path
+// under an allowed prefix that is a symlink to a target outside the allowlist
+// still passes (the symlink is resolved on the node, outside this check's view).
+// Treat the allowlist as defense-in-depth, not a hard security boundary. See issue #42.
 func checkPathAllowed(rawPath string, allowed []string) error {
 	if len(allowed) == 0 {
 		return nil

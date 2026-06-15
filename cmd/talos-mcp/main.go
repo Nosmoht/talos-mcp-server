@@ -241,14 +241,20 @@ func main() {
 	defer subMgr.Shutdown()
 
 	serverOpts := &mcp.ServerOptions{
-		Instructions: "Talos Linux cluster management server. " +
-			"MCP Resources: read talos://cluster/resource-definitions to discover COSI resource types, " +
-			"then read talos://{node}/resource/{namespace}/{type} to list them or " +
-			"talos://{node}/resource/{namespace}/{type}/{id} to get a specific one. " +
-			"Tools: use talos_get for node-targeted queries with aliases and namespace auto-resolution. " +
-			"All tools accept an optional 'nodes' field to target specific node IPs; " +
-			"omit it to use the active context from talosconfig. " +
-			"Destructive tools (talos_reboot, talos_upgrade) require confirm=true and explicit nodes.",
+		Instructions: "Talos Linux cluster management. Choose a tool by what you need:\n" +
+			"- cluster/node health → talos_health\n" +
+			"- service state → talos_services; a service's logs → talos_logs\n" +
+			"- Talos versions → talos_version\n" +
+			"- etcd members or status → talos_etcd\n" +
+			"- kernel messages → talos_dmesg; runtime/lifecycle events → talos_events\n" +
+			"- containers → talos_containers; host processes → talos_processes\n" +
+			"- files on a node → talos_list_files / talos_read_file\n" +
+			"- anything else (network, MachineStatus, …) → talos_get " +
+			"(query one node at a time; talos_resource_definitions lists the types).\n" +
+			"All tools take an optional 'nodes' field (node IPs); omit it to use the active context from talosconfig. " +
+			"Mutating tools require confirm=true. talos_reboot, talos_upgrade, talos_rollback and talos_reset additionally require explicit nodes (they will not guess a target); " +
+			"the other mutating tools fall back to the talosconfig default nodes when nodes is omitted, so pass nodes to scope the action. " +
+			"The talos:// MCP Resources mirror talos_get/talos_version for clients that prefer resources — the tools are the simpler path.",
 		CompletionHandler:  completions.NewHandler(allowedNodes),
 		SubscribeHandler:   subMgr.Subscribe,
 		UnsubscribeHandler: subMgr.Unsubscribe,

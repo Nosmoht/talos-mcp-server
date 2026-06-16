@@ -82,11 +82,11 @@ Reads `~/.talos/config` by default (the same file `talosctl` uses). Override via
 
 ## Compatibility
 
-This server is tested against Talos Linux v1.9.x through v1.12.x.
+This server is tested against Talos Linux v1.9.x through v1.13.x.
 
 | talos-mcp | Talos Linux | machinery SDK |
 |-----------|-------------|---------------|
-| v0.x (current) | v1.9.0 – v1.12.x | v1.12.6 |
+| v0.x (current) | v1.9.0 – v1.13.x | v1.13.4 |
 
 The server logs a startup warning if the connected cluster's Talos version is outside the tested range. All 19 gRPC methods used have been stable since Talos v1.9.
 

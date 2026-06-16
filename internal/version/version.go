@@ -13,7 +13,7 @@ var MinSupported = TalosVersion{Major: 1, Minor: 9, Patch: 0}
 
 // MaxTested is the newest Talos minor series validated against the compiled
 // machinery SDK. The patch component is set to 255 to match any patch release.
-var MaxTested = TalosVersion{Major: 1, Minor: 12, Patch: 255}
+var MaxTested = TalosVersion{Major: 1, Minor: 13, Patch: 255}
 
 // TalosVersion holds a parsed Talos semver tag.
 type TalosVersion struct {

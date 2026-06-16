@@ -69,7 +69,7 @@ const (
 
 	descServiceAction = "Start, stop, or restart a Talos service on the target nodes. " +
 		"Requires confirm=true. " +
-		"Without explicit nodes it targets ALL default nodes in the active talosconfig context — pass nodes to scope the action to one node. " +
+		"Without explicit nodes it targets ALL default nodes in the active talosconfig context simultaneously — a cluster-wide stop or restart is a full outage, so pass nodes to act on one node at a time. " +
 		"NOTE: restarting 'etcd' is not supported by the Talos API and will return an error; " +
 		"use talos_reboot or the investigate-etcd prompt to recover etcd."
 
@@ -112,7 +112,7 @@ const (
 		"Defaults to dry_run=true — set dry_run=false to actually apply. " +
 		"Requires confirm=true when dry_run=false. " +
 		"Config must target exactly one node — each node has a unique machine config. " +
-		"In the authenticated path, disabled when TALOS_MCP_BLOCKED_CONFIG_PATHS is set (use talos_patch_config for targeted, blocklist-checked changes); the maintenance-mode insecure path bypasses the blocklist. " +
+		"When TALOS_MCP_BLOCKED_CONFIG_PATHS is set, the authenticated path is disabled (use talos_patch_config for targeted, blocklist-checked changes); maintenance mode is governed separately by the insecure-mode allowlist gates. " +
 		"For bootstrapping a fresh node in maintenance mode, set insecure=true + endpoint=<node-IP>; " +
 		"requires TALOS_MCP_ENABLE_INSECURE=true and an entry in TALOS_MCP_INSECURE_ALLOWED_NODES."
 

@@ -252,8 +252,10 @@ func main() {
 			"- anything else (network, MachineStatus, …) → talos_get " +
 			"(query one node at a time; talos_resource_definitions lists the types).\n" +
 			"All tools take an optional 'nodes' field (node IPs); omit it to use the active context from talosconfig. " +
-			"Mutating tools require confirm=true. talos_reboot, talos_upgrade, talos_rollback and talos_reset additionally require explicit nodes (they will not guess a target); " +
-			"the other mutating tools fall back to the talosconfig default nodes when nodes is omitted, so pass nodes to scope the action. " +
+			"Mutating tools differ by family: talos_reboot, talos_upgrade, talos_rollback and talos_reset require confirm=true AND explicit nodes (they will not guess a target). " +
+			"talos_service_action requires confirm=true and, when nodes is omitted, fans out to the talosconfig default nodes — pass nodes to scope it. " +
+			"talos_patch_config and talos_apply_config target exactly one node and default to dry_run=true; confirm=true is required only for a real apply (dry_run=false). " +
+			"talos_meta requires confirm=true only for write/delete. " +
 			"The talos:// MCP Resources mirror talos_get/talos_version for clients that prefer resources — the tools are the simpler path.",
 		CompletionHandler:  completions.NewHandler(allowedNodes),
 		SubscribeHandler:   subMgr.Subscribe,

@@ -74,10 +74,12 @@ func TestToolDescriptions_Disambiguation(t *testing.T) {
 		// config-write pair must disambiguate, and patch must name both patch
 		// formats so the strategic-merge-vs-RFC-6902 limitation is visible.
 		"talos_patch_config": {"talos_apply_config", "strategic", "RFC 6902"},
-		// accuracy pin: the blocklist-disable claim must keep its insecure-path
-		// exception — the maintenance-mode path bypasses TALOS_MCP_BLOCKED_CONFIG_PATHS
-		// (lifecycle.go returns into the insecure branch before the blocklist guard).
-		"talos_apply_config": {"talos_patch_config", "bypasses the blocklist"},
+		// accuracy pin: the blocklist-disable claim must keep its path distinction
+		// without advertising a bypass to the model — the authenticated path is
+		// disabled when the blocklist is set, while maintenance mode is governed
+		// separately by the insecure-mode allowlist gates (lifecycle.go returns into
+		// the insecure branch before the blocklist guard).
+		"talos_apply_config": {"talos_patch_config", "governed separately"},
 	}
 
 	for name, subs := range wantSubstrings {
@@ -106,8 +108,10 @@ func TestToolDescriptions_NoSafetyWordingRegression(t *testing.T) {
 	// still imperative". See team-red MEDIUM on substring-force limits.
 	wantSafety := map[string][]string{
 		// service_action: confirm always required AND the node-scope warning
-		// (omitting nodes fans the action out to all talosconfig default nodes).
-		"talos_service_action": {"confirm=true", "targets ALL default nodes"},
+		// (omitting nodes fans the action out to all talosconfig default nodes) AND
+		// the cluster-wide-outage caution that its reboot/reset siblings also carry —
+		// an omitted-nodes stop/restart hits every default node simultaneously.
+		"talos_service_action": {"confirm=true", "targets ALL default nodes", "outage"},
 		"talos_reboot":         {"confirm=true", "one node at a time"},
 		"talos_upgrade":        {"confirm=true"},
 		"talos_rollback":       {"confirm=true"},

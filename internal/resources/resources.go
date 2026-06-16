@@ -22,31 +22,36 @@ type Handlers struct {
 func Register(server *mcp.Server, client *talos.Client, allowedNodes *talos.NodeAllowlist) {
 	h := &Handlers{Client: client, AllowedNodes: allowedNodes}
 
+	// These resources mirror the talos_version / talos_resource_definitions /
+	// talos_get tools against the same backends. They exist for clients that
+	// prefer the resource interface; the descriptions point back to the
+	// equivalent tool so a model that sees both does not treat them as distinct
+	// capabilities (the tools are the simpler path).
 	server.AddResource(&mcp.Resource{
 		URI:         "talos://cluster/version",
 		Name:        "talos-version",
-		Description: "Talos version information from the cluster's default endpoint.",
+		Description: "Talos version information from the cluster's default endpoint. Mirrors the talos_version tool.",
 		MIMEType:    "application/json",
 	}, h.handleVersion)
 
 	server.AddResource(&mcp.Resource{
 		URI:         "talos://cluster/resource-definitions",
 		Name:        "talos-resource-definitions",
-		Description: "All available Talos COSI resource types with their aliases and default namespaces. Read this first to discover what types can be queried via resource templates.",
+		Description: "All available Talos COSI resource types with their aliases and default namespaces. Read this first to discover what types can be queried via resource templates. Mirrors the talos_resource_definitions tool.",
 		MIMEType:    "application/json",
 	}, h.handleResourceDefinitions)
 
 	server.AddResourceTemplate(&mcp.ResourceTemplate{
 		URITemplate: "talos://{node}/resource/{namespace}/{type}",
 		Name:        "talos-resource-list",
-		Description: "List all COSI resources of a given type in a namespace on a specific node. Read talos://cluster/resource-definitions to discover available types and namespaces.",
+		Description: "List all COSI resources of a given type in a namespace on a specific node. Read talos://cluster/resource-definitions to discover available types and namespaces. Mirrors the talos_get tool.",
 		MIMEType:    "application/json",
 	}, h.handleCOSIResource)
 
 	server.AddResourceTemplate(&mcp.ResourceTemplate{
 		URITemplate: "talos://{node}/resource/{namespace}/{type}/{id}",
 		Name:        "talos-resource-get",
-		Description: "Get a specific COSI resource by namespace, type, and ID on a specific node.",
+		Description: "Get a specific COSI resource by namespace, type, and ID on a specific node. Mirrors the talos_get tool with a resource_id.",
 		MIMEType:    "application/json",
 	}, h.handleCOSIResource)
 }

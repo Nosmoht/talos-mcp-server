@@ -20,6 +20,7 @@ Mutating tools require explicit guards — missing any of these will error or ca
 - `talos_reset` `graceful` defaults to `true` (drain workloads, leave etcd). Set `false` only on unresponsive nodes. `system_labels_to_wipe` empty = full disk wipe.
 - `talos_patch_config` defaults `dry_run=true`; pass `dry_run=false` + `confirm=true` to apply.
 - `talos_apply_config` takes `config_file` (absolute local path to YAML/JSON, max 1 MiB — secrets never enter context). Defaults `dry_run=true`, requires exactly one node. Replaces entire machine config — prefer `talos_patch_config` for targeted changes.
+- `talos_read_file` / `talos_list_files`: the `TALOS_MCP_ALLOWED_PATHS` prefix allowlist is defense-in-depth only. The check runs on the MCP server host and does not resolve symlinks on the remote node — a symlink under an allowed prefix pointing elsewhere is not detected (symlinks are resolved on the node, outside the check's view). Do not rely on it as the sole access control.
 
 Quorum/member-count invariants for preflight helpers: see `.claude/rules/quorum-member-counting.md` (auto-loaded when editing `internal/tools/etcd_preflight.go` or any `*_preflight.go`).
 

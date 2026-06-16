@@ -184,7 +184,7 @@ These tools modify cluster state and have explicit safety guards.
 | `talos_reboot` | Reboot target nodes. Supports `mode`: `default`, `powercycle`, `force`. | `confirm=true` required; `nodes` must be explicit |
 | `talos_upgrade` | Upgrade Talos on target nodes. Supports `preserve` (default `true`), `stage`, `force`, `reboot_mode`. | `confirm=true` required; `nodes` and `image` required |
 | `talos_rollback` | Roll back the last upgrade on target nodes. | `confirm=true` required; `nodes` must be explicit |
-| `talos_patch_config` | Apply a machine config patch (JSON or YAML strategic merge). | `dry_run` defaults to `true`; `confirm=true` required when `dry_run=false` |
+| `talos_patch_config` | Apply a targeted machine config patch (strategic-merge or RFC 6902 JSON Patch). | `dry_run` defaults to `true`; `confirm=true` required when `dry_run=false` |
 | `talos_reset` | Wipe and factory-reset target nodes (irreversible). | `confirm=true` required; `nodes` must be explicit |
 | `talos_apply_config` | Apply a complete machine config to a single node. Supports maintenance-mode (`insecure=true` + `endpoint`) for fresh-node bootstrap. | `dry_run` defaults to `true`; `confirm=true` required when `dry_run=false` |
 | `talos_meta` | Read, write, or delete META partition key/value pairs. Supports maintenance-mode (`insecure=true` + `endpoint`). | `write`/`delete` require `confirm=true`; non-`UserReserved*` keys require enumeration in `TALOS_MCP_META_PRIVILEGED_KEYS` |

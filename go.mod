@@ -7,7 +7,7 @@ toolchain go1.26.4
 require (
 	github.com/cosi-project/runtime v1.16.1
 	github.com/google/jsonschema-go v0.4.3
-	github.com/modelcontextprotocol/go-sdk v1.6.0
+	github.com/modelcontextprotocol/go-sdk v1.6.1
 	github.com/siderolabs/talos/pkg/machinery v1.13.4
 	go.yaml.in/yaml/v4 v4.0.0-rc.4
 	golang.org/x/sync v0.21.0

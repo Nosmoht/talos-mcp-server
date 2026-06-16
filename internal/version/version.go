@@ -13,7 +13,16 @@ var MinSupported = TalosVersion{Major: 1, Minor: 9, Patch: 0}
 
 // MaxTested is the newest Talos minor series validated against the compiled
 // machinery SDK. The patch component is set to 255 to match any patch release.
-var MaxTested = TalosVersion{Major: 1, Minor: 12, Patch: 255}
+//
+// Cross-version caveat: Talos v1.13 changed the protobuf format of five
+// control-plane config resources (Etcd/Kubelet/ControllerManager/Scheduler/
+// APIServerConfig) from map<string,string> to a structured message. A server
+// compiled against machinery v1.13.x reads these specific resources losslessly
+// only from v1.13+ nodes; reading them from an older node silently drops the
+// extra-arguments map values. All other resources stay backward-compatible.
+// Talos publishes no client/server skew policy — match the release to the
+// node version. See README.md §Compatibility.
+var MaxTested = TalosVersion{Major: 1, Minor: 13, Patch: 255}
 
 // TalosVersion holds a parsed Talos semver tag.
 type TalosVersion struct {

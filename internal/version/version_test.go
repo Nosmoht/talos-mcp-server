@@ -149,9 +149,10 @@ func TestInSupportedRange(t *testing.T) {
 		{name: "below min", v: v(1, 8, 9), want: false},
 		{name: "at min", v: v(1, 9, 0), want: true},
 		{name: "in range", v: v(1, 11, 3), want: true},
-		{name: "at max patch 0", v: v(1, 12, 0), want: true},
-		{name: "at max patch 255", v: v(1, 12, 255), want: true},
-		{name: "above max minor", v: v(1, 13, 0), want: false},
+		{name: "in range upper", v: v(1, 12, 6), want: true},
+		{name: "at max patch 0", v: v(1, 13, 0), want: true},
+		{name: "at max patch 255", v: v(1, 13, 255), want: true},
+		{name: "above max minor", v: v(1, 14, 0), want: false},
 		{name: "above max major", v: v(2, 0, 0), want: false},
 	}
 

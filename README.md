@@ -82,13 +82,15 @@ Reads `~/.talos/config` by default (the same file `talosctl` uses). Override via
 
 ## Compatibility
 
-This server is tested against Talos Linux v1.9.x through v1.12.x.
+This server is tested against Talos Linux v1.9.x through v1.13.x.
 
 | talos-mcp | Talos Linux | machinery SDK |
 |-----------|-------------|---------------|
-| v0.x (current) | v1.9.0 – v1.12.x | v1.12.6 |
+| v0.x (current) | v1.9.0 – v1.13.x | v1.13.4 |
 
 The server logs a startup warning if the connected cluster's Talos version is outside the tested range. All 19 gRPC methods used have been stable since Talos v1.9.
+
+> **Version-skew limitation (Talos v1.13 resource-format change).** Talos v1.13 changed the protobuf format of five control-plane config resources — `EtcdConfig`, `KubeletConfig`, `ControllerManagerConfig`, `SchedulerConfig`, `APIServerConfig` — from `map<string,string>` to a structured message (a documented BREAKING change in the [Talos v1.13.0 release notes](https://github.com/siderolabs/talos/releases/tag/v1.13.0)). Because the server is compiled against a single machinery SDK version, reading these specific resources across that boundary is lossy: a build on machinery v1.13.x silently drops the extra-arguments map values when reading them from a pre-v1.13 node; the reverse pairing (an older build against a v1.13+ node) is lossy for the same wire-format reason. Talos publishes no client/server version-skew policy and recommends matching versions — **match the talos-mcp release to your Talos version, the same way you would match `talosctl`.** All other resources and all 19 gRPC methods remain backward-compatible across the v1.9–v1.13 range.
 
 ### Upgrade path validation
 

@@ -67,7 +67,7 @@ Reads `~/.talos/config` by default (the same file `talosctl` uses). Override via
 | `TALOS_MCP_HTTP_ADDR` | (unset) | If set (e.g. `:8080`), serve Streamable HTTP instead of stdio |
 | `TALOS_MCP_AUTH_TOKEN` | (unset) | Required bearer token when HTTP mode is active |
 | `TALOS_MCP_ALLOWED_NODES` | (unset) | Comma-separated IPs, hostnames, and CIDR ranges permitted as tool targets. Unset allows all. |
-| `TALOS_MCP_ALLOWED_PATHS` | *(all)* | Comma-separated path prefixes allowed for `talos_read_file` and `talos_list_files` (e.g. `/etc,/proc`) |
+| `TALOS_MCP_ALLOWED_PATHS` | *(all)* | Comma-separated path prefixes allowed for `talos_read_file` and `talos_list_files` (e.g. `/etc,/proc`). Defense-in-depth only — checks run on the MCP server host and do **not** resolve symlinks on the remote Talos node, so a symlink under an allowed prefix that points elsewhere is not detected. |
 | `TALOS_MCP_SKIP_VERSION_CHECK` | `false` | Set to `true` to bypass upgrade path validation (e.g. for factory images or custom tags) |
 | `TALOS_MCP_ENABLE_INSECURE` | `false` | Unlock `insecure=true` on `talos_apply_config` / `talos_get` / `talos_version` / `talos_meta`. Bypasses mTLS — REQUIRES `TALOS_MCP_INSECURE_ALLOWED_NODES`. |
 | `TALOS_MCP_INSECURE_ALLOWED_NODES` | (unset) | Comma-separated IPs / CIDRs permitted as maintenance-mode endpoints. Required when `TALOS_MCP_ENABLE_INSECURE=true`. Refused: `0.0.0.0/0`, `::/0`, IPv4 mask `<16`, IPv6 mask `<48`. |
@@ -184,7 +184,7 @@ These tools modify cluster state and have explicit safety guards.
 | `talos_reboot` | Reboot target nodes. Supports `mode`: `default`, `powercycle`, `force`. | `confirm=true` required; `nodes` must be explicit |
 | `talos_upgrade` | Upgrade Talos on target nodes. Supports `preserve` (default `true`), `stage`, `force`, `reboot_mode`. | `confirm=true` required; `nodes` and `image` required |
 | `talos_rollback` | Roll back the last upgrade on target nodes. | `confirm=true` required; `nodes` must be explicit |
-| `talos_patch_config` | Apply a machine config patch (JSON or YAML strategic merge). | `dry_run` defaults to `true`; `confirm=true` required when `dry_run=false` |
+| `talos_patch_config` | Apply a targeted machine config patch (strategic-merge or RFC 6902 JSON Patch). | `dry_run` defaults to `true`; `confirm=true` required when `dry_run=false` |
 | `talos_reset` | Wipe and factory-reset target nodes (irreversible). | `confirm=true` required; `nodes` must be explicit |
 | `talos_apply_config` | Apply a complete machine config to a single node. Supports maintenance-mode (`insecure=true` + `endpoint`) for fresh-node bootstrap. | `dry_run` defaults to `true`; `confirm=true` required when `dry_run=false` |
 | `talos_meta` | Read, write, or delete META partition key/value pairs. Supports maintenance-mode (`insecure=true` + `endpoint`). | `write`/`delete` require `confirm=true`; non-`UserReserved*` keys require enumeration in `TALOS_MCP_META_PRIVILEGED_KEYS` |
@@ -272,7 +272,7 @@ MCP Client (Claude Code / Codex)
 | Mechanism | How it works |
 |---|---|
 | Read-only mode | `TALOS_MCP_READ_ONLY=true` registers only read-only tools at startup; mutating tools are never exposed to the LLM |
-| Path allowlist | `TALOS_MCP_ALLOWED_PATHS=/etc,/proc` restricts `talos_read_file` and `talos_list_files` to specified prefixes |
+| Path allowlist | `TALOS_MCP_ALLOWED_PATHS=/etc,/proc` restricts `talos_read_file` and `talos_list_files` to specified prefixes. **Defense-in-depth, not a hard boundary:** the check is local to the MCP server — symlinks on the remote Talos node that resolve outside an allowed prefix are not detected. |
 | Confirm gates | Always require `confirm=true`: `talos_service_action`, `talos_reboot`, `talos_upgrade`, `talos_rollback`, `talos_reset`. Require `confirm=true` when `dry_run=false`: `talos_patch_config`, `talos_apply_config`. All enforced server-side. |
 | Preserve default | `talos_upgrade` defaults `preserve` to `true` (keep EPHEMERAL partition) — differs from `talosctl` default of `false` |
 | Dry-run default | `talos_patch_config` defaults to `dry_run=true`; applying requires both `dry_run=false` and `confirm=true` |

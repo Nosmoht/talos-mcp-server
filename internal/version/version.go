@@ -15,13 +15,18 @@ var MinSupported = TalosVersion{Major: 1, Minor: 9, Patch: 0}
 // machinery SDK. The patch component is set to 255 to match any patch release.
 //
 // Cross-version caveat: Talos v1.13 changed the protobuf format of five
-// control-plane config resources (Etcd/Kubelet/ControllerManager/Scheduler/
-// APIServerConfig) from map<string,string> to a structured message. A server
-// compiled against machinery v1.13.x reads these specific resources losslessly
-// only from v1.13+ nodes; reading them from an older node silently drops the
-// extra-arguments map values. All other resources stay backward-compatible.
-// Talos publishes no client/server skew policy — match the release to the
-// node version. See README.md §Compatibility.
+// control-plane config resources (EtcdConfig, KubeletConfig,
+// ControllerManagerConfig, SchedulerConfig, APIServerConfig) from
+// map<string,string> to a structured message — a documented BREAKING change.
+// string and message are not wire-compatible, so the changed extra-arguments
+// map does not round-trip across that boundary: cross-version reads of these
+// specific resources are unreliable and should be treated as untrusted. (A
+// prior cross-version read returned those extraArgs empty; the exact failure
+// mode — empty, decode error, or mis-mapped field — is unconfirmed.) All other
+// resources stay backward-compatible. Talos publishes no client/server skew
+// policy — match the release to the node version. NOTE: the InSupportedRange
+// startup warning does NOT cover this skew (both 1.12 and 1.13 nodes are
+// in-range); runtime detection is tracked separately. See README.md §Compatibility.
 var MaxTested = TalosVersion{Major: 1, Minor: 13, Patch: 255}
 
 // TalosVersion holds a parsed Talos semver tag.

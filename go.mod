@@ -8,7 +8,7 @@ require (
 	github.com/cosi-project/runtime v1.16.1
 	github.com/google/jsonschema-go v0.4.3
 	github.com/modelcontextprotocol/go-sdk v1.6.1
-	github.com/siderolabs/talos/pkg/machinery v1.13.4
+	github.com/siderolabs/talos/pkg/machinery v1.13.5
 	go.yaml.in/yaml/v4 v4.0.0-rc.5
 	golang.org/x/sync v0.21.0
 	golang.org/x/time v0.15.0

@@ -10,7 +10,7 @@ require (
 	github.com/modelcontextprotocol/go-sdk v1.6.1
 	github.com/siderolabs/talos/pkg/machinery v1.13.4
 	go.yaml.in/yaml/v4 v4.0.0-rc.5
-	golang.org/x/sync v0.21.0
+	golang.org/x/sync v0.22.0
 	golang.org/x/time v0.15.0
 	google.golang.org/grpc v1.81.1
 )

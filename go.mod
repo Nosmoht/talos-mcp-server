@@ -1,14 +1,12 @@
 module github.com/Nosmoht/talos-mcp-server
 
-go 1.26.2
-
-toolchain go1.26.4
+go 1.26.5
 
 require (
 	github.com/cosi-project/runtime v1.16.1
 	github.com/google/jsonschema-go v0.4.3
 	github.com/modelcontextprotocol/go-sdk v1.6.1
-	github.com/siderolabs/talos/pkg/machinery v1.13.4
+	github.com/siderolabs/talos/pkg/machinery v1.13.6
 	go.yaml.in/yaml/v4 v4.0.0-rc.5
 	golang.org/x/sync v0.21.0
 	golang.org/x/time v0.15.0
@@ -51,7 +49,7 @@ require (
 	github.com/segmentio/asm v1.1.3 // indirect
 	github.com/segmentio/encoding v0.5.4 // indirect
 	github.com/siderolabs/crypto v0.6.5 // indirect
-	github.com/siderolabs/gen v0.8.6 // indirect
+	github.com/siderolabs/gen v0.8.7 // indirect
 	github.com/siderolabs/go-api-signature v0.3.12 // indirect
 	github.com/siderolabs/go-pointer v1.0.1 // indirect
 	github.com/siderolabs/net v0.4.0 // indirect

@@ -3,7 +3,7 @@ module github.com/Nosmoht/talos-mcp-server
 go 1.26.5
 
 require (
-	github.com/cosi-project/runtime v1.16.1
+	github.com/cosi-project/runtime v1.16.2
 	github.com/google/jsonschema-go v0.4.3
 	github.com/modelcontextprotocol/go-sdk v1.6.1
 	github.com/siderolabs/talos/pkg/machinery v1.13.6

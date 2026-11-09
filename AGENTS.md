@@ -123,7 +123,7 @@ Never use `gh` for issues, PRs, reviews, comments, branches, labels, or search w
 
 ## Planning Discipline
 
-Non-trivial plans must pass `senior-plan-reviewer` **and** one adversarial pass before `ExitPlanMode`. Non-trivial = multi-phase, multi-PR, touches mutating tools, or proposes an architectural change.
+Non-trivial plans must pass `senior-plan-reviewer` **and** one adversarial pass before the plan is approved. Non-trivial = multi-phase, multi-PR, touches mutating tools, or proposes an architectural change. Plan mode cannot create the change directory, so write the plan to a file and run the reviews outside plan mode: create the change directory and its `.review-open` marker as in § Review flow, then pass the plan text.
 
 - Run the two reviewers in parallel with distinct perspectives: `senior-plan-reviewer` for completeness and architecture; a `general-purpose` or `codex:codex-rescue` agent for adversarial risk surfaces the primary reviewer may endorse by default.
 - Fold every review finding into the plan file, or document why it is accepted as-is. Empirical note: adversarial passes have caught sequencing gaps, skill-filter dead paths, and invalid label taxonomy that the senior reviewer accepted — the two roles are complementary, not redundant.
@@ -579,15 +579,19 @@ cp .claude/hooks/pre-commit .git/hooks/pre-commit && chmod +x .git/hooks/pre-com
 ### Review flow
 
 1. **Implement** in a worktree (see above).
-2. **Review** — invoke `staff-reviewer` agent. Artifact: `.claude/reviews/{change-id}/review.md`
+2. **Review** — create `<main checkout>/.claude/reviews/{change-id}/` and an empty `.review-open` marker in it, then invoke `staff-reviewer` agent. Artifact: `<main checkout>/.claude/reviews/{change-id}/review.md`
+   - Pass the change-id, the path of the worktree holding the change, the main checkout's path, the diff (inline or as a file under `.work/`), and the `make check` / test results. The commit hooks read `.claude/reviews/` in the main checkout, also for commits from a worktree.
+   - Reviewer agents have no shell. Each may write only its own artifact file into a change directory that carries the `.review-open` marker; `.claude/hooks/review-write-guard.sh` enforces this twice: through the agent's frontmatter hook, which loads the guard from the main checkout, and through the `agent_type` hook in `.claude/settings.json`, which loads it from the session's checkout and also runs where Claude Code skips project-agent frontmatter hooks (a `claude -p` session in a folder whose workspace trust was never accepted, such as a fresh clone or CI). After a guard change merges, update the main checkout; until then the frontmatter hook runs the main checkout's previous guard, or denies every reviewer write if the guard is missing there. `bash .claude/hooks/review-write-guard.test.sh` tests both paths.
    - `status: approved` → proceed to commit
    - `status: escalate` → invoke each listed escalation reviewer
-3. **Escalation** (if needed) — invoke the domain reviewer. Artifact: `.claude/reviews/{change-id}/review-{type}.md`
-4. **Commit** — only once all required artifacts show `status: approved`.
+3. **Escalation** (if needed) — invoke the domain reviewer. Artifact: `<main checkout>/.claude/reviews/{change-id}/review-{type}.md`
+4. **Commit** — once the gate in `.claude/hooks/require-review.sh` passes: `review.md` is `approved`, or `escalate` with every escalation review approved, including escalations an escalation reviewer chains on (e.g. `review-architecture.md` → `review-security.md`). Then delete the `.review-open` marker; delete it as well when a change is abandoned. While several markers exist, a reviewer can write its own artifact file into any of those changes, so keep one review open at a time.
+
+Claude Code loads agent definitions from the checkout the session runs in, so a change to `.claude/agents/`, `.claude/hooks/` or `.claude/settings.json` can alter the reviewers that review it. Such a change also needs a human review before merge.
 
 ### PR-level review before merge
 
-A PR that lacks an existing GitHub approval must be reviewed by a subagent (typically `staff-reviewer`) before merge. If the review surfaces findings, fix them and re-review until clean. Batch-merge flows do not waive the gate — every PR carries its own review. Commit-time reviews (pre-commit hook) are a separate gate; the merge step itself is manual and relies on this rule.
+A PR that lacks an existing GitHub approval must be reviewed by a subagent (typically `staff-reviewer`) before merge. Reviewers have no shell or GitHub access: open a change directory as in § Review flow and pass the PR diff (`mcp__github__pull_request_read`, method `get_diff`). If the review surfaces findings, fix them and re-review until clean. Batch-merge flows do not waive the gate — every PR carries its own review. Commit-time reviews (pre-commit hook) are a separate gate; the merge step itself is manual and relies on this rule.
 
 ### Review depth
 
@@ -601,11 +605,11 @@ A PR that lacks an existing GitHub approval must be reviewed by a subagent (typi
 
 | Type | Reviewer | Triggers |
 |---|---|---|
-| `operational-safety` | `operational-safety-reviewer` | New/modified mutating tool, guard logic, audit logging, read-only enforcement |
+| `operational-safety` | `operational-safety-reviewer` | New/modified mutating tool, guard logic or safety defaults, audit logging (AUDIT / AUDIT_OUTCOME), read-only enforcement, safety-profile seeding |
 | `provenance` | `provenance-reviewer` | `go.mod` or `go.sum` modified, new external import |
 | `compatibility` | `compatibility-reviewer` | Tool/prompt/resource signature change, SDK bump, tool removal |
 | `architecture` | `principal-architect-reviewer` | New package, >3 packages modified, structural refactor, API surface addition |
-| `security` | `security-reviewer` | Auth/token handling, input validation, hook/enforcement logic |
+| `security` | `security-reviewer` | Auth/token handling, input validation, maintenance-mode (`insecure=true`) paths, META key safelist, blocked config paths, hook/enforcement logic |
 | `performance` | `performance-reviewer` | gRPC streaming, goroutine lifecycle, hot-path caching |
 
 ### Change-id convention

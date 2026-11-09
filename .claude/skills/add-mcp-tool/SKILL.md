@@ -58,7 +58,7 @@ Modified:  <registration-file>
            AGENTS.md  (tool inventory)
            README.md  (tool inventory)
 Next:      make check
-           invoke staff-reviewer  →  .claude/reviews/<change-id>/review.md
+           review per AGENTS.md § Review flow  →  .claude/reviews/<change-id>/review.md
            commit  →  feat(tools): add <tool_name> handler [review:<change-id>]
 ```
 

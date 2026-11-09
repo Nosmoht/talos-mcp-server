@@ -238,8 +238,34 @@ func main() {
 		stop()
 		log.Fatalf("%v", err) //nolint:gocritic // exitAfterDefer: stop() called explicitly above
 	}
-	subMgr := subscriptions.NewManager(tc, allowedNodes, subRate, subBurst)
+	server, subMgr := newServer(h, serverConfig{
+		ReadOnly:          readOnly,
+		SubscriptionRate:  subRate,
+		SubscriptionBurst: subBurst,
+		HTTPMode:          httpAddr != "",
+		ClusterVersion:    tc.GetClusterVersion,
+	})
 	defer subMgr.Shutdown()
+
+	if err := runServer(ctx, server, httpAddr, authToken, newHTTPTransportConfig(), tc.Ping); err != nil {
+		slog.Error("server stopped with error", "error", err)
+	}
+}
+
+// serverConfig carries the inputs of newServer that do not live on tools.Handlers.
+type serverConfig struct {
+	ReadOnly          bool
+	SubscriptionRate  time.Duration
+	SubscriptionBurst int
+	HTTPMode          bool
+	ClusterVersion    func(context.Context) (*talosversion.TalosVersion, error)
+}
+
+// newServer builds the MCP server with all registrations and the subscription
+// manager. Production and tests share it, so fixtures cannot drift from the
+// production wiring — same drift class as newStreamableHTTPOptions.
+func newServer(h *tools.Handlers, cfg serverConfig) (*mcp.Server, *subscriptions.Manager) {
+	subMgr := subscriptions.NewManager(h.Client, h.AllowedNodes, cfg.SubscriptionRate, cfg.SubscriptionBurst)
 
 	serverOpts := &mcp.ServerOptions{
 		Instructions: "Talos Linux cluster management. Choose a tool by what you need:\n" +
@@ -258,7 +284,7 @@ func main() {
 			"talos_patch_config and talos_apply_config target exactly one node and default to dry_run=true; confirm=true is required only for a real apply (dry_run=false). " +
 			"talos_meta requires confirm=true only for write/delete. " +
 			"The talos:// MCP Resources mirror talos_get/talos_version for clients that prefer resources — the tools are the simpler path.",
-		CompletionHandler:  completions.NewHandler(allowedNodes),
+		CompletionHandler:  completions.NewHandler(h.AllowedNodes),
 		SubscribeHandler:   subMgr.Subscribe,
 		UnsubscribeHandler: subMgr.Unsubscribe,
 	}
@@ -267,7 +293,7 @@ func main() {
 	// (subscriptions are per-session by SDK contract, unlike the logger which
 	// is stdio-only because multi-session HTTP would race the shared logger).
 	var priorInit func(context.Context, *mcp.InitializedRequest)
-	if httpAddr == "" {
+	if !cfg.HTTPMode {
 		priorInit = func(initCtx context.Context, req *mcp.InitializedRequest) {
 			logger := slog.New(mcp.NewLoggingHandler(req.Session, &mcp.LoggingHandlerOptions{
 				LoggerName: "talos-mcp",
@@ -275,7 +301,10 @@ func main() {
 			h.SetLogger(logger)
 
 			// Forward version compatibility warning to the connected MCP client.
-			if cv, err := tc.GetClusterVersion(initCtx); err == nil && !cv.InSupportedRange() {
+			if cfg.ClusterVersion == nil {
+				return
+			}
+			if cv, err := cfg.ClusterVersion(initCtx); err == nil && !cv.InSupportedRange() {
 				logger.Warn("cluster Talos version is outside the tested range; some features may not work correctly",
 					"version", cv.String(),
 					"min_supported", talosversion.MinSupported.String(),
@@ -297,16 +326,14 @@ func main() {
 	}, serverOpts)
 
 	// BindServer must happen-before any session can issue resources/subscribe.
-	// Sessions start inside runServer below; binding here is sufficient.
+	// Sessions start only after newServer returns; binding here is sufficient.
 	subMgr.BindServer(server)
 
-	tools.Register(server, h, readOnly)
-	resources.Register(server, tc, allowedNodes)
-	prompts.Register(server, readOnly)
+	tools.Register(server, h, cfg.ReadOnly)
+	resources.Register(server, h.Client, h.AllowedNodes)
+	prompts.Register(server, cfg.ReadOnly)
 
-	if err := runServer(ctx, server, httpAddr, authToken, newHTTPTransportConfig(), tc.Ping); err != nil {
-		slog.Error("server stopped with error", "error", err)
-	}
+	return server, subMgr
 }
 
 // validateHTTPConfig returns an error if HTTP mode is requested without an auth token.

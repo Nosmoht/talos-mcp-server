@@ -46,27 +46,31 @@ func (h *Handlers) HandleEtcd(ctx context.Context, _ *mcp.CallToolRequest, args 
 	ctx, cancel := withToolTimeout(ctx)
 	defer cancel()
 
-	ctx, err := talos.WithNodes(ctx, args.Nodes, h.AllowedNodes)
+	targets, err := talos.CheckTargets(args.Nodes, h.AllowedNodes)
 	if err != nil {
 		return nil, nil, err
 	}
 
 	switch args.Subcommand {
 	case "", "members":
-		resp, err := h.Client.EtcdMemberList(ctx, &machineapi.EtcdMemberListRequest{})
-		if err != nil {
+		rs, out := talos.FanOut(ctx, targets, func(c context.Context) (*machineapi.EtcdMemberListResponse, error) {
+			return h.Client.EtcdMemberList(c, &machineapi.EtcdMemberListRequest{})
+		})
+		if _, err := out.FailClosed(); err != nil {
 			return nil, nil, fmt.Errorf("etcd member list: %w", err)
 		}
 
-		return jsonResult(resp)
+		return unaryResult(rs)
 
 	case "status":
-		resp, err := h.Client.EtcdStatus(ctx)
-		if err != nil {
+		rs, out := talos.FanOut(ctx, targets, func(c context.Context) (*machineapi.EtcdStatusResponse, error) {
+			return h.Client.EtcdStatus(c)
+		})
+		if _, err := out.FailClosed(); err != nil {
 			return nil, nil, fmt.Errorf("etcd status: %w", err)
 		}
 
-		return jsonResult(resp)
+		return unaryResult(rs)
 
 	default:
 		return nil, nil, fmt.Errorf("unknown etcd subcommand %q: must be 'members' or 'status'", args.Subcommand)
@@ -102,7 +106,7 @@ func (h *Handlers) HandleEtcdSnapshot(ctx context.Context, req *mcp.CallToolRequ
 		return nil, nil, fmt.Errorf("talos_etcd_snapshot requires exactly one target node (got %d); specify a single control plane node", len(args.Nodes))
 	}
 
-	ctx, err := talos.WithNodes(ctx, args.Nodes, h.AllowedNodes)
+	ctx, err := talos.WithSingleNode(ctx, args.Nodes, h.AllowedNodes)
 	if err != nil {
 		return nil, nil, err
 	}

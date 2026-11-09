@@ -20,7 +20,7 @@ func (h *Handlers) handleCOSIResource(ctx context.Context, req *mcp.ReadResource
 		return nil, fmt.Errorf("parse resource URI %q: %w", req.Params.URI, err)
 	}
 
-	ctx, err = talos.WithNodes(ctx, []string{node}, h.AllowedNodes)
+	ctx, err = talos.WithSingleNode(ctx, []string{node}, h.AllowedNodes)
 	if err != nil {
 		return nil, fmt.Errorf("node not allowed: %w", err)
 	}

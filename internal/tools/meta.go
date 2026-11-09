@@ -24,7 +24,7 @@ type MetaArgs struct {
 	Key             string   `json:"key" jsonschema:"REQUIRED: META key as decimal or 0x-prefixed hex (uint8\\, 0-255). Well-known: see github.com/siderolabs/talos/pkg/machinery/meta (Upgrade=6\\, UserReserved1=12)."`
 	Value           string   `json:"value,omitempty" jsonschema:"Required for action='write'; stored as raw bytes. Ignored otherwise."`
 	Confirm         bool     `json:"confirm,omitempty" jsonschema:"REQUIRED for action='write' or 'delete'."`
-	Nodes           []string `json:"nodes,omitempty" jsonschema:"Authenticated mode only: target node. Mutually exclusive with endpoint."`
+	Nodes           []string `json:"nodes,omitempty" jsonschema:"Authenticated mode only: target nodes. action='read' accepts at most one node; 'write' and 'delete' apply to every listed node. Mutually exclusive with endpoint."`
 	Insecure        bool     `json:"insecure,omitempty" jsonschema:"Maintenance-mode insecure connection (bypasses mTLS). Requires endpoint and TALOS_MCP_ENABLE_INSECURE=true."`
 	Endpoint        string   `json:"endpoint,omitempty" jsonschema:"Required when insecure=true: bare IPv4 or IPv6 address of the maintenance-mode node."`
 	CertFingerprint string   `json:"cert_fingerprint,omitempty" jsonschema:"Optional SHA-256 server cert fingerprint (hex; 64 chars after stripping colons/whitespace) for TOFU pinning. Only valid when insecure=true."`
@@ -149,7 +149,24 @@ func (h *Handlers) HandleMeta(ctx context.Context, _ *mcp.CallToolRequest, args 
 	}
 
 	// Authenticated path.
-	ctx, err = talos.WithNodes(ctx, args.Nodes, h.AllowedNodes)
+	if args.Action == "read" {
+		if len(args.Nodes) > 1 {
+			outcome = OutcomeRefusedArgs
+			finalErr = fmt.Errorf("talos_meta read targets exactly one node (got %d); read each node individually", len(args.Nodes))
+			return nil, nil, finalErr
+		}
+
+		ctx, err = talos.WithSingleNode(ctx, args.Nodes, h.AllowedNodes)
+		if err != nil {
+			outcome = OutcomeRefusedAllowlist
+			finalErr = err
+			return nil, nil, err
+		}
+
+		return readMetaFromCOSI(ctx, h.Client.COSIState(), key, &outcome, &finalErr)
+	}
+
+	targets, err := talos.CheckTargets(args.Nodes, h.AllowedNodes)
 	if err != nil {
 		outcome = OutcomeRefusedAllowlist
 		finalErr = err
@@ -157,17 +174,21 @@ func (h *Handlers) HandleMeta(ctx context.Context, _ *mcp.CallToolRequest, args 
 	}
 
 	switch args.Action {
-	case "read":
-		return readMetaFromCOSI(ctx, h.Client.COSIState(), key, &outcome, &finalErr)
 	case "write":
-		if err := h.Client.MetaWrite(ctx, key, []byte(args.Value)); err != nil {
+		_, out := talos.FanOut(ctx, targets, func(c context.Context) (struct{}, error) {
+			return struct{}{}, h.Client.MetaWrite(c, key, []byte(args.Value))
+		})
+		if _, err := out.FailClosed(); err != nil {
 			outcome = OutcomeRPCError
 			finalErr = fmt.Errorf("meta write key=%d: %w", key, err)
 			return nil, nil, finalErr
 		}
 		return jsonResult(map[string]any{"action": "write", "key": key, "value_length": len(args.Value)})
 	case "delete":
-		if err := h.Client.MetaDelete(ctx, key); err != nil {
+		_, out := talos.FanOut(ctx, targets, func(c context.Context) (struct{}, error) {
+			return struct{}{}, h.Client.MetaDelete(c, key)
+		})
+		if _, err := out.FailClosed(); err != nil {
 			outcome = OutcomeRPCError
 			finalErr = fmt.Errorf("meta delete key=%d: %w", key, err)
 			return nil, nil, finalErr

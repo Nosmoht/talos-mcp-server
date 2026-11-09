@@ -3,8 +3,12 @@ package talos
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"os"
+	"slices"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -13,8 +17,10 @@ import (
 	machineapi "github.com/siderolabs/talos/pkg/machinery/api/machine"
 	talosclient "github.com/siderolabs/talos/pkg/machinery/client"
 	clientconfig "github.com/siderolabs/talos/pkg/machinery/client/config"
+	"github.com/siderolabs/talos/pkg/machinery/client/multiplex"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/keepalive"
+	"google.golang.org/grpc/metadata"
 
 	"github.com/Nosmoht/talos-mcp-server/internal/version"
 )
@@ -123,7 +129,7 @@ func (c *Client) GetClusterVersion(ctx context.Context) (*version.TalosVersion, 
 // Use this for upgrade path validation to ensure fresh per-node data.
 func (c *Client) GetNodeVersion(ctx context.Context, node string) (*version.TalosVersion, error) {
 	// nil allowlist: node was already validated by the calling tool handler.
-	ctx, err := WithNodes(ctx, []string{node}, nil)
+	ctx, err := WithSingleNode(ctx, []string{node}, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -240,21 +246,241 @@ func (c *Client) fetchVersion(ctx context.Context) (*version.TalosVersion, error
 	return &v, nil
 }
 
-// WithNodes returns a context targeting the given nodes after validating them
+// WithSingleNode returns a context targeting one node after validating it
 // against allow. If allow is nil, all nodes are permitted. If nodes is empty,
-// the context is returned unchanged (uses config default).
-// A single node uses WithNode (singular, "node" gRPC metadata key) to enable
-// one-to-one proxying, which is required for COSI State methods that do not
-// support the one-to-many fan-out used by the "nodes" key.
-func WithNodes(ctx context.Context, nodes []string, allow *NodeAllowlist) (context.Context, error) {
+// the context is returned unchanged (uses config default). More than one node
+// is an error. The single node uses WithNode (singular, "node" gRPC metadata
+// key) for one-to-one proxying, which COSI State methods and byte streams
+// require.
+func WithSingleNode(ctx context.Context, nodes []string, allow *NodeAllowlist) (context.Context, error) {
 	if len(nodes) == 0 {
 		return ctx, nil
 	}
 	if err := allow.CheckNodes(nodes); err != nil {
 		return ctx, err
 	}
-	if len(nodes) == 1 {
-		return talosclient.WithNode(ctx, nodes[0]), nil
+	if len(nodes) > 1 {
+		return ctx, fmt.Errorf("this operation targets exactly one node (got %d); call it once per node", len(nodes))
 	}
-	return talosclient.WithNodes(ctx, nodes...), nil
+	return talosclient.WithNode(ctx, nodes[0]), nil
+}
+
+// Targets is an allowlist-checked node list. CheckTargets is the only constructor
+// that carries nodes, so an unchecked list cannot reach multi-node dispatch. The
+// zero value carries no node routing: the request goes to the connected endpoint.
+type Targets struct {
+	nodes []string
+}
+
+// CheckTargets validates nodes against allow before any request can be sent.
+func CheckTargets(nodes []string, allow *NodeAllowlist) (Targets, error) {
+	if len(nodes) == 0 {
+		return Targets{}, nil
+	}
+	if err := allow.CheckNodes(nodes); err != nil {
+		return Targets{}, err
+	}
+	return Targets{nodes: slices.Clone(nodes)}, nil
+}
+
+// Len returns the number of requested nodes.
+func (t Targets) Len() int { return len(t.nodes) }
+
+// NodeResult is one node's successful response.
+type NodeResult[R any] struct {
+	Node    string
+	Payload R
+}
+
+// NodeError is one node's failure.
+type NodeError struct {
+	Node string
+	Err  error
+}
+
+func (e NodeError) Error() string { return e.Node + ": " + e.Err.Error() }
+
+func (e NodeError) Unwrap() error { return e.Err }
+
+// NodeErrors lists node failures in request order.
+type NodeErrors []NodeError
+
+// Err joins the errors in order, or returns nil when there are none.
+func (e NodeErrors) Err() error {
+	if len(e) == 0 {
+		return nil
+	}
+	errs := make([]error, len(e))
+	for i := range e {
+		errs[i] = e[i]
+	}
+	return errors.Join(errs...)
+}
+
+// Outcome is the failure state of a FanOut or StreamEach call. Handlers read
+// it through FailClosed or KeepSurvivors, never by node count.
+type Outcome struct {
+	multi     bool
+	openErr   error
+	err       error
+	nodeErrs  NodeErrors
+	allFailed bool
+}
+
+// FailClosed is for calls where any failure fails the tool. open is a stream
+// open failure and err any other failure; with two or more nodes only err is
+// set, as the per-node errors in request order.
+func (o Outcome) FailClosed() (open, err error) {
+	if !o.multi {
+		return o.openErr, o.err
+	}
+	return nil, o.nodeErrs.Err()
+}
+
+// KeepSurvivors is for calls that return the surviving nodes' results. With
+// two or more nodes each failure is listed in nodeErrs; when every node
+// failed, err carries them all and nodeErrs is nil.
+func (o Outcome) KeepSurvivors() (nodeErrs NodeErrors, open, err error) {
+	if !o.multi {
+		return nil, o.openErr, o.err
+	}
+	if o.allFailed {
+		return nil, nil, o.nodeErrs.Err()
+	}
+	return o.nodeErrs, nil, nil
+}
+
+func newMultiOutcome(nodes []string, errs NodeErrors) Outcome {
+	order := firstPositions(nodes)
+	sort.SliceStable(errs, func(i, j int) bool { return order[errs[i].Node] < order[errs[j].Node] })
+
+	failed := make(map[string]struct{}, len(errs))
+	for _, e := range errs {
+		failed[e.Node] = struct{}{}
+	}
+
+	return Outcome{multi: true, nodeErrs: errs, allFailed: len(errs) > 0 && len(failed) == len(order)}
+}
+
+func firstPositions(nodes []string) map[string]int {
+	order := make(map[string]int, len(nodes))
+	for i, n := range nodes {
+		if _, ok := order[n]; !ok {
+			order[n] = i
+		}
+	}
+	return order
+}
+
+// perNodeContext returns parent carrying the outgoing metadata that multiplex
+// attached to nodeCtx, so the RPC runs on parent while multiplex's sends run
+// on a context that never ends.
+func perNodeContext(parent, nodeCtx context.Context) context.Context {
+	md, _ := metadata.FromOutgoingContext(nodeCtx)
+	return metadata.NewOutgoingContext(parent, md)
+}
+
+// FanOut runs call once per node; with fewer than two nodes it runs inline and
+// returns the error unwrapped. results lists the successes in request order.
+// Every response is delivered even after ctx ends, so no result is lost.
+func FanOut[R any](ctx context.Context, t Targets, call func(context.Context) (R, error)) (results []NodeResult[R], out Outcome) {
+	switch len(t.nodes) {
+	case 0:
+		payload, err := call(ctx)
+		if err != nil {
+			return nil, Outcome{err: err}
+		}
+		return []NodeResult[R]{{Payload: payload}}, Outcome{}
+	case 1:
+		payload, err := call(talosclient.WithNode(ctx, t.nodes[0]))
+		if err != nil {
+			return nil, Outcome{err: err}
+		}
+		return []NodeResult[R]{{Node: t.nodes[0], Payload: payload}}, Outcome{}
+	}
+
+	var errs NodeErrors
+
+	responses := multiplex.Unary(context.WithoutCancel(ctx), t.nodes, func(nodeCtx context.Context) (R, error) {
+		return call(perNodeContext(ctx, nodeCtx))
+	})
+	for r := range responses {
+		if r.Err != nil {
+			errs = append(errs, NodeError{Node: r.Node, Err: r.Err})
+			continue
+		}
+		results = append(results, NodeResult[R]{Node: r.Node, Payload: r.Payload})
+	}
+
+	order := firstPositions(t.nodes)
+	sort.SliceStable(results, func(i, j int) bool { return order[results[i].Node] < order[results[j].Node] })
+
+	return results, newMultiOutcome(t.nodes, errs)
+}
+
+// StreamEach passes each node's messages to onMsg on the caller's goroutine. When
+// onMsg returns true it cancels the other streams; the Outcome holds only errors
+// received before that. With under two nodes, open and receive errors stay apart.
+func StreamEach[R any](
+	ctx context.Context,
+	t Targets,
+	open func(context.Context) (grpc.ServerStreamingClient[R], error),
+	onMsg func(node string, msg *R) (stop bool),
+) Outcome {
+	streamCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	switch len(t.nodes) {
+	case 0:
+		return streamDirect(streamCtx, "", open, onMsg)
+	case 1:
+		return streamDirect(talosclient.WithNode(streamCtx, t.nodes[0]), t.nodes[0], open, onMsg)
+	}
+
+	var errs NodeErrors
+
+	responses := multiplex.Streaming(context.WithoutCancel(ctx), t.nodes, func(nodeCtx context.Context) (grpc.ServerStreamingClient[R], error) {
+		return open(perNodeContext(streamCtx, nodeCtx))
+	})
+	for r := range responses {
+		if r.Err != nil {
+			errs = append(errs, NodeError{Node: r.Node, Err: r.Err})
+			continue
+		}
+		if onMsg(r.Node, r.Payload) {
+			cancel()
+			go func() {
+				for range responses {
+				}
+			}()
+			return newMultiOutcome(t.nodes, errs)
+		}
+	}
+
+	return newMultiOutcome(t.nodes, errs)
+}
+
+func streamDirect[R any](
+	ctx context.Context,
+	node string,
+	open func(context.Context) (grpc.ServerStreamingClient[R], error),
+	onMsg func(node string, msg *R) (stop bool),
+) Outcome {
+	stream, err := open(ctx)
+	if err != nil {
+		return Outcome{openErr: err}
+	}
+
+	for {
+		msg, err := stream.Recv()
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				return Outcome{}
+			}
+			return Outcome{err: err}
+		}
+		if onMsg(node, msg) {
+			return Outcome{}
+		}
+	}
 }

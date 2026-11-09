@@ -27,7 +27,7 @@ A statically-linked Go binary (`bin/talos-mcp`) built from the upstream [Nosmoht
 - **Source / docs / issue tracker:** [github.com/Nosmoht/talos-mcp-server](https://github.com/Nosmoht/talos-mcp-server)
 - **Top-level package:** [talos-mcp on npm](https://www.npmjs.com/package/talos-mcp)
 - **Security policy:** [SECURITY.md](https://github.com/Nosmoht/talos-mcp-server/blob/main/SECURITY.md)
-- **Changelog:** [CHANGELOG.md](https://github.com/Nosmoht/talos-mcp-server/blob/main/CHANGELOG.md)
+- **Changelog:** [GitHub Releases](https://github.com/Nosmoht/talos-mcp-server/releases)
 
 ## License
 

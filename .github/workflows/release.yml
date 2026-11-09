@@ -50,9 +50,6 @@ jobs:
       id-token: write
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v4
-        with:
-          # Full history + all tags — generate-changelog.sh walks every v* tag.
-          fetch-depth: 0
       - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
           node-version: "24"
@@ -65,10 +62,8 @@ jobs:
         id: version
         run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
 
-      - name: Regenerate CHANGELOG.md from tag history
-        run: |
-          bash .github/scripts/generate-changelog.sh > CHANGELOG.md
-          cp CHANGELOG.md npm/talos-mcp/CHANGELOG.md
+      - name: Ship the CHANGELOG.md pointer in the npm package
+        run: cp CHANGELOG.md npm/talos-mcp/CHANGELOG.md
 
       - name: Prepare platform packages
         run: |
@@ -155,82 +150,3 @@ jobs:
 
       - name: Publish to MCP Registry
         run: ./mcp-publisher publish
-
-  # NOTE: After the release is published, regenerate the root CHANGELOG.md from
-  # the fresh tag history and open a PR that restores parity between the repo's
-  # main and the just-published npm tarball. Commits go through the Contents
-  # API, which produces web-flow-signed commits — required because branch
-  # protection on main sets required_signatures: true. A plain `git push` with
-  # GITHUB_TOKEN would be rejected as unsigned. The `gh pr create` call uses the
-  # RELEASE_APP installation token rather than the default GITHUB_TOKEN because
-  # repo policy sets can_approve_pull_request_reviews: false, which also blocks
-  # PR creation by the default token. The RELEASE_APP token already drives
-  # auto-tag.yml and bypasses that restriction; it must carry pull_requests:write
-  # and contents:write on this repo.
-  changelog-pr:
-    needs: mcp-registry-publish
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      pull-requests: read
-    steps:
-      - uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
-        id: app-token
-        with:
-          app-id: ${{ vars.RELEASE_APP_ID }}
-          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
-
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v4
-        with:
-          fetch-depth: 0
-          ref: main
-
-      - name: Regenerate CHANGELOG.md
-        run: bash .github/scripts/generate-changelog.sh > CHANGELOG.md
-
-      - name: Open PR with updated CHANGELOG
-        env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
-          VERSION: ${{ github.ref_name }}
-        run: |
-          set -euo pipefail
-          if git diff --quiet CHANGELOG.md; then
-            echo "::notice::CHANGELOG.md unchanged against main — no PR needed"
-            exit 0
-          fi
-
-          BRANCH="chore/changelog-${VERSION}"
-          MAIN_OID=$(gh api "/repos/${GITHUB_REPOSITORY}/git/refs/heads/main" --jq .object.sha)
-
-          # Create branch, or reset it to main's tip if a prior failed run left it behind.
-          if ! gh api --method POST "/repos/${GITHUB_REPOSITORY}/git/refs" \
-               -f ref="refs/heads/${BRANCH}" -f sha="${MAIN_OID}" >/dev/null 2>&1; then
-            gh api --method PATCH "/repos/${GITHUB_REPOSITORY}/git/refs/heads/${BRANCH}" \
-              -F sha="${MAIN_OID}" -F force=true >/dev/null
-          fi
-
-          # PUT via Contents API → web-flow-signed commit (satisfies required_signatures).
-          CONTENT_B64=$(base64 -w0 CHANGELOG.md)
-          EXISTING_SHA=$(gh api "/repos/${GITHUB_REPOSITORY}/contents/CHANGELOG.md?ref=${BRANCH}" --jq .sha 2>/dev/null || echo "")
-
-          if [ -n "$EXISTING_SHA" ]; then
-            gh api --method PUT "/repos/${GITHUB_REPOSITORY}/contents/CHANGELOG.md" \
-              -f message="chore(changelog): update for ${VERSION}" \
-              -f content="${CONTENT_B64}" \
-              -f branch="${BRANCH}" \
-              -f sha="${EXISTING_SHA}" >/dev/null
-          else
-            gh api --method PUT "/repos/${GITHUB_REPOSITORY}/contents/CHANGELOG.md" \
-              -f message="chore(changelog): update for ${VERSION}" \
-              -f content="${CONTENT_B64}" \
-              -f branch="${BRANCH}" >/dev/null
-          fi
-
-          if ! gh pr view "${BRANCH}" --repo "${GITHUB_REPOSITORY}" --json number >/dev/null 2>&1; then
-            gh pr create \
-              --repo "${GITHUB_REPOSITORY}" \
-              --base main \
-              --head "${BRANCH}" \
-              --title "chore(changelog): update for ${VERSION}" \
-              --body "Auto-generated CHANGELOG.md refresh for release ${VERSION}. Regenerated from tag history by \`.github/scripts/generate-changelog.sh\`."
-          fi

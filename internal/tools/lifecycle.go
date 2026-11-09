@@ -153,7 +153,7 @@ func (h *Handlers) HandleReboot(ctx context.Context, req *mcp.CallToolRequest, a
 	}
 
 	if !args.Wait {
-		if err := h.Client.Reboot(nodeCtx, mode); err != nil {
+		if err := h.Client.RebootNodes(nodeCtx, mode); err != nil {
 			h.mcpLogError("talos_reboot", err)
 			return nil, nil, fmt.Errorf("reboot: %w", err)
 		}
@@ -183,7 +183,7 @@ func (h *Handlers) HandleReboot(ctx context.Context, req *mcp.CallToolRequest, a
 
 	notifyProgress(ctx, req, fmt.Sprintf("Rebooting %d node(s)", len(args.Nodes)), 2, 4)
 
-	if err := h.Client.Reboot(nodeCtx, mode); err != nil {
+	if err := h.Client.RebootNodes(nodeCtx, mode); err != nil {
 		h.mcpLogError("talos_reboot", err)
 		return nil, nil, fmt.Errorf("reboot: %w", err)
 	}
@@ -404,7 +404,7 @@ func (h *Handlers) HandleUpgrade(ctx context.Context, req *mcp.CallToolRequest, 
 
 	notifyProgress(ctx, req, "Initiating upgrade", 1, 2)
 
-	resp, err := h.Client.Upgrade(ctx, &machineapi.UpgradeRequest{
+	resp, err := h.Client.UpgradeNodes(ctx, &machineapi.UpgradeRequest{
 		Image:      args.Image,
 		Preserve:   resolvePreserve(args.Preserve),
 		Stage:      args.Stage,

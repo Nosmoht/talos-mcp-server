@@ -169,6 +169,9 @@ func TestHandleGetResource_InsecureReadsDialedClientState(t *testing.T) {
 			if !slices.Equal(gotIDs, tc.wantIDs) {
 				t.Errorf("GetResourceArgs schema: %s want ids %v got %v", tc.name, tc.wantIDs, gotIDs)
 			}
+			if !fake.closed {
+				t.Errorf("dialInsecure contract: talos_get insecure %s must Close() the dialed client", tc.name)
+			}
 		})
 	}
 }

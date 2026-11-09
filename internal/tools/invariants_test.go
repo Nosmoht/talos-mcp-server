@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"slices"
 	"strings"
 	"testing"
 
@@ -85,6 +86,28 @@ func TestInvariant_DestructiveToolsRequireConfirm(t *testing.T) {
 	}
 }
 
+// TestInvariant_DryRunToolsAcceptCallWithoutConfirm: a dry_run tool dry-runs by default, so its schema
+// must not require confirm (README.md § Safety Mechanisms, "Confirm gates"); the handler enforces
+// confirm once dry_run=false.
+func TestInvariant_DryRunToolsAcceptCallWithoutConfirm(t *testing.T) {
+	tools := listToolsWithMode(t, false)
+
+	dryRunTools := 0
+	for name, tool := range tools {
+		if !schemaHasProperty(t, tool.InputSchema, "dry_run") {
+			continue
+		}
+		dryRunTools++
+		if required := schemaRequired(t, tool.InputSchema); slices.Contains(required, "confirm") {
+			t.Errorf("README.md § Safety Mechanisms (Confirm gates): %s dry-runs by default, so its schema must not require confirm; got required %v",
+				name, required)
+		}
+	}
+	if dryRunTools == 0 {
+		t.Fatal("no tool advertises dry_run; the invariant would never catch a regression")
+	}
+}
+
 // listToolsWithMode boots a server with the given readOnly flag, connects an
 // in-memory client, and returns the ListTools result indexed by tool name.
 func listToolsWithMode(t *testing.T, readOnly bool) map[string]*mcp.Tool {
@@ -129,6 +152,22 @@ func isDestructive(tool *mcp.Tool) bool {
 		return false
 	}
 	return *tool.Annotations.DestructiveHint
+}
+
+// schemaRequired returns the schema's top-level required property names.
+func schemaRequired(t *testing.T, schema any) []string {
+	t.Helper()
+	raw, err := json.Marshal(schema)
+	if err != nil {
+		t.Fatalf("marshal schema (%T): %v", schema, err)
+	}
+	var s struct {
+		Required []string `json:"required"`
+	}
+	if err := json.Unmarshal(raw, &s); err != nil {
+		t.Fatalf("unmarshal schema (%T): %v", schema, err)
+	}
+	return s.Required
 }
 
 // schemaHasProperty returns true when the JSON schema (as received over the

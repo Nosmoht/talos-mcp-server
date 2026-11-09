@@ -467,7 +467,7 @@ type PatchConfigArgs struct {
 	Patch   string   `json:"patch" jsonschema:"Machine config patch as a JSON or YAML string (strategic merge patch or RFC 6902 JSON Patch array). Must target a single node — the tool fetches the current config\\, merges the patch\\, and submits the result."`
 	Mode    string   `json:"mode,omitempty" jsonschema:"Apply mode: 'auto' (default)\\, 'reboot'\\, 'no_reboot'\\, 'staged'\\, or 'try'."`
 	DryRun  *bool    `json:"dry_run,omitempty" jsonschema:"Run in dry-run mode without applying changes. Defaults to true. Set explicitly to false to actually apply."`
-	Confirm bool     `json:"confirm" jsonschema:"REQUIRED when dry_run is false: Must be explicitly set to true to confirm applying the patch. Not required for dry-run mode."`
+	Confirm bool     `json:"confirm,omitempty" jsonschema:"REQUIRED when dry_run is false: Must be explicitly set to true to confirm applying the patch. Not required for dry-run mode."`
 	Nodes   []string `json:"nodes,omitempty" jsonschema:"Target node IP or hostname (exactly one). Omit to use the default node from talosconfig."`
 }
 
@@ -655,7 +655,7 @@ type ApplyConfigArgs struct {
 	ConfigFile      string   `json:"config_file" jsonschema:"Absolute path to a local machine config file (YAML or JSON). Must be absolute\\, no '..' components\\, regular file (symlinks are rejected)\\, max 1 MiB. The file is read server-side — secrets never enter the conversation context."`
 	Mode            string   `json:"mode,omitempty" jsonschema:"Apply mode: 'auto' (default)\\, 'reboot'\\, 'no_reboot'\\, 'staged'\\, or 'try'."`
 	DryRun          *bool    `json:"dry_run,omitempty" jsonschema:"Run in dry-run mode without applying changes. Defaults to true. Set explicitly to false to actually apply."`
-	Confirm         bool     `json:"confirm" jsonschema:"REQUIRED when dry_run is false: Must be explicitly set to true to confirm applying the config. Not required for dry-run mode."`
+	Confirm         bool     `json:"confirm,omitempty" jsonschema:"REQUIRED when dry_run is false: Must be explicitly set to true to confirm applying the config. Not required for dry-run mode."`
 	Nodes           []string `json:"nodes,omitempty" jsonschema:"Authenticated mode: target node IP or hostname (exactly one). Omit to use the default node from talosconfig. Mutually exclusive with endpoint."`
 	Insecure        bool     `json:"insecure,omitempty" jsonschema:"Maintenance-mode insecure connection (bypasses mTLS). Requires endpoint (bare IP) and TALOS_MCP_ENABLE_INSECURE=true. The transport is TLS-encrypted; server cert verified by cert_fingerprint if provided\\, otherwise accepted without verification."`
 	Endpoint        string   `json:"endpoint,omitempty" jsonschema:"Required when insecure=true: bare IPv4 or IPv6 address of the maintenance-mode node. No port\\, no scheme\\, no hostname. Ignored otherwise."`

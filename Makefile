@@ -28,12 +28,12 @@ test-integration: build ## Run integration tests against a live Talos cluster (r
 bench: ## Run Go benchmarks (use BENCH=pattern to filter, e.g. BENCH=Marshal)
 	go test -bench=$${BENCH:-.} -benchmem -run='^$$' ./internal/tools/
 
-lint: ## Run golangci-lint (install: curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin v2.11.4)
+lint: ## Run golangci-lint (install: curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin v2.15.0)
 	@GOPATH=$$(go env GOPATH); \
 	LINT=$$(command -v golangci-lint 2>/dev/null || echo "$$GOPATH/bin/golangci-lint"); \
 	if [ ! -x "$$LINT" ]; then \
-		echo "golangci-lint not found. Install v2.11.4:"; \
-		echo "  curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b \$$(go env GOPATH)/bin v2.11.4"; \
+		echo "golangci-lint not found. Install v2.15.0:"; \
+		echo "  curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b \$$(go env GOPATH)/bin v2.15.0"; \
 		exit 1; \
 	fi; \
 	$$LINT run

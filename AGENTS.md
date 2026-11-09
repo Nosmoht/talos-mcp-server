@@ -579,11 +579,15 @@ cp .claude/hooks/pre-commit .git/hooks/pre-commit && chmod +x .git/hooks/pre-com
 ### Review flow
 
 1. **Implement** in a worktree (see above).
-2. **Review** — invoke `staff-reviewer` agent. Artifact: `.claude/reviews/{change-id}/review.md`
+2. **Review** — create `<main checkout>/.claude/reviews/{change-id}/` and an empty `.review-open` marker in it, then invoke `staff-reviewer` agent in the foreground. Artifact: `<main checkout>/.claude/reviews/{change-id}/review.md`
+   - Pass the change-id, the path of the worktree holding the change, the main checkout's path, the diff (inline or as a file under `.work/`), and the `make check` / test results. The commit hooks read `.claude/reviews/` in the main checkout, also for commits from a worktree.
+   - Reviewer agents have no shell. Each may write only its own artifact file into a change directory that carries the `.review-open` marker; `.claude/hooks/review-write-guard.sh` enforces this through the agent's frontmatter hook, loaded from the main checkout. Writes under `.claude/` ask for permission, so a reviewer in the background cannot save its artifact.
    - `status: approved` → proceed to commit
    - `status: escalate` → invoke each listed escalation reviewer
-3. **Escalation** (if needed) — invoke the domain reviewer. Artifact: `.claude/reviews/{change-id}/review-{type}.md`
-4. **Commit** — only once all required artifacts show `status: approved`.
+3. **Escalation** (if needed) — invoke the domain reviewer. Artifact: `<main checkout>/.claude/reviews/{change-id}/review-{type}.md`
+4. **Commit** — once the gate in `.claude/hooks/require-review.sh` passes: `review.md` is `approved`, or `escalate` with every escalation review approved, including escalations an escalation reviewer chains on (e.g. `review-architecture.md` → `review-security.md`). Then delete the `.review-open` marker; delete it as well when a change is abandoned. While several markers exist, a reviewer can write its own artifact file into any of those changes, so keep one review open at a time.
+
+Claude Code loads agent definitions from the checkout the session runs in, so a change to `.claude/agents/` or `.claude/hooks/` can alter the reviewers that review it. Such a change also needs a human review before merge.
 
 ### PR-level review before merge
 
@@ -601,11 +605,11 @@ A PR that lacks an existing GitHub approval must be reviewed by a subagent (typi
 
 | Type | Reviewer | Triggers |
 |---|---|---|
-| `operational-safety` | `operational-safety-reviewer` | New/modified mutating tool, guard logic, audit logging, read-only enforcement |
+| `operational-safety` | `operational-safety-reviewer` | New/modified mutating tool, guard logic or safety defaults, audit logging (AUDIT / AUDIT_OUTCOME), read-only enforcement, safety-profile seeding |
 | `provenance` | `provenance-reviewer` | `go.mod` or `go.sum` modified, new external import |
 | `compatibility` | `compatibility-reviewer` | Tool/prompt/resource signature change, SDK bump, tool removal |
 | `architecture` | `principal-architect-reviewer` | New package, >3 packages modified, structural refactor, API surface addition |
-| `security` | `security-reviewer` | Auth/token handling, input validation, hook/enforcement logic |
+| `security` | `security-reviewer` | Auth/token handling, input validation, maintenance-mode (`insecure=true`) paths, META key safelist, blocked config paths, hook/enforcement logic |
 | `performance` | `performance-reviewer` | gRPC streaming, goroutine lifecycle, hot-path caching |
 
 ### Change-id convention

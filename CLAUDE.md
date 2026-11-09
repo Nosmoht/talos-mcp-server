@@ -80,7 +80,7 @@ Minimum labels: one `type:`, one `priority:`, `needs: triage`. Full taxonomy: [A
 
 Every change to tracked files requires a review artifact before commit.
 
-Invoke `staff-reviewer` after implementing. Artifact: `.claude/reviews/<change-id>/review.md`
+Invoke `staff-reviewer` after implementing. Artifact: `.claude/reviews/<change-id>/review.md` in the main checkout (also for worktree commits) — how to invoke reviewers: [AGENTS.md § Review flow](./AGENTS.md#review-flow).
 - `status: approved` → commit · `status: escalate` → invoke each listed reviewer
 
 Full review flow and escalation criteria: [AGENTS.md § Review Governance](./AGENTS.md#review-governance).

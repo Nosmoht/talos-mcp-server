@@ -57,11 +57,13 @@ These paths have no transport authentication; the node allowlist is the only net
 - [ ] **Enum exhaustive switch**: action and mode enums go through a `switch` with a `default` error case and are never passed through raw.
 - [ ] **No shell interpolation**: no `exec.Command("sh", "-c", ...)` or similar with argument content.
 - [ ] **Patch content**: `talos_patch_config` patches travel as bytes to gRPC and are never executed locally, and the reliance on server-side schema validation is documented; blocked config paths (`TALOS_MCP_BLOCKED_CONFIG_PATHS`) are enforced on the authenticated path.
+- [ ] **Output trust boundaries**: the points in AGENTS.md § Output trust boundaries hold, including UTF-8 and non-empty validation of `args.Patch` before the `[]byte` cast.
 - [ ] **Node addresses**: node values go to the machinery SDK and are never interpolated into shell commands or filesystem paths.
 
 ### Hook and enforcement mechanisms
 
-- [ ] **Hook script injection**: hook scripts that use environment variables or git metadata are free of `$(...)` and unquoted expansions.
+- [ ] **Hook script injection**: environment variables, git metadata and hook input never reach `eval`, `sh -c` or an unquoted expansion; `$(...)` results are quoted.
+- [ ] **Reviewer confinement**: reviewer agents keep `tools` without Bash, Edit or Agent and keep their `review-write-guard.sh` frontmatter hook; `.claude/settings.json` keeps the `review-write-guard.sh --agent` hook and allows no new write path for reviewers; `.claude/hooks/review-write-guard.test.sh` covers any guard change.
 - [ ] **YAML parsing in hooks**: `get_yaml_list` in `.claude/hooks/require-review.sh` parses through python3; YAML values are never passed to shell `eval`.
 - [ ] **Pre-commit hook**: the hook reads artifact content and never executes it.
 - [ ] **PreToolUse hook**: the JSON `deny` response is escaped; no user-controlled content can break it.

@@ -35,6 +35,15 @@
         ]
       },
       {
+        "matcher": "Write|Edit|MultiEdit|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/review-write-guard.sh\" --agent || exit 2"
+          }
+        ]
+      },
+      {
         "matcher": "mcp__github__push_files",
         "hooks": [
           {

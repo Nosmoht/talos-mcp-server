@@ -209,8 +209,8 @@ A new mutating tool always gets an operational-safety review, even when the guar
 
 <example>
 talos_health gains an optional parameter: HealthArgs gets an omitempty field whose zero value means "use talosconfig default".
-→ status: approved, escalations: []
-An optional omitempty field is backward-compatible, so no compatibility escalation; no new package, guard change, or dependency change.
+→ status: escalate, escalations: [architecture]
+A modified tool is an API surface change. The optional omitempty field is backward-compatible, so no compatibility escalation; no new package, guard change, or dependency change.
 </example>
 
 <example>

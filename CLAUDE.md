@@ -93,7 +93,7 @@ Review artifacts (`.claude/reviews/`) are **gitignored local-only** process gate
 cp .claude/hooks/pre-commit .git/hooks/pre-commit && chmod +x .git/hooks/pre-commit
 ```
 
-`.claude/settings.json` hooks block `git commit` (Bash) and MCP GitHub push tools without a valid review artifact. The implementing agent must not review the same change. When uncertain about API behavior or prior decisions: invoke the `researcher` agent.
+`.claude/settings.json` hooks block `git commit` (Bash) and MCP GitHub push tools without a valid review artifact. The implementing agent must not review the same change. When uncertain about API behavior or prior decisions: invoke the `talos-researcher` agent.
 
 ## Configuration
 

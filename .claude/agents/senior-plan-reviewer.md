@@ -39,7 +39,7 @@ These are the main angles, not a closed list: report anything that would cause i
 
 ## Output
 
-Write the review artifact with the Write tool to `<main checkout>/.claude/reviews/<change-id>/plan-review.md`; the commit hooks read it there, also for commits made from a worktree. A hook rejects every other path and requires the change directory and its `.review-open` marker to exist already (the caller creates both). The pre-commit hook parses the YAML frontmatter, so keep the field names and values exactly as below. Finish with one line naming the status and the artifact path.
+Write the review artifact with the Write tool to `<main checkout>/.claude/reviews/<change-id>/plan-review.md`; the caller reads it there. A hook rejects every other path and requires the change directory and its `.review-open` marker to exist already (the caller creates both). The caller parses the YAML frontmatter, so keep the field names and values exactly as below. Finish with one line naming the status and the artifact path.
 
 ```yaml
 ---

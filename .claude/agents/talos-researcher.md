@@ -1,5 +1,5 @@
 ---
-name: researcher
+name: talos-researcher
 description: >-
   Read-only research agent for resolving uncertainty. Searches repo first,
   then official documentation. Use when implementation or review encounters unknowns.

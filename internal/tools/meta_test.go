@@ -372,6 +372,9 @@ func TestHandleMeta_InsecureMutationReachesDialedClient(t *testing.T) {
 			if got != tc.want {
 				t.Errorf("MetaArgs schema: %s of key %s want %+v got %+v", tc.name, keyArg, tc.want, got)
 			}
+			if !fake.closed {
+				t.Errorf("dialInsecure contract: talos_meta insecure %s must Close() the dialed client", tc.name)
+			}
 		})
 	}
 }

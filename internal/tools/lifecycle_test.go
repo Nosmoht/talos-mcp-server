@@ -1374,6 +1374,9 @@ func TestHandleApplyConfig_InsecureRequestReachesDialedClient(t *testing.T) {
 			if got != tc.want {
 				t.Errorf("insecure-mode.md §Confirm semantics / ApplyConfigArgs schema: want %+v got %+v", tc.want, got)
 			}
+			if !fake.closed {
+				t.Errorf("dialInsecure contract: talos_apply_config insecure %s must Close() the dialed client", tc.name)
+			}
 		})
 	}
 }
@@ -1399,7 +1402,8 @@ func TestHandleApplyConfig_InsecureOutcomeAudited(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			logBuf := captureDefaultSlog(t)
-			h := insecureHandlers(t, &recordingDialer{client: &fakeMaintenanceClient{rpcErr: tc.rpcErr}})
+			fake := &fakeMaintenanceClient{rpcErr: tc.rpcErr}
+			h := insecureHandlers(t, &recordingDialer{client: fake})
 
 			_, _, err := h.HandleApplyConfig(context.Background(), nil, ApplyConfigArgs{
 				ConfigFile: configFile,
@@ -1411,6 +1415,9 @@ func TestHandleApplyConfig_InsecureOutcomeAudited(t *testing.T) {
 			}
 			if got := auditOutcomeOf(logBuf.String(), "talos_apply_config"); got != tc.wantOutcome {
 				t.Errorf("insecure-mode.md §Audit pairing: AUDIT_OUTCOME outcome want %q got %q", tc.wantOutcome, got)
+			}
+			if !fake.closed {
+				t.Errorf("dialInsecure contract: talos_apply_config insecure %s must Close() the dialed client", tc.name)
 			}
 		})
 	}

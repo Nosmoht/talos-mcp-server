@@ -53,7 +53,8 @@ func TestHandleVersion_InsecureReturnsDialedClientVersion(t *testing.T) {
 	t.Parallel()
 
 	want := &machineapi.VersionResponse{}
-	h := insecureHandlers(t, &recordingDialer{client: &fakeMaintenanceClient{version: want}})
+	fake := &fakeMaintenanceClient{version: want}
+	h := insecureHandlers(t, &recordingDialer{client: fake})
 
 	_, out, err := h.HandleVersion(context.Background(), nil, VersionArgs{Insecure: true, Endpoint: insecureTestEndpoint})
 	if err != nil {
@@ -61,6 +62,9 @@ func TestHandleVersion_InsecureReturnsDialedClientVersion(t *testing.T) {
 	}
 	if out != want {
 		t.Errorf("talos_version insecure: want the dialed client's response %p got %v", want, out)
+	}
+	if !fake.closed {
+		t.Errorf("dialInsecure contract: talos_version insecure must Close() the dialed client")
 	}
 }
 

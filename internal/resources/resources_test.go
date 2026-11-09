@@ -1,9 +1,26 @@
 package resources
 
 import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"slices"
+	"strings"
 	"testing"
 
+	"github.com/cosi-project/runtime/pkg/resource"
+	"github.com/cosi-project/runtime/pkg/resource/meta"
+	"github.com/cosi-project/runtime/pkg/resource/meta/spec"
+	"github.com/cosi-project/runtime/pkg/state"
+	"github.com/cosi-project/runtime/pkg/state/impl/inmem"
+	"github.com/cosi-project/runtime/pkg/state/impl/namespaced"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	machineapi "github.com/siderolabs/talos/pkg/machinery/api/machine"
+	runtimeres "github.com/siderolabs/talos/pkg/machinery/resources/runtime"
+	"google.golang.org/grpc"
+
+	"github.com/Nosmoht/talos-mcp-server/internal/talos"
 )
 
 func TestParseCOSIURI(t *testing.T) {
@@ -125,4 +142,124 @@ func TestRegister_NoPanic(t *testing.T) {
 		}
 	}()
 	Register(server, nil, nil)
+}
+
+// fakeClient serves resource kinds from a map and resources from state.
+type fakeClient struct {
+	state state.State
+	kinds map[resource.Type]*meta.ResourceDefinition
+}
+
+var _ Client = (*fakeClient)(nil)
+
+func (f *fakeClient) Version(context.Context, ...grpc.CallOption) (*machineapi.VersionResponse, error) {
+	return nil, errors.New("fakeClient.Version not used by these tests")
+}
+
+func (f *fakeClient) ResolveResourceKind(_ context.Context, _ *resource.Namespace, resourceType resource.Type) (*meta.ResourceDefinition, error) {
+	if rd, ok := f.kinds[resourceType]; ok {
+		return rd, nil
+	}
+	return nil, fmt.Errorf("unknown resource type %q", resourceType)
+}
+
+func (f *fakeClient) COSIState() state.State { return f.state }
+
+const testNode = "192.0.2.5"
+
+// newCOSIHandlers returns handlers allowing only testNode whose client holds
+// MetaKey resources with seededIDs in an in-memory COSI state.
+func newCOSIHandlers(t *testing.T, seededIDs []string) *Handlers {
+	t.Helper()
+
+	ctx := context.Background()
+	st := state.WrapCore(namespaced.NewState(inmem.Build))
+	for _, id := range seededIDs {
+		if err := st.Create(ctx, runtimeres.NewMetaKey(runtimeres.NamespaceName, id)); err != nil {
+			t.Fatalf("setup: seed MetaKey %s: %v", id, err)
+		}
+	}
+	rd, err := meta.NewResourceDefinition(spec.ResourceDefinitionSpec{
+		Type:             runtimeres.MetaKeyType,
+		DefaultNamespace: runtimeres.NamespaceName,
+	})
+	if err != nil {
+		t.Fatalf("setup: resource definition: %v", err)
+	}
+	allow, err := talos.ParseNodeAllowlist(testNode)
+	if err != nil {
+		t.Fatalf("setup: parse allowlist: %v", err)
+	}
+
+	return &Handlers{
+		Client:       &fakeClient{state: st, kinds: map[resource.Type]*meta.ResourceDefinition{"MetaKey": rd}},
+		AllowedNodes: allow,
+	}
+}
+
+// TestHandleCOSIResource_NodeOutsideAllowlistRefused: a resource URI naming a
+// node outside TALOS_MCP_ALLOWED_NODES is refused (README §Configuration).
+func TestHandleCOSIResource_NodeOutsideAllowlistRefused(t *testing.T) {
+	t.Parallel()
+
+	h := newCOSIHandlers(t, nil)
+	_, err := h.handleCOSIResource(context.Background(), &mcp.ReadResourceRequest{
+		Params: &mcp.ReadResourceParams{URI: "talos://192.0.2.99/resource/runtime/MetaKey"},
+	})
+	if err == nil || !strings.Contains(err.Error(), "node not allowed") {
+		t.Errorf("README TALOS_MCP_ALLOWED_NODES: want node-not-allowed refusal, got %v", err)
+	}
+}
+
+// TestHandleCOSIResource_ReadsClientState: a resource URI with an id returns
+// that resource and one without an id lists all of the type (talos-resource-get
+// and talos-resource-list templates).
+func TestHandleCOSIResource_ReadsClientState(t *testing.T) {
+	t.Parallel()
+
+	seededIDs := []string{"seeded-a", "seeded-b"}
+	h := newCOSIHandlers(t, seededIDs)
+
+	tests := []struct {
+		name    string
+		uri     string
+		wantIDs []string
+	}{
+		{name: "get by id", uri: "talos://" + testNode + "/resource/runtime/MetaKey/" + seededIDs[1], wantIDs: seededIDs[1:]},
+		{name: "list", uri: "talos://" + testNode + "/resource/runtime/MetaKey", wantIDs: seededIDs},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			res, err := h.handleCOSIResource(context.Background(), &mcp.ReadResourceRequest{
+				Params: &mcp.ReadResourceParams{URI: tc.uri},
+			})
+			if err != nil {
+				t.Fatalf("%s %s: unexpected error %v", tc.name, tc.uri, err)
+			}
+			if len(res.Contents) == 0 {
+				t.Fatalf("%s %s: empty resource contents", tc.name, tc.uri)
+			}
+
+			var payload struct {
+				Items []struct {
+					Metadata struct {
+						ID string `json:"id"`
+					} `json:"metadata"`
+				} `json:"items"`
+			}
+			if err := json.Unmarshal([]byte(res.Contents[0].Text), &payload); err != nil {
+				t.Fatalf("%s: decode resource payload: %v", tc.name, err)
+			}
+			var gotIDs []string
+			for _, item := range payload.Items {
+				gotIDs = append(gotIDs, item.Metadata.ID)
+			}
+			if !slices.Equal(gotIDs, tc.wantIDs) {
+				t.Errorf("resource template %s: want ids %v got %v", tc.name, tc.wantIDs, gotIDs)
+			}
+		})
+	}
 }

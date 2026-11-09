@@ -2,8 +2,17 @@ package tools
 
 import (
 	"context"
+	"slices"
 	"strings"
 	"testing"
+
+	"github.com/cosi-project/runtime/pkg/resource"
+	"github.com/cosi-project/runtime/pkg/resource/meta"
+	"github.com/cosi-project/runtime/pkg/resource/meta/spec"
+	"github.com/cosi-project/runtime/pkg/state"
+	"github.com/cosi-project/runtime/pkg/state/impl/inmem"
+	"github.com/cosi-project/runtime/pkg/state/impl/namespaced"
+	runtimeres "github.com/siderolabs/talos/pkg/machinery/resources/runtime"
 
 	"github.com/Nosmoht/talos-mcp-server/internal/talos"
 )
@@ -94,6 +103,71 @@ func TestHandleGetResource_InsecureGuards(t *testing.T) {
 			}
 			if !strings.Contains(err.Error(), tt.wantErr) {
 				t.Errorf("expected error containing %q, got: %v", tt.wantErr, err)
+			}
+		})
+	}
+}
+
+// TestHandleGetResource_InsecureReadsDialedClientState: in maintenance mode
+// talos_get resolves the kind and reads resources through the dialed client's
+// COSI state (GetResourceArgs schema: resource_id selects one, omitted lists all).
+func TestHandleGetResource_InsecureReadsDialedClientState(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	st := state.WrapCore(namespaced.NewState(inmem.Build))
+	seededIDs := []string{"seeded-a", "seeded-b"}
+	for _, id := range seededIDs {
+		if err := st.Create(ctx, runtimeres.NewMetaKey(runtimeres.NamespaceName, id)); err != nil {
+			t.Fatalf("setup: seed MetaKey %s: %v", id, err)
+		}
+	}
+	rd, err := meta.NewResourceDefinition(spec.ResourceDefinitionSpec{
+		Type:             runtimeres.MetaKeyType,
+		DefaultNamespace: runtimeres.NamespaceName,
+	})
+	if err != nil {
+		t.Fatalf("setup: resource definition: %v", err)
+	}
+
+	tests := []struct {
+		name       string
+		resourceID string
+		wantIDs    []string
+	}{
+		{name: "get by id", resourceID: seededIDs[1], wantIDs: seededIDs[1:]},
+		{name: "list", resourceID: "", wantIDs: seededIDs},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			fake := &fakeMaintenanceClient{state: st, kinds: map[resource.Type]*meta.ResourceDefinition{"MetaKey": rd}}
+			h := insecureHandlers(t, &recordingDialer{client: fake})
+
+			_, out, err := h.HandleGetResource(ctx, nil, GetResourceArgs{
+				ResourceType: "MetaKey",
+				ResourceID:   tc.resourceID,
+				Namespace:    runtimeres.NamespaceName,
+				Insecure:     true,
+				Endpoint:     insecureTestEndpoint,
+			})
+			if err != nil {
+				t.Fatalf("talos_get insecure %s: unexpected error %v", tc.name, err)
+			}
+			list, ok := out.(resourceList)
+			if !ok {
+				t.Fatalf("talos_get insecure %s: structured output type %T, want resourceList", tc.name, out)
+			}
+			var gotIDs []string
+			for _, item := range list.Items {
+				md, _ := item["metadata"].(map[string]any)
+				id, _ := md["id"].(string)
+				gotIDs = append(gotIDs, id)
+			}
+			if !slices.Equal(gotIDs, tc.wantIDs) {
+				t.Errorf("GetResourceArgs schema: %s want ids %v got %v", tc.name, tc.wantIDs, gotIDs)
 			}
 		})
 	}

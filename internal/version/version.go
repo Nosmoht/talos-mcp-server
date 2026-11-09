@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-// MinSupported is the oldest Talos minor version where all 19 gRPC methods
+// MinSupported is the oldest Talos minor version where all gRPC methods
 // used by this server (including ResolveResourceKind) are confirmed stable.
 var MinSupported = TalosVersion{Major: 1, Minor: 9, Patch: 0}
 

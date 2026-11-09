@@ -13,14 +13,13 @@ import (
 
 	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
-	talosclient "github.com/siderolabs/talos/pkg/machinery/client"
 
 	"github.com/Nosmoht/talos-mcp-server/internal/talos"
 )
 
 // Handlers holds the Talos client and exposes MCP tool handler methods.
 type Handlers struct {
-	Client           talos.ClientInterface
+	Client           Client
 	AllowedNodes     *talos.NodeAllowlist
 	AllowedPaths     []string // set once at startup; read-only afterward
 	SkipVersionCheck bool     // set once at startup; read-only afterward
@@ -50,6 +49,9 @@ type Handlers struct {
 	// logger is the active slog.Logger for MCP log notifications.
 	// It is swapped atomically per session in stdio mode.
 	logger atomic.Pointer[slog.Logger]
+	// dialMaintenance replaces dialTalosMaintenance in tests; nil selects it.
+	// Unexported so the TLS/fingerprint dial cannot be swapped from outside the package.
+	dialMaintenance func(ctx context.Context, endpoint string, fingerprint []byte) (maintenanceClient, error)
 }
 
 // nodePatchMu returns (or lazily creates) the per-node mutex that serialises
@@ -296,8 +298,25 @@ func (h *Handlers) canonicalizeAndCheckInsecure(endpoint, certFingerprint string
 // The caller MUST Close() the returned client when done — the per-call factory
 // shape is intentional. Maintenance-mode endpoints are short-lived and each
 // call targets a different fresh node IP, so a shared pool would buy nothing.
-func (h *Handlers) dialInsecure(ctx context.Context, canonicalEndpoint string, fp []byte) (*talosclient.Client, error) {
-	return talos.NewInsecureClient(ctx, canonicalEndpoint, fp)
+func (h *Handlers) dialInsecure(ctx context.Context, canonicalEndpoint string, fp []byte) (maintenanceClient, error) {
+	return h.maintenanceDialer()(ctx, canonicalEndpoint, fp)
+}
+
+func (h *Handlers) maintenanceDialer() func(ctx context.Context, endpoint string, fingerprint []byte) (maintenanceClient, error) {
+	if h.dialMaintenance != nil {
+		return h.dialMaintenance
+	}
+	return dialTalosMaintenance
+}
+
+// dialTalosMaintenance returns an untyped nil on error: a nil *talos.Client
+// wrapped in maintenanceClient compares non-nil.
+func dialTalosMaintenance(ctx context.Context, endpoint string, fingerprint []byte) (maintenanceClient, error) {
+	c, err := talos.NewInsecureClient(ctx, endpoint, fingerprint)
+	if err != nil {
+		return nil, err
+	}
+	return c, nil
 }
 
 // notifyProgress sends a progress notification to the client if the request

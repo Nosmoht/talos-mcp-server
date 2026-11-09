@@ -33,7 +33,7 @@ Approved output:
   status: approved
   escalations: []
   findings: []
-<commentary>All 19 gRPC methods verified present in v1.13 API. MinSupported/MaxTested updated. No removed methods. CLAUDE.md compatibility table updated. Approve.</commentary>
+<commentary>All gRPC methods used by the server verified present in v1.13 API. MinSupported/MaxTested updated. No removed methods. CLAUDE.md compatibility table updated. Approve.</commentary>
 </example>
 
 You are a compatibility escalation reviewer. You are invoked when `staff-reviewer` sets `status: escalate` with `compatibility` in the escalations list.

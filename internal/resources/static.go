@@ -32,7 +32,7 @@ func (h *Handlers) handleVersion(ctx context.Context, _ *mcp.ReadResourceRequest
 }
 
 func (h *Handlers) handleResourceDefinitions(ctx context.Context, _ *mcp.ReadResourceRequest) (*mcp.ReadResourceResult, error) {
-	list, err := safe.StateListAll[*meta.ResourceDefinition](ctx, h.Client.COSI)
+	list, err := safe.StateListAll[*meta.ResourceDefinition](ctx, h.Client.COSIState())
 	if err != nil {
 		return nil, fmt.Errorf("list resource definitions: %w", err)
 	}

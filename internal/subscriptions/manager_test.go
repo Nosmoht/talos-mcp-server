@@ -14,16 +14,8 @@ import (
 	"github.com/cosi-project/runtime/pkg/resource/meta"
 	"github.com/cosi-project/runtime/pkg/resource/meta/spec"
 	cosistate "github.com/cosi-project/runtime/pkg/state"
-	"google.golang.org/grpc"
-
-	clusterapi "github.com/siderolabs/talos/pkg/machinery/api/cluster"
-	commonapi "github.com/siderolabs/talos/pkg/machinery/api/common"
-	machineapi "github.com/siderolabs/talos/pkg/machinery/api/machine"
-	talosclient "github.com/siderolabs/talos/pkg/machinery/client"
-	"io"
 
 	"github.com/Nosmoht/talos-mcp-server/internal/talos"
-	"github.com/Nosmoht/talos-mcp-server/internal/version"
 )
 
 // ── Fakes ────────────────────────────────────────────────────────────────────
@@ -106,14 +98,14 @@ func (f *fakeCore) WatchKindAggregated(ctx context.Context, _ resource.Kind, ch 
 	return nil
 }
 
-// fakeClient is a minimal talos.ClientInterface that exposes a fakeCore via
-// COSIState() and resolves resource kinds from a static map.
+// fakeClient is a Source that exposes a fakeCore via COSIState() and
+// resolves resource kinds from a static map.
 type fakeClient struct {
 	state *cosistate.State
 	kinds map[string]*meta.ResourceDefinition // rawType → canonical definition
 }
 
-var _ talos.ClientInterface = (*fakeClient)(nil)
+var _ Source = (*fakeClient)(nil)
 
 func (f *fakeClient) COSIState() cosistate.State { return *f.state }
 
@@ -122,80 +114,6 @@ func (f *fakeClient) ResolveResourceKind(_ context.Context, _ *resource.Namespac
 		return rd, nil
 	}
 	return nil, fmt.Errorf("unknown resource type %q", rawType)
-}
-
-// All other ClientInterface methods are unused; unreachable panics keep
-// tests honest.
-func (f *fakeClient) Version(context.Context, ...grpc.CallOption) (*machineapi.VersionResponse, error) {
-	panic("Version unused")
-}
-func (f *fakeClient) ServiceList(context.Context, ...grpc.CallOption) (*machineapi.ServiceListResponse, error) {
-	panic("ServiceList unused")
-}
-func (f *fakeClient) ServiceStart(context.Context, string, ...grpc.CallOption) (*machineapi.ServiceStartResponse, error) {
-	panic("ServiceStart unused")
-}
-func (f *fakeClient) ServiceStop(context.Context, string, ...grpc.CallOption) (*machineapi.ServiceStopResponse, error) {
-	panic("ServiceStop unused")
-}
-func (f *fakeClient) ServiceRestart(context.Context, string, ...grpc.CallOption) (*machineapi.ServiceRestartResponse, error) {
-	panic("ServiceRestart unused")
-}
-func (f *fakeClient) Containers(context.Context, string, commonapi.ContainerDriver, ...grpc.CallOption) (*machineapi.ContainersResponse, error) {
-	panic("Containers unused")
-}
-func (f *fakeClient) Processes(context.Context, ...grpc.CallOption) (*machineapi.ProcessesResponse, error) {
-	panic("Processes unused")
-}
-func (f *fakeClient) ClusterHealthCheck(context.Context, time.Duration, *clusterapi.ClusterInfo) (clusterapi.ClusterService_HealthCheckClient, error) {
-	panic("ClusterHealthCheck unused")
-}
-func (f *fakeClient) Reboot(context.Context, ...talosclient.RebootMode) error { panic("Reboot unused") }
-func (f *fakeClient) UpgradeWithOptions(context.Context, ...talosclient.UpgradeOption) (*machineapi.UpgradeResponse, error) {
-	panic("UpgradeWithOptions unused")
-}
-func (f *fakeClient) Rollback(context.Context) error { panic("Rollback unused") }
-func (f *fakeClient) ApplyConfiguration(context.Context, *machineapi.ApplyConfigurationRequest, ...grpc.CallOption) (*machineapi.ApplyConfigurationResponse, error) {
-	panic("ApplyConfiguration unused")
-}
-func (f *fakeClient) ResetGenericWithResponse(context.Context, *machineapi.ResetRequest) (*machineapi.ResetResponse, error) {
-	panic("ResetGenericWithResponse unused")
-}
-func (f *fakeClient) Logs(context.Context, string, commonapi.ContainerDriver, string, bool, int32) (machineapi.MachineService_LogsClient, error) {
-	panic("Logs unused")
-}
-func (f *fakeClient) Dmesg(context.Context, bool, bool) (machineapi.MachineService_DmesgClient, error) {
-	panic("Dmesg unused")
-}
-func (f *fakeClient) EventsWatch(context.Context, func(<-chan talosclient.Event), ...talosclient.EventsOptionFunc) error {
-	panic("EventsWatch unused")
-}
-func (f *fakeClient) LS(context.Context, *machineapi.ListRequest) (machineapi.MachineService_ListClient, error) {
-	panic("LS unused")
-}
-func (f *fakeClient) Read(context.Context, string) (io.ReadCloser, error) { panic("Read unused") }
-func (f *fakeClient) EtcdMemberList(context.Context, *machineapi.EtcdMemberListRequest, ...grpc.CallOption) (*machineapi.EtcdMemberListResponse, error) {
-	panic("EtcdMemberList unused")
-}
-func (f *fakeClient) EtcdStatus(context.Context, ...grpc.CallOption) (*machineapi.EtcdStatusResponse, error) {
-	panic("EtcdStatus unused")
-}
-func (f *fakeClient) EtcdSnapshot(context.Context, *machineapi.EtcdSnapshotRequest, ...grpc.CallOption) (io.ReadCloser, error) {
-	panic("EtcdSnapshot unused")
-}
-func (f *fakeClient) GetNodeVersion(context.Context, string) (*version.TalosVersion, error) {
-	panic("GetNodeVersion unused")
-}
-func (f *fakeClient) GetClusterVersion(context.Context) (*version.TalosVersion, error) {
-	panic("GetClusterVersion unused")
-}
-func (f *fakeClient) InvalidateVersionCache()    { panic("InvalidateVersionCache unused") }
-func (f *fakeClient) Ping(context.Context) error { panic("Ping unused") }
-func (f *fakeClient) MetaWrite(context.Context, uint8, []byte, ...grpc.CallOption) error {
-	panic("MetaWrite unused")
-}
-func (f *fakeClient) MetaDelete(context.Context, uint8, ...grpc.CallOption) error {
-	panic("MetaDelete unused")
 }
 
 // ── Test setup helpers ──────────────────────────────────────────────────────

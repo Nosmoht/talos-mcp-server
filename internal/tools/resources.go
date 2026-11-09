@@ -121,7 +121,7 @@ func (h *Handlers) HandleGetResource(ctx context.Context, _ *mcp.CallToolRequest
 			return nil, nil, err
 		}
 		defer func() { _ = client.Close() }()
-		return h.getResourceFromCOSI(ctx, args, client.COSI, client.ResolveResourceKind, &outcome, &finalErr)
+		return h.getResourceFromCOSI(ctx, args, client.COSIState(), client.ResolveResourceKind, &outcome, &finalErr)
 	}
 
 	ctx, err := talos.WithNodes(ctx, args.Nodes, h.AllowedNodes)

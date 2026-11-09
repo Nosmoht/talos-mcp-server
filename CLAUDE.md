@@ -26,7 +26,7 @@ Quorum/member-count invariants for preflight helpers: see `.claude/rules/quorum-
 
 ### Safety Profile
 
-`TALOS_MCP_SAFETY_PROFILE` seeds five gating flags at startup. Individual env vars override the profile. When the profile var is unset, each flag defaults to its own env var (backwards-compatible).
+`TALOS_MCP_SAFETY_PROFILE` seeds the gating flags in the table below at startup. Individual env vars override the profile. When the profile var is unset, each flag defaults to its own env var (backwards-compatible).
 
 | Profile | `READ_ONLY` | `ALLOW_CLUSTER_WIDE` | `ENABLE_GEN` | `SKIP_VERSION_CHECK` | `ENABLE_INSECURE` |
 |---|---|---|---|---|---|

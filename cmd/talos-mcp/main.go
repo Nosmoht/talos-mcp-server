@@ -14,9 +14,10 @@
 //   - TALOS_MCP_ENABLE_GEN: set to "true" to register offline gen_* tools
 //     (reserved for Phase E; no tools consume the flag yet)
 //   - TALOS_MCP_SAFETY_PROFILE: conservative|standard|expert preset that seeds
-//     the four gating flags above. Individual flags override the profile. When
-//     unset, the four flags default to their individual-env-var values
-//     (backwards-compatible).
+//     TALOS_MCP_READ_ONLY, TALOS_MCP_ALLOW_CLUSTER_WIDE, TALOS_MCP_ENABLE_GEN,
+//     TALOS_MCP_SKIP_VERSION_CHECK and TALOS_MCP_ENABLE_INSECURE. Individual
+//     flags override the profile. When unset, each flag defaults to its own
+//     env var (backwards-compatible).
 //   - TALOS_MCP_HTTP_ADDR: if set (e.g. ":8080"), serve HTTP instead of stdio
 //   - TALOS_MCP_AUTH_TOKEN: required bearer token when HTTP mode is active
 //   - TALOS_MCP_ALLOWED_NODES: comma-separated list of permitted node IPs, hostnames,

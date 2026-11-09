@@ -14,7 +14,6 @@ import (
 	"github.com/cosi-project/runtime/pkg/resource/protobuf"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	machineapi "github.com/siderolabs/talos/pkg/machinery/api/machine"
-	talosclient "github.com/siderolabs/talos/pkg/machinery/client"
 	"github.com/siderolabs/talos/pkg/machinery/config/configpatcher"
 	talosconfig "github.com/siderolabs/talos/pkg/machinery/resources/config"
 	"go.yaml.in/yaml/v4"
@@ -127,15 +126,15 @@ func (h *Handlers) HandleReboot(ctx context.Context, req *mcp.CallToolRequest, a
 		return nil, nil, fmt.Errorf("reboot refused: nodes must be explicitly specified")
 	}
 
-	var opts []talosclient.RebootMode
+	var mode machineapi.RebootRequest_Mode
 
 	switch args.Mode {
 	case "powercycle":
-		opts = append(opts, talosclient.WithPowerCycle)
+		mode = machineapi.RebootRequest_POWERCYCLE
 	case "force":
-		opts = append(opts, talosclient.WithForce)
+		mode = machineapi.RebootRequest_FORCE
 	case "default", "":
-		// no extra opts
+		mode = machineapi.RebootRequest_DEFAULT
 	default:
 		return nil, nil, fmt.Errorf("unknown mode %q: must be 'default', 'powercycle', or 'force'", args.Mode)
 	}
@@ -154,7 +153,7 @@ func (h *Handlers) HandleReboot(ctx context.Context, req *mcp.CallToolRequest, a
 	}
 
 	if !args.Wait {
-		if err := h.Client.Reboot(nodeCtx, opts...); err != nil {
+		if err := h.Client.Reboot(nodeCtx, mode); err != nil {
 			h.mcpLogError("talos_reboot", err)
 			return nil, nil, fmt.Errorf("reboot: %w", err)
 		}
@@ -184,7 +183,7 @@ func (h *Handlers) HandleReboot(ctx context.Context, req *mcp.CallToolRequest, a
 
 	notifyProgress(ctx, req, fmt.Sprintf("Rebooting %d node(s)", len(args.Nodes)), 2, 4)
 
-	if err := h.Client.Reboot(nodeCtx, opts...); err != nil {
+	if err := h.Client.Reboot(nodeCtx, mode); err != nil {
 		h.mcpLogError("talos_reboot", err)
 		return nil, nil, fmt.Errorf("reboot: %w", err)
 	}
@@ -405,15 +404,13 @@ func (h *Handlers) HandleUpgrade(ctx context.Context, req *mcp.CallToolRequest, 
 
 	notifyProgress(ctx, req, "Initiating upgrade", 1, 2)
 
-	upgradeOpts := []talosclient.UpgradeOption{
-		talosclient.WithUpgradeImage(args.Image),
-		talosclient.WithUpgradePreserve(resolvePreserve(args.Preserve)),
-		talosclient.WithUpgradeStage(args.Stage),
-		talosclient.WithUpgradeForce(args.Force),
-		talosclient.WithUpgradeRebootMode(upgradeRebootMode),
-	}
-
-	resp, err := h.Client.UpgradeWithOptions(ctx, upgradeOpts...)
+	resp, err := h.Client.Upgrade(ctx, &machineapi.UpgradeRequest{
+		Image:      args.Image,
+		Preserve:   resolvePreserve(args.Preserve),
+		Stage:      args.Stage,
+		Force:      args.Force,
+		RebootMode: upgradeRebootMode,
+	})
 	if err != nil {
 		h.mcpLogError("talos_upgrade", err)
 		return nil, nil, fmt.Errorf("upgrade: %w", err)

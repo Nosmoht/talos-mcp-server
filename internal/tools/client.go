@@ -28,8 +28,8 @@ type Client interface {
 	Containers(ctx context.Context, namespace string, driver commonapi.ContainerDriver, callOptions ...grpc.CallOption) (*machineapi.ContainersResponse, error)
 	Processes(ctx context.Context, callOptions ...grpc.CallOption) (*machineapi.ProcessesResponse, error)
 	ClusterHealthCheck(ctx context.Context, waitTimeout time.Duration, clusterInfo *clusterapi.ClusterInfo) (clusterapi.ClusterService_HealthCheckClient, error)
-	Reboot(ctx context.Context, mode machineapi.RebootRequest_Mode) error
-	Upgrade(ctx context.Context, req *machineapi.UpgradeRequest) (*machineapi.UpgradeResponse, error)
+	RebootNodes(ctx context.Context, mode machineapi.RebootRequest_Mode) error
+	UpgradeNodes(ctx context.Context, req *machineapi.UpgradeRequest) (*machineapi.UpgradeResponse, error)
 	Rollback(ctx context.Context) error
 	ApplyConfiguration(ctx context.Context, req *machineapi.ApplyConfigurationRequest, callOptions ...grpc.CallOption) (*machineapi.ApplyConfigurationResponse, error)
 	MetaWrite(ctx context.Context, key uint8, value []byte, callOptions ...grpc.CallOption) error
@@ -37,7 +37,7 @@ type Client interface {
 	ResetGenericWithResponse(ctx context.Context, req *machineapi.ResetRequest) (*machineapi.ResetResponse, error)
 	Logs(ctx context.Context, namespace string, driver commonapi.ContainerDriver, id string, follow bool, tailLines int32) (machineapi.MachineService_LogsClient, error)
 	Dmesg(ctx context.Context, follow, tail bool) (machineapi.MachineService_DmesgClient, error)
-	EventsWatch(ctx context.Context, tail int32, watch func(<-chan talosclient.Event)) error
+	WatchEvents(ctx context.Context, tail int32, watch func(<-chan talosclient.Event)) error
 	LS(ctx context.Context, req *machineapi.ListRequest) (machineapi.MachineService_ListClient, error)
 	Read(ctx context.Context, path string) (io.ReadCloser, error)
 	EtcdMemberList(ctx context.Context, req *machineapi.EtcdMemberListRequest, callOptions ...grpc.CallOption) (*machineapi.EtcdMemberListResponse, error)

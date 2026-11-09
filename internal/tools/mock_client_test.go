@@ -65,17 +65,17 @@ func (m *mockClient) ClusterHealthCheck(_ context.Context, _ time.Duration, _ *c
 	panic("mockClient.ClusterHealthCheck called — test reached gRPC layer unexpectedly")
 }
 
-func (m *mockClient) Reboot(_ context.Context, mode machineapi.RebootRequest_Mode) error {
+func (m *mockClient) RebootNodes(_ context.Context, mode machineapi.RebootRequest_Mode) error {
 	if !m.recordReboot {
-		panic("mockClient.Reboot called — test reached gRPC layer unexpectedly")
+		panic("mockClient.RebootNodes called — test reached gRPC layer unexpectedly")
 	}
 	m.gotRebootMode = mode
 	return nil
 }
 
-func (m *mockClient) Upgrade(_ context.Context, req *machineapi.UpgradeRequest) (*machineapi.UpgradeResponse, error) {
+func (m *mockClient) UpgradeNodes(_ context.Context, req *machineapi.UpgradeRequest) (*machineapi.UpgradeResponse, error) {
 	if !m.recordUpgrade {
-		panic("mockClient.Upgrade called — test reached gRPC layer unexpectedly")
+		panic("mockClient.UpgradeNodes called — test reached gRPC layer unexpectedly")
 	}
 	m.gotUpgradeReq = req
 	return &machineapi.UpgradeResponse{}, nil
@@ -109,9 +109,9 @@ func (m *mockClient) Dmesg(_ context.Context, _, _ bool) (machineapi.MachineServ
 	panic("mockClient.Dmesg called — test reached gRPC layer unexpectedly")
 }
 
-func (m *mockClient) EventsWatch(_ context.Context, tail int32, _ func(<-chan talosclient.Event)) error {
+func (m *mockClient) WatchEvents(_ context.Context, tail int32, _ func(<-chan talosclient.Event)) error {
 	if !m.recordEvents {
-		panic("mockClient.EventsWatch called — test reached gRPC layer unexpectedly")
+		panic("mockClient.WatchEvents called — test reached gRPC layer unexpectedly")
 	}
 	m.gotEventsTail = tail
 	return nil

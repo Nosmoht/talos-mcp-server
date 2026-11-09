@@ -279,13 +279,13 @@ func (h *Handlers) HandleEvents(ctx context.Context, _ *mcp.CallToolRequest, arg
 
 	events := []eventEntry{}
 
-	// EventsWatch streams forever — we stop it via context timeout.
+	// WatchEvents streams forever — we stop it via context timeout.
 	// The tail replays the last tailCount historical events, then streaming continues with new ones.
 	// The 5-second timeout gives us the tail events plus any immediate new ones.
 	// DeadlineExceeded and Canceled are expected: they signal normal collection-window expiry.
 	// Any other error (e.g. connection refused) is surfaced so callers can distinguish
 	// "no events" from "node unreachable".
-	if err := h.Client.EventsWatch(collectCtx, tailCount,
+	if err := h.Client.WatchEvents(collectCtx, tailCount,
 		func(ch <-chan talosclient.Event) {
 			for ev := range ch {
 				entry := eventEntry{

@@ -156,30 +156,30 @@ func (c *Client) COSIState() state.State {
 	return c.COSI
 }
 
-// Reboot reboots the nodes targeted by ctx using mode.
-func (c *Client) Reboot(ctx context.Context, mode machineapi.RebootRequest_Mode) error {
+// RebootNodes reboots the nodes targeted by ctx using mode.
+func (c *Client) RebootNodes(ctx context.Context, mode machineapi.RebootRequest_Mode) error {
 	opts, err := rebootOptions(mode)
 	if err != nil {
 		return err
 	}
 
-	return c.Client.Reboot(ctx, opts...)
+	return c.Reboot(ctx, opts...)
 }
 
-// Upgrade initiates a Talos upgrade on the nodes targeted by ctx as described by req.
-func (c *Client) Upgrade(ctx context.Context, req *machineapi.UpgradeRequest) (*machineapi.UpgradeResponse, error) {
+// UpgradeNodes initiates a Talos upgrade on the nodes targeted by ctx as described by req.
+func (c *Client) UpgradeNodes(ctx context.Context, req *machineapi.UpgradeRequest) (*machineapi.UpgradeResponse, error) {
 	opts, err := upgradeOptions(req)
 	if err != nil {
 		return nil, err
 	}
 
-	return c.Client.UpgradeWithOptions(ctx, opts...) //nolint:staticcheck // LifecycleService migration is a separate compatibility decision
+	return c.UpgradeWithOptions(ctx, opts...) //nolint:staticcheck // LifecycleService migration is a separate compatibility decision
 }
 
-// EventsWatch streams runtime events to watch, starting with the last tail
+// WatchEvents streams runtime events to watch, starting with the last tail
 // events (negative tail: all available past events).
-func (c *Client) EventsWatch(ctx context.Context, tail int32, watch func(<-chan talosclient.Event)) error {
-	return c.Client.EventsWatch(ctx, watch, eventsOptions(tail)...)
+func (c *Client) WatchEvents(ctx context.Context, tail int32, watch func(<-chan talosclient.Event)) error {
+	return c.EventsWatch(ctx, watch, eventsOptions(tail)...)
 }
 
 func rebootOptions(mode machineapi.RebootRequest_Mode) ([]talosclient.RebootMode, error) {

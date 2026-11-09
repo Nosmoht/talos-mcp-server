@@ -1,9 +1,16 @@
 package tools
 
 import (
+	"bytes"
+	"context"
+	"log/slog"
+	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/Nosmoht/talos-mcp-server/internal/talos"
 )
 
 // TestJSONResult_ReturnsStructured verifies that jsonResult hands the value
@@ -68,4 +75,79 @@ func TestJSONWithTextResult_DualContent(t *testing.T) {
 	if len(got.Lines) != 2 || got.Lines[0] != "a" || got.Lines[1] != "b" {
 		t.Fatalf("jsonWithTextResult: out = %+v, want %+v", got, p)
 	}
+}
+
+// insecureTestEndpoint is the only entry of the allowlist insecureHandlers installs.
+const insecureTestEndpoint = "192.0.2.5"
+
+// insecureHandlers returns handlers with maintenance mode enabled for
+// insecureTestEndpoint and dialing through d.
+func insecureHandlers(t *testing.T, d *recordingDialer) *Handlers {
+	t.Helper()
+
+	allowlist, err := talos.ParseNodeAllowlist(insecureTestEndpoint)
+	if err != nil {
+		t.Fatalf("setup: parse allowlist: %v", err)
+	}
+
+	h := safeH()
+	h.EnableInsecure = true
+	h.InsecureAllowedNodes = allowlist
+	h.dialMaintenance = d.dial
+	return h
+}
+
+// captureDefaultSlog routes slog.Default into the returned buffer until the
+// test ends. Tests that call it must not call t.Parallel.
+func captureDefaultSlog(t *testing.T) *bytes.Buffer {
+	t.Helper()
+
+	var buf bytes.Buffer
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, nil)))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+	return &buf
+}
+
+// auditOutcomeOf returns the outcome field of the AUDIT_OUTCOME record for tool
+// in log, or "" when there is none.
+func auditOutcomeOf(log, tool string) string {
+	for _, line := range strings.Split(log, "\n") {
+		if !strings.Contains(line, "msg=AUDIT_OUTCOME") || !strings.Contains(line, "tool="+tool+" ") {
+			continue
+		}
+		for _, field := range strings.Fields(line) {
+			if v, ok := strings.CutPrefix(field, "outcome="); ok {
+				return v
+			}
+		}
+	}
+	return ""
+}
+
+// TestMaintenanceDialerDefault: without an injected dialer the insecure paths dial
+// through dialTalosMaintenance (.claude/rules/insecure-mode.md §Transport posture);
+// an injected dialer replaces it.
+func TestMaintenanceDialerDefault(t *testing.T) {
+	t.Run("nil dialer selects dialTalosMaintenance", func(t *testing.T) {
+		h := safeH()
+		got := reflect.ValueOf(h.maintenanceDialer()).Pointer()
+		want := reflect.ValueOf(dialTalosMaintenance).Pointer()
+		if got != want {
+			t.Errorf("insecure-mode.md §Transport posture: default dialer must be dialTalosMaintenance (%#x), got %#x", want, got)
+		}
+	})
+
+	t.Run("injected dialer is used", func(t *testing.T) {
+		d := &recordingDialer{client: &fakeMaintenanceClient{}}
+		h := safeH()
+		h.dialMaintenance = d.dial
+
+		if _, err := h.maintenanceDialer()(context.Background(), insecureTestEndpoint, nil); err != nil {
+			t.Fatalf("injected dialer: unexpected error %v", err)
+		}
+		if d.calls != 1 {
+			t.Errorf("injected dialer must replace the default: want one recorded dial, got %d", d.calls)
+		}
+	})
 }

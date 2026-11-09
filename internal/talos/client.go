@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/cosi-project/runtime/pkg/state"
+	machineapi "github.com/siderolabs/talos/pkg/machinery/api/machine"
 	talosclient "github.com/siderolabs/talos/pkg/machinery/client"
 	clientconfig "github.com/siderolabs/talos/pkg/machinery/client/config"
 	"google.golang.org/grpc"
@@ -149,11 +150,73 @@ func (c *Client) InvalidateVersionCache() {
 }
 
 // COSIState returns the COSI state accessor for resource queries.
-// It satisfies the ClientInterface requirement for COSI access — the underlying
-// state.State field on talosclient.Client is a public field, not a method, so
-// this wrapper makes it accessible through the interface.
+// The underlying state.State on talosclient.Client is a field, not a method,
+// so consumer-declared interfaces reach it through this accessor.
 func (c *Client) COSIState() state.State {
 	return c.COSI
+}
+
+// Reboot reboots the nodes targeted by ctx using mode.
+func (c *Client) Reboot(ctx context.Context, mode machineapi.RebootRequest_Mode) error {
+	opts, err := rebootOptions(mode)
+	if err != nil {
+		return err
+	}
+
+	return c.Client.Reboot(ctx, opts...)
+}
+
+// Upgrade initiates a Talos upgrade on the nodes targeted by ctx as described by req.
+func (c *Client) Upgrade(ctx context.Context, req *machineapi.UpgradeRequest) (*machineapi.UpgradeResponse, error) {
+	opts, err := upgradeOptions(req)
+	if err != nil {
+		return nil, err
+	}
+
+	return c.Client.UpgradeWithOptions(ctx, opts...) //nolint:staticcheck // LifecycleService migration is a separate compatibility decision
+}
+
+// EventsWatch streams runtime events to watch, starting with the last tail
+// events (negative tail: all available past events).
+func (c *Client) EventsWatch(ctx context.Context, tail int32, watch func(<-chan talosclient.Event)) error {
+	return c.Client.EventsWatch(ctx, watch, eventsOptions(tail)...)
+}
+
+func rebootOptions(mode machineapi.RebootRequest_Mode) ([]talosclient.RebootMode, error) {
+	switch mode {
+	case machineapi.RebootRequest_DEFAULT:
+		return nil, nil
+	case machineapi.RebootRequest_POWERCYCLE:
+		return []talosclient.RebootMode{talosclient.WithPowerCycle}, nil
+	case machineapi.RebootRequest_FORCE:
+		return []talosclient.RebootMode{talosclient.WithForce}, nil
+	default:
+		return nil, fmt.Errorf("unsupported reboot mode %d", mode)
+	}
+}
+
+func upgradeOptions(req *machineapi.UpgradeRequest) ([]talosclient.UpgradeOption, error) {
+	if req == nil {
+		return nil, fmt.Errorf("upgrade request must not be nil")
+	}
+
+	switch req.GetRebootMode() {
+	case machineapi.UpgradeRequest_DEFAULT, machineapi.UpgradeRequest_POWERCYCLE:
+	default:
+		return nil, fmt.Errorf("unsupported upgrade reboot mode %d", req.GetRebootMode())
+	}
+
+	return []talosclient.UpgradeOption{
+		talosclient.WithUpgradeImage(req.GetImage()),
+		talosclient.WithUpgradePreserve(req.GetPreserve()),
+		talosclient.WithUpgradeStage(req.GetStage()),
+		talosclient.WithUpgradeForce(req.GetForce()),
+		talosclient.WithUpgradeRebootMode(req.GetRebootMode()),
+	}, nil
+}
+
+func eventsOptions(tail int32) []talosclient.EventsOptionFunc {
+	return []talosclient.EventsOptionFunc{talosclient.WithTailEvents(tail)}
 }
 
 // fetchVersion calls the Talos Version gRPC method and parses the first response message.
@@ -195,8 +258,3 @@ func WithNodes(ctx context.Context, nodes []string, allow *NodeAllowlist) (conte
 	}
 	return talosclient.WithNodes(ctx, nodes...), nil
 }
-
-// Compile-time assertion: *Client must satisfy ClientInterface.
-// If this line fails to compile, a method required by ClientInterface is missing
-// from *Client.
-var _ ClientInterface = (*Client)(nil)

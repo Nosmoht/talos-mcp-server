@@ -36,7 +36,7 @@ func (h *Handlers) handleCOSIResource(ctx context.Context, req *mcp.ReadResource
 	truncated := false
 
 	if resID != "" {
-		r, err := h.Client.COSI.Get(ctx,
+		r, err := h.Client.COSIState().Get(ctx,
 			resource.NewMetadata(namespace, resolvedType, resID, resource.VersionUndefined),
 		)
 		if err != nil {
@@ -49,7 +49,7 @@ func (h *Handlers) handleCOSIResource(ctx context.Context, req *mcp.ReadResource
 		}
 		results = []map[string]any{data}
 	} else {
-		list, err := h.Client.COSI.List(ctx,
+		list, err := h.Client.COSIState().List(ctx,
 			resource.NewMetadata(namespace, resolvedType, "", resource.VersionUndefined),
 		)
 		if err != nil {

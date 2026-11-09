@@ -88,7 +88,7 @@ This server is tested against Talos Linux v1.9.x through v1.13.x.
 |-----------|-------------|---------------|
 | v0.x (current) | v1.9.0 – v1.13.x | v1.13.4 |
 
-The server logs a startup warning if the connected cluster's Talos version is outside the tested range. All 19 gRPC methods used have been stable since Talos v1.9.
+The server logs a startup warning if the connected cluster's Talos version is outside the tested range. All gRPC methods used have been stable since Talos v1.9.
 
 ### Upgrade path validation
 
@@ -276,7 +276,7 @@ MCP Client (Claude Code / Codex)
 | Confirm gates | Always require `confirm=true`: `talos_service_action`, `talos_reboot`, `talos_upgrade`, `talos_rollback`, `talos_reset`. Require `confirm=true` when `dry_run=false`: `talos_patch_config`, `talos_apply_config`. All enforced server-side. |
 | Preserve default | `talos_upgrade` defaults `preserve` to `true` (keep EPHEMERAL partition) — differs from `talosctl` default of `false` |
 | Dry-run default | `talos_patch_config` defaults to `dry_run=true`; applying requires both `dry_run=false` and `confirm=true` |
-| Audit logging | All mutating tool calls (`talos_service_action`, `talos_reboot`, `talos_upgrade`, `talos_rollback`, `talos_reset`, `talos_patch_config`, `talos_apply_config`) emit a structured log line to stderr: `AUDIT timestamp=<RFC3339> tool=<name> nodes=<list> args=<json>` (patch content is redacted) |
+| Audit logging | Every mutating tool call and every call to a tool that accepts `insecure=true` emits a structured `slog` INFO record `AUDIT` to stderr with the fields `tool`, `nodes` and `args` (patch content is redacted). Tools that accept `insecure=true` also emit an `AUDIT_OUTCOME` record with the fields `tool`, `outcome` and `error`. |
 
 ### What Is Not in the Threat Model
 

@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,6 +14,7 @@ import (
 	"github.com/cosi-project/runtime/pkg/resource"
 	cosiprotobuf "github.com/cosi-project/runtime/pkg/resource/protobuf"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	machineapi "github.com/siderolabs/talos/pkg/machinery/api/machine"
 
 	"github.com/Nosmoht/talos-mcp-server/internal/talos"
 )
@@ -1199,5 +1201,217 @@ func TestHandleApplyConfig_InsecureBlocklistBypassed(t *testing.T) {
 	}
 	if strings.Contains(err.Error(), "TALOS_MCP_BLOCKED_CONFIG_PATHS") {
 		t.Errorf("blocklist refused insecure call, but bypass is documented as intentional: %v", err)
+	}
+}
+
+// TestHandleReboot_ModeReachesClient: each talos_reboot mode value (RebootArgs.Mode
+// schema) reaches the client as the matching machinery reboot mode.
+func TestHandleReboot_ModeReachesClient(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		mode string
+		want machineapi.RebootRequest_Mode
+	}{
+		{mode: "", want: machineapi.RebootRequest_DEFAULT},
+		{mode: "default", want: machineapi.RebootRequest_DEFAULT},
+		{mode: "powercycle", want: machineapi.RebootRequest_POWERCYCLE},
+		{mode: "force", want: machineapi.RebootRequest_FORCE},
+	}
+
+	for _, tc := range tests {
+		t.Run("mode="+tc.mode, func(t *testing.T) {
+			t.Parallel()
+
+			m := &mockClient{recordReboot: true, gotRebootMode: -1}
+			h := safeH()
+			h.Client = m
+
+			if _, _, err := h.HandleReboot(context.Background(), nil, RebootArgs{
+				Nodes:   []string{insecureTestEndpoint},
+				Confirm: true,
+				Mode:    tc.mode,
+			}); err != nil {
+				t.Fatalf("talos_reboot mode=%q: unexpected error %v", tc.mode, err)
+			}
+			if m.gotRebootMode != tc.want {
+				t.Errorf("RebootArgs.Mode schema: mode=%q want %v got %v", tc.mode, tc.want, m.gotRebootMode)
+			}
+		})
+	}
+}
+
+// TestHandleUpgrade_RequestReachesClient: talos_upgrade arguments reach the client
+// unchanged, an omitted preserve becomes Preserve=true (CLAUDE.md §Safety), and each
+// reboot_mode value (UpgradeArgs.RebootMode schema) maps to the machinery enum.
+func TestHandleUpgrade_RequestReachesClient(t *testing.T) {
+	t.Parallel()
+
+	const image = "ghcr.io/siderolabs/installer:v1.13.0"
+	preserveFalse := false
+
+	type upgradeFields struct {
+		Image      string
+		Preserve   bool
+		Stage      bool
+		Force      bool
+		RebootMode machineapi.UpgradeRequest_RebootMode
+	}
+
+	tests := []struct {
+		name string
+		args UpgradeArgs
+		want upgradeFields
+	}{
+		{
+			name: "preserve omitted defaults to true",
+			args: UpgradeArgs{Image: image},
+			want: upgradeFields{Image: image, Preserve: true, RebootMode: machineapi.UpgradeRequest_DEFAULT},
+		},
+		{
+			name: "preserve false is kept",
+			args: UpgradeArgs{Image: image, Preserve: &preserveFalse},
+			want: upgradeFields{Image: image, Preserve: false, RebootMode: machineapi.UpgradeRequest_DEFAULT},
+		},
+		{
+			name: "reboot_mode default",
+			args: UpgradeArgs{Image: image, RebootMode: "default"},
+			want: upgradeFields{Image: image, Preserve: true, RebootMode: machineapi.UpgradeRequest_DEFAULT},
+		},
+		{
+			name: "reboot_mode powercycle with stage and force",
+			args: UpgradeArgs{Image: image, RebootMode: "powercycle", Stage: true, Force: true},
+			want: upgradeFields{Image: image, Preserve: true, Stage: true, Force: true, RebootMode: machineapi.UpgradeRequest_POWERCYCLE},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			m := &mockClient{recordUpgrade: true}
+			h := safeH()
+			h.Client = m
+			h.SkipVersionCheck = true
+
+			args := tc.args
+			args.Nodes = []string{insecureTestEndpoint}
+			args.Confirm = true
+			if _, _, err := h.HandleUpgrade(context.Background(), nil, args); err != nil {
+				t.Fatalf("talos_upgrade %s: unexpected error %v", tc.name, err)
+			}
+			if m.gotUpgradeReq == nil {
+				t.Fatalf("talos_upgrade %s: client never received an upgrade request", tc.name)
+			}
+			r := m.gotUpgradeReq
+			got := upgradeFields{r.GetImage(), r.GetPreserve(), r.GetStage(), r.GetForce(), r.GetRebootMode()}
+			if got != tc.want {
+				t.Errorf("CLAUDE.md §Safety / UpgradeArgs schema: want %+v got %+v", tc.want, got)
+			}
+		})
+	}
+}
+
+// TestHandleApplyConfig_InsecureRequestReachesDialedClient: in maintenance mode
+// the config bytes, apply mode and dry-run flag (default true, CLAUDE.md §Safety;
+// .claude/rules/insecure-mode.md §Confirm semantics) reach the dialed client.
+func TestHandleApplyConfig_InsecureRequestReachesDialedClient(t *testing.T) {
+	t.Parallel()
+
+	const configBody = "machine: {}"
+	configFile := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(configFile, []byte(configBody), 0o600); err != nil {
+		t.Fatalf("setup: write temp config: %v", err)
+	}
+	dryRunFalse := false
+
+	type applyFields struct {
+		Data   string
+		Mode   machineapi.ApplyConfigurationRequest_Mode
+		DryRun bool
+	}
+
+	tests := []struct {
+		name string
+		args ApplyConfigArgs
+		want applyFields
+	}{
+		{
+			name: "dry_run and mode omitted",
+			args: ApplyConfigArgs{},
+			want: applyFields{Data: configBody, Mode: machineapi.ApplyConfigurationRequest_AUTO, DryRun: true},
+		},
+		{
+			name: "no_reboot dry run",
+			args: ApplyConfigArgs{Mode: "no_reboot"},
+			want: applyFields{Data: configBody, Mode: machineapi.ApplyConfigurationRequest_NO_REBOOT, DryRun: true},
+		},
+		{
+			name: "staged apply with confirm",
+			args: ApplyConfigArgs{Mode: "staged", DryRun: &dryRunFalse, Confirm: true},
+			want: applyFields{Data: configBody, Mode: machineapi.ApplyConfigurationRequest_STAGED, DryRun: false},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			fake := &fakeMaintenanceClient{}
+			h := insecureHandlers(t, &recordingDialer{client: fake})
+
+			args := tc.args
+			args.ConfigFile = configFile
+			args.Insecure = true
+			args.Endpoint = insecureTestEndpoint
+			if _, _, err := h.HandleApplyConfig(context.Background(), nil, args); err != nil {
+				t.Fatalf("talos_apply_config insecure %s: unexpected error %v", tc.name, err)
+			}
+			if fake.gotApply == nil {
+				t.Fatalf("talos_apply_config insecure %s: dialed client never received ApplyConfiguration", tc.name)
+			}
+			got := applyFields{string(fake.gotApply.GetData()), fake.gotApply.GetMode(), fake.gotApply.GetDryRun()}
+			if got != tc.want {
+				t.Errorf("insecure-mode.md §Confirm semantics / ApplyConfigArgs schema: want %+v got %+v", tc.want, got)
+			}
+		})
+	}
+}
+
+// TestHandleApplyConfig_InsecureOutcomeAudited: after the dial, a successful
+// RPC is audited as ok and a failed RPC as rpc-error and returned as an error
+// (.claude/rules/insecure-mode.md §Audit pairing).
+func TestHandleApplyConfig_InsecureOutcomeAudited(t *testing.T) {
+	configFile := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(configFile, []byte("machine: {}"), 0o600); err != nil {
+		t.Fatalf("setup: write temp config: %v", err)
+	}
+
+	tests := []struct {
+		name        string
+		rpcErr      error
+		wantOutcome string
+	}{
+		{name: "rpc success", rpcErr: nil, wantOutcome: OutcomeOK},
+		{name: "rpc failure", rpcErr: errors.New("maintenance node rejected config"), wantOutcome: OutcomeRPCError},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			logBuf := captureDefaultSlog(t)
+			h := insecureHandlers(t, &recordingDialer{client: &fakeMaintenanceClient{rpcErr: tc.rpcErr}})
+
+			_, _, err := h.HandleApplyConfig(context.Background(), nil, ApplyConfigArgs{
+				ConfigFile: configFile,
+				Insecure:   true,
+				Endpoint:   insecureTestEndpoint,
+			})
+			if (err != nil) != (tc.rpcErr != nil) {
+				t.Fatalf("insecure-mode.md §Audit pairing: RPC error %v must surface as handler error, got %v", tc.rpcErr, err)
+			}
+			if got := auditOutcomeOf(logBuf.String(), "talos_apply_config"); got != tc.wantOutcome {
+				t.Errorf("insecure-mode.md §Audit pairing: AUDIT_OUTCOME outcome want %q got %q", tc.wantOutcome, got)
+			}
+		})
 	}
 }

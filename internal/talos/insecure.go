@@ -136,7 +136,7 @@ func fingerprintVerifier(expected []byte) func(rawCerts [][]byte, _ [][]*x509.Ce
 // The caller MUST Close() the returned client when done; the per-call factory
 // shape is intentional: each maintenance-mode call targets a different short-
 // lived endpoint, so a shared pool would buy nothing.
-func NewInsecureClient(ctx context.Context, endpoint string, fingerprint []byte) (*talosclient.Client, error) {
+func NewInsecureClient(ctx context.Context, endpoint string, fingerprint []byte) (*Client, error) {
 	tlsCfg := &tls.Config{
 		InsecureSkipVerify: true, //nolint:gosec // maintenance-mode endpoints have no CA; fingerprint pinning is the optional defence
 		MinVersion:         tls.VersionTLS12,
@@ -168,5 +168,5 @@ func NewInsecureClient(ctx context.Context, endpoint string, fingerprint []byte)
 		return nil, fmt.Errorf("dial maintenance-mode Talos gRPC at %s (timeout %s): %w", endpoint, dialTimeout, err)
 	}
 
-	return c, nil
+	return &Client{Client: c}, nil
 }

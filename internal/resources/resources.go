@@ -3,23 +3,38 @@
 package resources
 
 import (
+	"context"
 	"fmt"
 	"net/url"
 	"strings"
 
+	"github.com/cosi-project/runtime/pkg/resource"
+	"github.com/cosi-project/runtime/pkg/resource/meta"
+	"github.com/cosi-project/runtime/pkg/state"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	machineapi "github.com/siderolabs/talos/pkg/machinery/api/machine"
+	"google.golang.org/grpc"
 
 	"github.com/Nosmoht/talos-mcp-server/internal/talos"
 )
 
+// Client is the Talos API surface the resource handlers call.
+type Client interface {
+	Version(ctx context.Context, callOptions ...grpc.CallOption) (*machineapi.VersionResponse, error)
+	ResolveResourceKind(ctx context.Context, resourceNamespace *resource.Namespace, resourceType resource.Type) (*meta.ResourceDefinition, error)
+	COSIState() state.State
+}
+
+var _ Client = (*talos.Client)(nil)
+
 // Handlers holds the Talos client and exposes MCP resource handler methods.
 type Handlers struct {
-	Client       *talos.Client
+	Client       Client
 	AllowedNodes *talos.NodeAllowlist
 }
 
 // Register registers all static MCP resources and resource templates on server.
-func Register(server *mcp.Server, client *talos.Client, allowedNodes *talos.NodeAllowlist) {
+func Register(server *mcp.Server, client Client, allowedNodes *talos.NodeAllowlist) {
 	h := &Handlers{Client: client, AllowedNodes: allowedNodes}
 
 	// These resources mirror the talos_version / talos_resource_definitions /

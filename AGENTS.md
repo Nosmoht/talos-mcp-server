@@ -264,8 +264,8 @@ import (
 ### Structured logging
 
 - Use `log/slog` with structured key-value fields for MCP client notifications
-- Server-side audit logging uses `log.Printf` (intentional — see `helpers.go` for the dual-log design)
-- No `log.Printf` for anything other than audit events
+- Use `log/slog` for all server-side logging; no `log.Printf`.
+- Audit records are `slog` INFO records `AUDIT` (fields `tool`, `nodes`, `args`) and `AUDIT_OUTCOME` (fields `tool`, `outcome`, `error`), written by `auditLog` / `auditOutcome` in `internal/tools/helpers.go`
 
 ### Security patterns
 

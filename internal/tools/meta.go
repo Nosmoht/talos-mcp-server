@@ -130,7 +130,7 @@ func (h *Handlers) HandleMeta(ctx context.Context, _ *mcp.CallToolRequest, args 
 
 		switch args.Action {
 		case "read":
-			return readMetaFromCOSI(ctx, client.COSI, key, &outcome, &finalErr)
+			return readMetaFromCOSI(ctx, client.COSIState(), key, &outcome, &finalErr)
 		case "write":
 			if err := client.MetaWrite(ctx, key, []byte(args.Value)); err != nil {
 				outcome = OutcomeRPCError

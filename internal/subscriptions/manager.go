@@ -27,6 +27,7 @@ import (
 	"time"
 
 	"github.com/cosi-project/runtime/pkg/resource"
+	"github.com/cosi-project/runtime/pkg/resource/meta"
 	cosistate "github.com/cosi-project/runtime/pkg/state"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"golang.org/x/time/rate"
@@ -46,6 +47,14 @@ var AllowedTypes = map[string]struct{}{
 	"Services.v1alpha1.talos.dev":       {},
 }
 
+// Source is the Talos API surface the Manager watches through.
+type Source interface {
+	ResolveResourceKind(ctx context.Context, resourceNamespace *resource.Namespace, resourceType resource.Type) (*meta.ResourceDefinition, error)
+	COSIState() cosistate.State
+}
+
+var _ Source = (*talos.Client)(nil)
+
 // notifyFunc is the injection seam that decouples the Manager from
 // *mcp.Server in tests. Production binds it to Server.ResourceUpdated
 // via BindServer.
@@ -54,7 +63,7 @@ type notifyFunc func(ctx context.Context, uri string) error
 // Manager serializes subscribe/unsubscribe/supervise operations and owns the
 // long-lived goroutines that fan COSI Watch events into MCP notifications.
 type Manager struct {
-	client       talos.ClientInterface
+	client       Source
 	allowedNodes *talos.NodeAllowlist
 	rateEvery    time.Duration
 	rateBurst    int
@@ -81,7 +90,7 @@ type subscription struct {
 // NewManager builds a Manager rooted in a Background-derived context.
 // Call BindServer after the MCP server is constructed; call Shutdown from
 // main.go's cleanup path to drain all goroutines.
-func NewManager(client talos.ClientInterface, allowedNodes *talos.NodeAllowlist, rateEvery time.Duration, rateBurst int) *Manager {
+func NewManager(client Source, allowedNodes *talos.NodeAllowlist, rateEvery time.Duration, rateBurst int) *Manager {
 	root, cancel := context.WithCancel(context.Background())
 	return &Manager{
 		client:       client,

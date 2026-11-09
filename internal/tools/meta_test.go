@@ -311,3 +311,67 @@ func TestHandleMeta_PrivilegedKeyAllowlisted(t *testing.T) {
 		Confirm: true,
 	})
 }
+
+// TestHandleMeta_InsecureMutationReachesDialedClient: in maintenance mode a
+// confirmed write or delete of a UserReserved key reaches the dialed client with
+// the parsed key and the raw value (MetaArgs schema).
+func TestHandleMeta_InsecureMutationReachesDialedClient(t *testing.T) {
+	t.Parallel()
+
+	const (
+		keyArg       = "0x0c"
+		key    uint8 = 0x0c // UserReserved1
+		value        = "reserved-value"
+	)
+
+	type metaCall struct {
+		WriteKey   int
+		WriteValue string
+		DeleteKey  int
+	}
+	const none = -1
+
+	tests := []struct {
+		name string
+		args MetaArgs
+		want metaCall
+	}{
+		{
+			name: "write",
+			args: MetaArgs{Action: "write", Key: keyArg, Value: value, Confirm: true},
+			want: metaCall{WriteKey: int(key), WriteValue: value, DeleteKey: none},
+		},
+		{
+			name: "delete",
+			args: MetaArgs{Action: "delete", Key: keyArg, Confirm: true},
+			want: metaCall{WriteKey: none, DeleteKey: int(key)},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			fake := &fakeMaintenanceClient{}
+			h := insecureHandlers(t, &recordingDialer{client: fake})
+
+			args := tc.args
+			args.Insecure = true
+			args.Endpoint = insecureTestEndpoint
+			if _, _, err := h.HandleMeta(context.Background(), nil, args); err != nil {
+				t.Fatalf("talos_meta insecure %s: unexpected error %v", tc.name, err)
+			}
+
+			got := metaCall{WriteKey: none, WriteValue: string(fake.gotMetaWriteValue), DeleteKey: none}
+			if fake.gotMetaWriteKey != nil {
+				got.WriteKey = int(*fake.gotMetaWriteKey)
+			}
+			if fake.gotMetaDeleteKey != nil {
+				got.DeleteKey = int(*fake.gotMetaDeleteKey)
+			}
+			if got != tc.want {
+				t.Errorf("MetaArgs schema: %s of key %s want %+v got %+v", tc.name, keyArg, tc.want, got)
+			}
+		})
+	}
+}

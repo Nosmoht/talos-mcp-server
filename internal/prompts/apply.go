@@ -14,7 +14,7 @@ func applyConfigPrompt() *mcp.Prompt {
 		Arguments: []*mcp.PromptArgument{
 			{Name: "patch", Description: "Machine config patch as a JSON or YAML string.", Required: true},
 			{Name: "node", Description: "Target node IP or hostname.", Required: true},
-			{Name: "mode", Description: "Apply mode: auto, reboot, no_reboot, staged, or try. Defaults to try.", Required: false},
+			{Name: "mode", Description: "Apply mode: auto, no_reboot, staged, or try. Defaults to try (use no_reboot, then talos_reboot, to restart the node).", Required: false},
 		},
 	}
 }
@@ -31,10 +31,12 @@ func handleApplyConfig(_ context.Context, req *mcp.GetPromptRequest) (*mcp.GetPr
 
 	mode := optionalArg(req, "mode", "try")
 	switch mode {
-	case "auto", "reboot", "no_reboot", "staged", "try":
+	case "auto", "no_reboot", "staged", "try":
 		// valid
+	case "reboot":
+		return nil, fmt.Errorf("prompt %q: mode \"reboot\" is not supported: apply with mode \"no_reboot\", then reboot the node with talos_reboot", req.Params.Name)
 	default:
-		return nil, fmt.Errorf("prompt %q: unknown mode %q: must be auto, reboot, no_reboot, staged, or try", req.Params.Name, mode)
+		return nil, fmt.Errorf("prompt %q: unknown mode %q: must be auto, no_reboot, staged, or try", req.Params.Name, mode)
 	}
 
 	msg := fmt.Sprintf(`Apply a machine config patch to Talos node %s.

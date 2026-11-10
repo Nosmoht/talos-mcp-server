@@ -53,7 +53,7 @@ func (h *Handlers) preflightEtcdQuorum(ctx context.Context, apiNodes []string) (
 func (h *Handlers) fetchEtcdMemberCount(ctx context.Context, apiNodes []string) (int, error) {
 	var lastErr error
 	for _, node := range apiNodes {
-		nodeCtx, wErr := talos.WithNodes(ctx, []string{node}, h.AllowedNodes)
+		nodeCtx, wErr := talos.WithSingleNode(ctx, []string{node}, h.AllowedNodes)
 		if wErr != nil {
 			lastErr = wErr
 			continue
@@ -89,7 +89,7 @@ func (h *Handlers) fetchEtcdMemberCount(ctx context.Context, apiNodes []string) 
 func (h *Handlers) countHealthyEtcdPeers(ctx context.Context, apiNodes []string) int {
 	var healthy int
 	for _, node := range apiNodes {
-		nodeCtx, wErr := talos.WithNodes(ctx, []string{node}, h.AllowedNodes)
+		nodeCtx, wErr := talos.WithSingleNode(ctx, []string{node}, h.AllowedNodes)
 		if wErr != nil {
 			continue
 		}

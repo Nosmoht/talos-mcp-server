@@ -59,8 +59,8 @@ const (
 	descListFiles = "List files and directories at a path on a target node's filesystem. " +
 		"To read a file's contents use talos_read_file."
 
-	descReadFile = "Read the contents of a single file from a target node's filesystem (e.g. /etc/os-release, /etc/machine-config.yaml). " +
-		"To browse directories first use talos_list_files."
+	descReadFile = "Read the contents of a single file from exactly one target node's filesystem (e.g. /etc/os-release, /etc/machine-config.yaml). " +
+		"Passing more than one node is rejected. To browse directories first use talos_list_files."
 
 	descValidate = "Validate a Talos machine config (YAML or JSON) offline — no cluster connection required. " +
 		"Use mode='metal' (default), 'cloud', or 'container'. " +

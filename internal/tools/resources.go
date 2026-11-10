@@ -66,7 +66,7 @@ type GetResourceArgs struct {
 	ResourceType    string   `json:"resource_type" jsonschema:"Talos resource type, e.g. MachineStatus\\, Member\\, LinkStatus. Use talos_resource_definitions to discover all types."`
 	ResourceID      string   `json:"resource_id,omitempty" jsonschema:"Optional specific resource ID. Omit to list all resources of this type."`
 	Namespace       string   `json:"namespace,omitempty" jsonschema:"Resource namespace. Omit to use the default namespace for the resource type."`
-	Nodes           []string `json:"nodes,omitempty" jsonschema:"Authenticated mode: target node IPs or hostnames. Omit to use the default nodes from talosconfig. Mutually exclusive with endpoint."`
+	Nodes           []string `json:"nodes,omitempty" jsonschema:"Authenticated mode: exactly one target node IP or hostname (COSI reads do not support multiple nodes). Omit to use the default node from talosconfig. Mutually exclusive with endpoint."`
 	Insecure        bool     `json:"insecure,omitempty" jsonschema:"Maintenance-mode insecure connection (bypasses mTLS). Requires endpoint and TALOS_MCP_ENABLE_INSECURE=true. Maintenance mode exposes a restricted COSI resource set — types that only exist post-config will surface 'not found' errors verbatim."`
 	Endpoint        string   `json:"endpoint,omitempty" jsonschema:"Required when insecure=true: bare IPv4 or IPv6 address of the maintenance-mode node."`
 	CertFingerprint string   `json:"cert_fingerprint,omitempty" jsonschema:"Optional SHA-256 server cert fingerprint (hex; 64 chars after stripping colons/whitespace) for TOFU pinning. Only valid when insecure=true."`
@@ -124,7 +124,13 @@ func (h *Handlers) HandleGetResource(ctx context.Context, _ *mcp.CallToolRequest
 		return h.getResourceFromCOSI(ctx, args, client.COSIState(), client.ResolveResourceKind, &outcome, &finalErr)
 	}
 
-	ctx, err := talos.WithNodes(ctx, args.Nodes, h.AllowedNodes)
+	if len(args.Nodes) > 1 {
+		outcome = OutcomeRefusedArgs
+		finalErr = fmt.Errorf("talos_get targets exactly one node (got %d); query each node individually", len(args.Nodes))
+		return nil, nil, finalErr
+	}
+
+	ctx, err := talos.WithSingleNode(ctx, args.Nodes, h.AllowedNodes)
 	if err != nil {
 		outcome = OutcomeRefusedAllowlist
 		finalErr = err

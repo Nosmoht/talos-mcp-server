@@ -82,11 +82,11 @@ Reads `~/.talos/config` by default (the same file `talosctl` uses). Override via
 
 ## Compatibility
 
-This server is tested against Talos Linux v1.9.x through v1.13.x.
+This server is tested against Talos Linux v1.9.x through v1.14.x.
 
 | talos-mcp | Talos Linux | machinery SDK |
 |-----------|-------------|---------------|
-| v0.x (current) | v1.9.0 – v1.13.x | v1.13.4 |
+| v0.x (current) | v1.9.0 – v1.14.x | v1.14.5 |
 
 The server logs a startup warning if the connected cluster's Talos version is outside the tested range. All gRPC methods used have been stable since Talos v1.9.
 
@@ -171,7 +171,7 @@ The server speaks the [MCP protocol](https://modelcontextprotocol.io) over stdio
 | `talos_etcd` | Query etcd cluster: `members` (default) or `status`. |
 | `talos_etcd_snapshot` | Stream an etcd snapshot to a local file path. |
 | `talos_list_files` | List files and directories on a node filesystem. |
-| `talos_read_file` | Read file contents from a node filesystem. |
+| `talos_read_file` | Read the contents of a single file from exactly one target node's filesystem (e.g. /etc/os-release, /etc/machine-config.yaml). Passing more than one node is rejected. To browse directories first use talos_list_files. |
 | `talos_validate` | Validate a machine config (YAML/JSON) offline — no cluster connection. |
 
 ### Mutating
@@ -189,7 +189,7 @@ These tools modify cluster state and have explicit safety guards.
 | `talos_apply_config` | Apply a complete machine config to a single node. Supports maintenance-mode (`insecure=true` + `endpoint`) for fresh-node bootstrap. | `dry_run` defaults to `true`; `confirm=true` required when `dry_run=false` |
 | `talos_meta` | Read, write, or delete META partition key/value pairs. Supports maintenance-mode (`insecure=true` + `endpoint`). | `write`/`delete` require `confirm=true`; non-`UserReserved*` keys require enumeration in `TALOS_MCP_META_PRIVILEGED_KEYS` |
 
-All tools accept an optional `nodes` field (list of node IPs or hostnames). When omitted, the active context from talosconfig is used.
+All tools accept an optional `nodes` field (list of node IPs or hostnames), except that `talos_read_file`, `talos_get`, `talos_patch_config`, `talos_apply_config` and `talos_meta` with `action=read` accept at most one node, and `talos_etcd_snapshot` requires exactly one. When omitted, the active context from talosconfig is used.
 
 #### Maintenance-mode (`--insecure`) operations
 

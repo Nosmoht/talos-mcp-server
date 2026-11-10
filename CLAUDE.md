@@ -58,7 +58,7 @@ git worktree add -b feat/<slug> .claude/worktrees/<slug> origin/main
 
 Issue lifecycle, agent tooling, planning discipline, coding conventions, and multi-agent coordination: [AGENTS.md](./AGENTS.md).
 
-Find ready issues: `repo:Nosmoht/talos-mcp-server is:issue is:open label:"status: ready" sort:created-asc`
+Find ready issues: `repo:Nosmoht/talos-mcp-server is:issue is:open label:"status: ready" -label:"status: blocked" sort:created-asc`
 
 ## Release
 

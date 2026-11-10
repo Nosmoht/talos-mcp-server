@@ -302,7 +302,7 @@ untrusted. Talos-specific points beyond the generic security patterns above:
 Search for open, unclaimed issues:
 
 ```
-repo:Nosmoht/talos-mcp-server is:issue is:open label:"status: ready" sort:created-asc
+repo:Nosmoht/talos-mcp-server is:issue is:open label:"status: ready" -label:"status: blocked" sort:created-asc
 ```
 
 Process issues in priority order:
@@ -326,6 +326,7 @@ Use the two-phase claim protocol to prevent race conditions between concurrent a
 1. **Read labels** — confirm `status: ready` is present. If `status: assigned`,
    `status: in-progress`, or `agent: claimed` is present, the issue is taken. Stop.
    If any `needs:` label is present, the issue is not ready. Stop.
+   If `status: blocked` is present, the issue is blocked even when `status: ready` is still on it (§ Blocked side-state). Stop.
 
 2. **Read comments** — scan all existing comments. If any comment body contains
    `<!-- agent-claim:`, at least one agent has already attempted a claim. Back off.
@@ -360,7 +361,7 @@ Use the two-phase claim protocol to prevent race conditions between concurrent a
 
 | Group | Cardinality | Prefix | Values |
 |---|---|---|---|
-| Status | Exactly one | `status:` | `ready`, `assigned`, `in-progress`, `review-pending`, `blocked` |
+| Status | None until triaged, then one; `blocked` sits beside the prior status (§ Blocked side-state), or alone on a decomposed parent (§ Sub-issue Decomposition) | `status:` | `ready`, `assigned`, `in-progress`, `review-pending`, `blocked` |
 | Priority | Exactly one | `priority:` | `P0` (critical), `P1` (high), `P2` (medium), `P3` (low) |
 | Type | Exactly one | `type:` | `bug`, `enhancement`, `chore`, `docs`, `test` |
 | Area | One or more | `area:` | `tools`, `resources`, `prompts`, `transport`, `client`, `version`, `ci`, `npm`, `docs`, `governance` |
@@ -523,7 +524,7 @@ but no branch push in >24 hours, any agent may reclaim:
 Apply `needs: decomposition` when any of these are true:
 
 - Size is `size: XL` and work spans more than two packages.
-- More than three independently testable acceptance criteria.
+- The issue has more than one concern (§ Triage). The number of acceptance criteria alone is no reason to decompose.
 - Multiple agents would need to modify the same files concurrently.
 
 To decompose:

@@ -68,13 +68,7 @@ npm OIDC gotchas: see `.claude/rules/release-workflow.md` (auto-loaded when edit
 
 ## GitHub Issues
 
-Use `--body-file` for issue bodies with backticks — heredocs with `--body` corrupt markdown code blocks.
-
-**Bug/chore body sections:** `## Description` · `## Evidence` · `## Impact` · `## Recommended Fix` · `## Audit Source`
-
-**Feature request body sections:** `### Severity` · `### Category` · `### Description` · `### Evidence` · `### Impact` · `### Recommended Fix` · `### Audit Source`
-
-Minimum labels: one `type:`, one `priority:`, `needs: triage`. Full taxonomy: [AGENTS.md § Label Rules](./AGENTS.md).
+Issue body structure, creation labels and triage: [AGENTS.md § Label Rules › Creating issues](./AGENTS.md#creating-issues) and [§ Triage](./AGENTS.md#triage).
 
 ## Change Governance
 

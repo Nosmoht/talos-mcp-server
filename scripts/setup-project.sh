@@ -10,7 +10,7 @@ REPO="${REPO:-talos-mcp-server}"
 echo "==> Creating labels for ${OWNER}/${REPO}"
 
 # ---------------------------------------------------------------------------
-# Status labels (mutually exclusive)
+# Status labels (cardinality: AGENTS.md Label Rules)
 # ---------------------------------------------------------------------------
 gh label create "status: ready"          --color "0E8A16" --description "Triaged and ready for an agent to claim"            --repo "${OWNER}/${REPO}" --force
 gh label create "status: assigned"       --color "1D76DB" --description "Claimed by an agent, not yet started"               --repo "${OWNER}/${REPO}" --force

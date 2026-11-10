@@ -122,12 +122,13 @@ jobs:
             if (isClosed) {
               await updateField('Status', 'Done');
             } else {
+              // First match wins; blocked comes first because it sits beside the prior status label (AGENTS.md § Blocked side-state).
               const statusMap = {
+                'status: blocked':        'Blocked',
                 'status: ready':          'Ready',
                 'status: assigned':       'Assigned',
                 'status: in-progress':    'In Progress',
                 'status: review-pending': 'Review Pending',
-                'status: blocked':        'Blocked',
               };
               for (const [label, option] of Object.entries(statusMap)) {
                 if (issueLabels.includes(label)) {

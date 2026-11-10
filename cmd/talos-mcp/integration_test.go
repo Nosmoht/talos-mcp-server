@@ -250,18 +250,40 @@ func TestTalosPatchConfig_DryRun(t *testing.T) {
 	session := connectMCP(t)
 	nodeIP := discoverNode(t, session)
 
-	dryRun := true
-	result := callTool(t, session, "talos_patch_config", map[string]any{
-		"patch":   `{"machine":{"nodeLabels":{"integration-test":"true"}}}`,
-		"dry_run": dryRun,
-		"nodes":   []string{nodeIP},
-	})
-	text := extractText(t, result)
-	// The response must contain the merged config or a dry-run confirmation —
-	// either indicates the patch was actually processed (not just accepted).
-	if !strings.Contains(text, "integration-test") && !strings.Contains(text, "dry") {
-		t.Errorf("expected dry-run response to contain patched label or dry-run confirmation, got: %.500s", text)
+	result := patchDryRun(t, session, nodeIP, `{"machine":{"nodeLabels":{"integration-test":"true"}}}`)
+	// Talos v1.14+ rejects .machine.nodeLabels when the config carries a
+	// KubeNodeConfig document (machinery config/types/k8s/node.go,
+	// V1Alpha1ConflictValidate); such nodes take labels in that document.
+	if result.IsError && strings.Contains(extractText(t, result), ".machine.nodeLabels is already set in v1alpha1 config") {
+		result = patchDryRun(t, session, nodeIP, "apiVersion: v1alpha1\nkind: KubeNodeConfig\nlabels:\n  integration-test: \"true\"\n")
 	}
+	text := extractText(t, result)
+	if result.IsError {
+		t.Fatalf("talos_patch_config returned tool error: %s", text)
+	}
+	// The dry-run diff must show the label: a bare dry-run confirmation would
+	// also pass for a patch that was dropped before merging.
+	if !strings.Contains(text, "integration-test") {
+		t.Errorf("expected dry-run diff to contain the patched label, got: %.500s", text)
+	}
+}
+
+// patchDryRun calls talos_patch_config with dry_run=true on node and returns
+// the result, including tool errors.
+func patchDryRun(t *testing.T, session *mcp.ClientSession, node, patch string) *mcp.CallToolResult {
+	t.Helper()
+	result, err := session.CallTool(context.Background(), &mcp.CallToolParams{
+		Name: "talos_patch_config",
+		Arguments: map[string]any{
+			"patch":   patch,
+			"dry_run": true,
+			"nodes":   []string{node},
+		},
+	})
+	if err != nil {
+		t.Fatalf("CallTool(talos_patch_config): %v", err)
+	}
+	return result
 }
 
 // TestTalosPatchConfig_DryRun_JSON6902 verifies RFC 6902 JSON Patch format is

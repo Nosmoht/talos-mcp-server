@@ -24,9 +24,8 @@ import (
 	"github.com/Nosmoht/talos-mcp-server/internal/tools"
 )
 
-// Must compile against go-sdk v1.6.1 and v1.8.0: v1.6.1 cannot pin a client
-// protocol version (so legacy sessions use raw JSON-RPC), and v1.8.0 deprecates
-// ServerCapabilities.Logging (so capabilities are read as JSON keys).
+// Capabilities are read as JSON keys because go-sdk v1.8.0 deprecates
+// ServerCapabilities.Logging.
 
 const (
 	compatRevisionLegacy  = "2025-11-25"

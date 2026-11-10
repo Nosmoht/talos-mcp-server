@@ -27,7 +27,7 @@ func recordLine(log string, tokens ...string) string {
 }
 
 // Predicate: stderr slog is the only audit channel, so auditLog must write an
-// INFO record `AUDIT` with the fields tool, nodes and args (README.md § Security,
+// INFO record `AUDIT` with the fields tool, nodes and args (README.md § Security Model,
 // Audit logging row; AGENTS.md § Structured logging).
 func TestGivenAuditLog_WhenCalled_ThenAuditRecordCarriesToolNodesAndArgs(t *testing.T) {
 	cases := []struct {
@@ -47,7 +47,7 @@ func TestGivenAuditLog_WhenCalled_ThenAuditRecordCarriesToolNodesAndArgs(t *test
 			log := buf.String()
 			rec := recordLine(log, "level=INFO", "msg=AUDIT")
 			if rec == "" {
-				t.Fatalf("README.md § Security (Audit logging): expected one level=INFO msg=AUDIT record, got log=%q", log)
+				t.Fatalf("README.md § Security Model (Audit logging row): expected one level=INFO msg=AUDIT record, got log=%q", log)
 			}
 			wantFields := []string{
 				"tool=talos_reboot",
@@ -56,7 +56,7 @@ func TestGivenAuditLog_WhenCalled_ThenAuditRecordCarriesToolNodesAndArgs(t *test
 			}
 			for _, field := range wantFields {
 				if recordLine(rec, field) == "" {
-					t.Errorf("README.md § Security (Audit logging): AUDIT record expected field %s, got record=%q", field, rec)
+					t.Errorf("README.md § Security Model (Audit logging row): AUDIT record expected field %s, got record=%q", field, rec)
 				}
 			}
 		})

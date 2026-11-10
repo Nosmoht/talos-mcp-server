@@ -397,8 +397,8 @@ func newStreamableHTTPOptions(logger *slog.Logger) *mcp.StreamableHTTPOptions {
 // buildMuxForTest) — the same drift class that motivated newStreamableHTTPOptions.
 // See PR #177 and issue #179 for the regression this guards against.
 //
-// The wrapper form replaces the deprecated StreamableHTTPOptions.CrossOriginProtection
-// field (go-sdk v1.6.0 deprecation; v1.8.0 removal). Source-compatible with v1.6.x.
+// The wrapper form replaces the StreamableHTTPOptions.CrossOriginProtection field,
+// which go-sdk v1.6.0 deprecated.
 func newProtectedMCPHandler(server *mcp.Server, logger *slog.Logger) http.Handler {
 	mcpHandler := mcp.NewStreamableHTTPHandler(func(_ *http.Request) *mcp.Server {
 		return server

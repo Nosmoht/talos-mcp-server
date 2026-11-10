@@ -11,7 +11,7 @@
 // Bootstrapped events from COSI Watch are intentionally dropped: the MCP
 // client is expected to call resources/read once after subscribe to obtain
 // initial state. Forwarding Bootstrapped risks a race against the SDK's
-// internal session-registration map (go-sdk mcp/server.go:892-909: the
+// internal session-registration map (go-sdk v1.8.0 mcp/server.go:1219-1228: the
 // SubscribeHandler returns before the session is inserted into
 // resourceSubscriptions, so a very-early ResourceUpdated call would be
 // dropped silently by the SDK).

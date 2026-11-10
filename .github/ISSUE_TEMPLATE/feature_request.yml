@@ -1,24 +1,51 @@
-name: Feature Request
-description: Suggest a new tool, resource, or improvement
-labels: ["enhancement", "status: ready"]
+name: Feature request
+description: A new tool, resource, prompt or capability for talos-mcp
+labels: ["type: enhancement", "needs: triage"]
 body:
+  - type: markdown
+    attributes:
+      value: |
+        This repository is public. Do not include credentials, tokens, talosconfig contents, internal IP addresses or internal hostnames — use placeholders or documentation addresses (RFC 5737, e.g. `192.0.2.10`).
+        Report security vulnerabilities privately: https://github.com/Nosmoht/talos-mcp-server/security/advisories/new
   - type: textarea
     id: problem
     attributes:
       label: Problem or use case
-      description: "What are you trying to accomplish?"
+      description: What you are trying to do, what stops you today, and why it matters. Describe the need before any solution.
     validations:
       required: true
   - type: textarea
-    id: solution
+    id: proposed-change
     attributes:
-      label: Proposed solution
-      description: "How would you like this to work?"
+      label: Proposed change
+      description: Optional. How it could work, e.g. tool name, parameters and safety guards.
     validations:
-      required: true
+      required: false
   - type: textarea
     id: alternatives
     attributes:
       label: Alternatives considered
+      description: Optional. Other approaches, including doing it with talosctl today.
+    validations:
+      required: false
+  - type: textarea
+    id: acceptance-criteria
+    attributes:
+      label: Acceptance criteria
+      description: Optional. Observable results that show the need is met. If you leave it empty, triage adds criteria or asks you for them.
+    validations:
+      required: false
+  - type: textarea
+    id: impact
+    attributes:
+      label: Impact
+      description: Optional. Which tools, operations or users are affected, e.g. a new mutating operation. No severity rating — triage assesses priority.
+    validations:
+      required: false
+  - type: input
+    id: source
+    attributes:
+      label: Source
+      description: Optional. Where the request comes from, e.g. user report, audit, upstream Talos change.
     validations:
       required: false

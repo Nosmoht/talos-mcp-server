@@ -1,59 +1,91 @@
-name: Bug Report
-description: Report a bug in talos-mcp
-labels: ["bug", "status: ready"]
+name: Bug report
+description: Something in talos-mcp behaves incorrectly — reported by a user or found in code review
+labels: ["type: bug", "needs: triage"]
 body:
   - type: markdown
     attributes:
       value: |
-        Thanks for reporting a bug. Please fill in the sections below to help us triage it.
-  - type: input
-    id: version
-    attributes:
-      label: talos-mcp version
-      description: "Output of `talos-mcp --version` or the npm package version"
-      placeholder: "v0.22.0"
-    validations:
-      required: true
-  - type: dropdown
-    id: transport
-    attributes:
-      label: Transport mode
-      options:
-        - stdio
-        - HTTP (streamable)
-    validations:
-      required: true
-  - type: input
-    id: mcp-client
-    attributes:
-      label: MCP client
-      description: "Which MCP client are you using?"
-      placeholder: "Claude Code, Codex CLI, etc."
-    validations:
-      required: true
+        This repository is public. Do not include credentials, tokens, talosconfig contents, internal IP addresses or internal hostnames — use placeholders or documentation addresses (RFC 5737, e.g. `192.0.2.10`).
+        Report security vulnerabilities privately: https://github.com/Nosmoht/talos-mcp-server/security/advisories/new
   - type: textarea
-    id: description
+    id: what-happened
     attributes:
-      label: What happened?
-      description: "Clear description of the bug"
+      label: What happened
+      description: The observed behaviour, including the exact error message.
     validations:
       required: true
   - type: textarea
     id: expected
     attributes:
-      label: Expected behavior
+      label: Expected behaviour
+      description: What should have happened instead, and how you know (docs, talosctl behaviour, tool description).
     validations:
       required: true
   - type: textarea
-    id: reproduce
+    id: evidence
     attributes:
-      label: Steps to reproduce
+      label: Steps to reproduce or evidence
+      description: Minimal steps that trigger the bug, or for a code-review finding the file and line references that show it.
     validations:
       required: true
+  - type: input
+    id: version
+    attributes:
+      label: talos-mcp version
+      description: Output of `talos-mcp --version` or the npm package version; `main@<commit>` for a code-review finding.
+      placeholder: v2.6.0
+    validations:
+      required: true
+  - type: dropdown
+    id: transport
+    attributes:
+      label: Transport
+      options:
+        - stdio
+        - HTTP (streamable)
+        - n/a (code review)
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: MCP client and Talos version
+      placeholder: Claude Code, Talos v1.14.5
+    validations:
+      required: false
   - type: textarea
     id: logs
     attributes:
-      label: Relevant logs or error output
+      label: Relevant log output
+      description: Server stderr around the failure, with secrets and internal addresses removed.
       render: shell
+    validations:
+      required: false
+  - type: textarea
+    id: proposed-change
+    attributes:
+      label: Proposed change
+      description: Optional. A suspected cause or fix — mark guesses as guesses.
+    validations:
+      required: false
+  - type: textarea
+    id: acceptance-criteria
+    attributes:
+      label: Acceptance criteria
+      description: Optional. How to tell the bug is fixed, e.g. a test, an observable behaviour or an existing make target. If you leave it empty, triage adds criteria or asks you for them.
+    validations:
+      required: false
+  - type: textarea
+    id: impact
+    attributes:
+      label: Impact
+      description: Optional. Which tools, operations or users are affected. No severity rating — triage assesses priority.
+    validations:
+      required: false
+  - type: input
+    id: source
+    attributes:
+      label: Source
+      description: Optional. Where the finding comes from, e.g. user report, code review, CodeQL, audit.
     validations:
       required: false

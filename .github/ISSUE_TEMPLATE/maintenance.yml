@@ -1,0 +1,59 @@
+name: Maintenance task
+description: Refactoring, dependency, CI, test or documentation work that is not a defect or a new capability
+labels: ["type: chore", "needs: triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This repository is public. Do not include credentials, tokens, talosconfig contents, internal IP addresses or internal hostnames — use placeholders or documentation addresses (RFC 5737, e.g. `192.0.2.10`).
+        Report security vulnerabilities privately: https://github.com/Nosmoht/talos-mcp-server/security/advisories/new
+        Use the bug report form for defects, including defects found in code review or audits.
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: What should change and why it is needed now.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence
+      description: File and line references, command output or links that show the current state.
+    validations:
+      required: true
+  - type: textarea
+    id: proposed-change
+    attributes:
+      label: Proposed change
+      description: Optional. The approach you suggest.
+    validations:
+      required: false
+  - type: textarea
+    id: acceptance-criteria
+    attributes:
+      label: Acceptance criteria
+      description: Optional. How to tell the task is done, e.g. a test, an observable state or an existing make target. If you leave it empty, triage adds criteria or asks you for them.
+    validations:
+      required: false
+  - type: textarea
+    id: impact
+    attributes:
+      label: Impact
+      description: Optional. What is affected if this stays as it is. No severity rating — triage assesses priority.
+    validations:
+      required: false
+  - type: textarea
+    id: rollback
+    attributes:
+      label: Rollback note
+      description: Optional. Only for changes that are hard to undo, e.g. released tags, published packages or data on nodes.
+    validations:
+      required: false
+  - type: input
+    id: source
+    attributes:
+      label: Source
+      description: Optional. Where the task comes from, e.g. code review, audit, dependency update.
+    validations:
+      required: false

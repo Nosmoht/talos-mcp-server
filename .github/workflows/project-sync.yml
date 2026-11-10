@@ -10,6 +10,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: project-sync-${{ github.event.issue.number }}
+  cancel-in-progress: false
+
 jobs:
   sync:
     runs-on: ubuntu-latest
@@ -33,9 +37,15 @@ jobs:
               return;
             }
 
-            const issueNodeId = context.payload.issue.node_id;
-            const issueLabels = (context.payload.issue.labels || []).map(l => l.name);
-            const isClosed = context.payload.issue.state === 'closed';
+            // Labels and state are read live, not from the event payload: one label-set update fires one run per label, and a run with an older snapshot would otherwise clear fields the final labels set.
+            const { data: issue } = await github.rest.issues.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.payload.issue.number,
+            });
+            const issueNodeId = issue.node_id;
+            const issueLabels = (issue.labels || []).map(l => (typeof l === 'string' ? l : l.name));
+            const isClosed = issue.state === 'closed';
 
             // Query project node ID and field definitions
             const projectQuery = await github.graphql(`
@@ -118,51 +128,61 @@ jobs:
               core.info(`Set ${fieldName} = ${optionName}`);
             };
 
+            const clearField = async (fieldName) => {
+              const field = findField(fieldName);
+              if (!field) {
+                core.warning(`Field "${fieldName}" not found in project. Skipping.`);
+                return;
+              }
+              await github.graphql(`
+                mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!) {
+                  clearProjectV2ItemFieldValue(input: {
+                    projectId: $projectId
+                    itemId: $itemId
+                    fieldId: $fieldId
+                  }) {
+                    projectV2Item { id }
+                  }
+                }
+              `, { projectId, itemId, fieldId: field.id });
+              core.info(`Cleared ${fieldName}`);
+            };
+
+            // First matching label sets the field; no matching label clears it, so a removed label does not leave a stale value.
+            const syncField = async (fieldName, labelMap) => {
+              const match = Object.entries(labelMap).find(([label]) => issueLabels.includes(label));
+              if (match) {
+                await updateField(fieldName, match[1]);
+              } else {
+                await clearField(fieldName);
+              }
+            };
+
             // --- Status field ---
             if (isClosed) {
               await updateField('Status', 'Done');
             } else {
-              // First match wins; blocked comes first because it sits beside the prior status label (AGENTS.md § Blocked side-state).
-              const statusMap = {
+              // Blocked comes first because it sits beside the prior status label (AGENTS.md § Blocked side-state).
+              await syncField('Status', {
                 'status: blocked':        'Blocked',
                 'status: ready':          'Ready',
                 'status: assigned':       'Assigned',
                 'status: in-progress':    'In Progress',
                 'status: review-pending': 'Review Pending',
-              };
-              for (const [label, option] of Object.entries(statusMap)) {
-                if (issueLabels.includes(label)) {
-                  await updateField('Status', option);
-                  break;
-                }
-              }
+              });
             }
 
-            // --- Priority field ---
-            const priorityMap = {
+            await syncField('Priority', {
               'priority: P0': 'P0',
               'priority: P1': 'P1',
               'priority: P2': 'P2',
               'priority: P3': 'P3',
-            };
-            for (const [label, option] of Object.entries(priorityMap)) {
-              if (issueLabels.includes(label)) {
-                await updateField('Priority', option);
-                break;
-              }
-            }
+            });
 
-            // --- Size field ---
-            const sizeMap = {
+            await syncField('Size', {
               'size: XS': 'XS',
               'size: S':  'S',
               'size: M':  'M',
               'size: L':  'L',
               'size: XL': 'XL',
-            };
-            for (const [label, option] of Object.entries(sizeMap)) {
-              if (issueLabels.includes(label)) {
-                await updateField('Size', option);
-                break;
-              }
-            }
+            });

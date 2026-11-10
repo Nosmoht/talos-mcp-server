@@ -68,7 +68,7 @@ Reads `~/.talos/config` by default (the same file `talosctl` uses). Override via
 | `TALOS_MCP_AUTH_TOKEN` | (unset) | Required bearer token when HTTP mode is active |
 | `TALOS_MCP_ALLOWED_NODES` | (unset) | Comma-separated IPs, hostnames, and CIDR ranges permitted as tool targets. Unset allows all. |
 | `TALOS_MCP_ALLOWED_PATHS` | *(all)* | Comma-separated path prefixes allowed for `talos_read_file` and `talos_list_files` (e.g. `/etc,/proc`). Defense-in-depth only — checks run on the MCP server host and do **not** resolve symlinks on the remote Talos node, so a symlink under an allowed prefix that points elsewhere is not detected. |
-| `TALOS_MCP_SKIP_VERSION_CHECK` | `false` | Set to `true` to bypass upgrade path validation (e.g. for factory images or custom tags) |
+| `TALOS_MCP_SKIP_VERSION_CHECK` | `false` | Set to `true` to bypass upgrade path validation (e.g. when the node's version cannot be read, or the target is newer than this server's machinery) |
 | `TALOS_MCP_ENABLE_INSECURE` | `false` | Unlock `insecure=true` on `talos_apply_config` / `talos_get` / `talos_version` / `talos_meta`. Bypasses mTLS — REQUIRES `TALOS_MCP_INSECURE_ALLOWED_NODES`. |
 | `TALOS_MCP_INSECURE_ALLOWED_NODES` | (unset) | Comma-separated IPs / CIDRs permitted as maintenance-mode endpoints. Required when `TALOS_MCP_ENABLE_INSECURE=true`. Refused: `0.0.0.0/0`, `::/0`, IPv4 mask `<16`, IPv6 mask `<48`. |
 | `TALOS_MCP_META_PRIVILEGED_KEYS` | *(none)* | Comma-separated META keys (decimal or `0x`-prefixed hex) that `talos_meta` is allowed to write/delete beyond `UserReserved1/2/3`. |
@@ -98,9 +98,9 @@ Streamable HTTP mode is stateful and serves legacy revisions up to `2025-11-25` 
 
 ### Upgrade path validation
 
-The `talos_upgrade` tool validates that the target version follows Talos's supported upgrade path — at most one minor version at a time (e.g. v1.11.x → v1.12.x). Upgrades that skip minor versions are rejected with an error.
+Before it sends the upgrade, the `talos_upgrade` tool checks the path from the node's current version to the image's version against the same machinery rules the target installer enforces on the node. The installer runs its own check only after it has drained the node and stopped its services. The tool refuses an upgrade when the path is not allowed, when the node's version cannot be read, or when the target version is newer than the machinery compiled into this server knows. Paths the target release accepts pass, including some that skip a minor version, some downgrades and reinstalls of the same version.
 
-If your image uses a custom or factory tag (e.g. `factory.talos.dev/...` or `:latest`) the tag cannot be parsed and validation is skipped automatically. To bypass validation explicitly, set `TALOS_MCP_SKIP_VERSION_CHECK=true`.
+If the image tag carries no version (e.g. `:latest`), the path cannot be checked: the tool logs a warning and proceeds. To bypass the check, set `TALOS_MCP_SKIP_VERSION_CHECK=true`.
 
 ## Client Setup
 

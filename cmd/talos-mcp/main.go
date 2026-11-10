@@ -238,8 +238,30 @@ func main() {
 		stop()
 		log.Fatalf("%v", err) //nolint:gocritic // exitAfterDefer: stop() called explicitly above
 	}
-	subMgr := subscriptions.NewManager(tc, allowedNodes, subRate, subBurst)
+	server, subMgr := newServer(h, serverConfig{
+		ReadOnly:          readOnly,
+		SubscriptionRate:  subRate,
+		SubscriptionBurst: subBurst,
+	})
 	defer subMgr.Shutdown()
+
+	if err := runServer(ctx, server, httpAddr, authToken, newHTTPTransportConfig(), tc.Ping); err != nil {
+		slog.Error("server stopped with error", "error", err)
+	}
+}
+
+// serverConfig carries the inputs of newServer that do not live on tools.Handlers.
+type serverConfig struct {
+	ReadOnly          bool
+	SubscriptionRate  time.Duration
+	SubscriptionBurst int
+}
+
+// newServer builds the MCP server with all registrations and the subscription
+// manager. Production and tests share it, so fixtures cannot drift from the
+// production wiring — same drift class as newStreamableHTTPOptions.
+func newServer(h *tools.Handlers, cfg serverConfig) (*mcp.Server, *subscriptions.Manager) {
+	subMgr := subscriptions.NewManager(h.Client, h.AllowedNodes, cfg.SubscriptionRate, cfg.SubscriptionBurst)
 
 	serverOpts := &mcp.ServerOptions{
 		Instructions: "Talos Linux cluster management. Choose a tool by what you need:\n" +
@@ -258,37 +280,15 @@ func main() {
 			"talos_patch_config and talos_apply_config target exactly one node and default to dry_run=true; confirm=true is required only for a real apply (dry_run=false). They have no reboot mode: apply with no_reboot, then use talos_reboot. " +
 			"talos_meta requires confirm=true only for write/delete. " +
 			"The talos:// MCP Resources mirror talos_get/talos_version for clients that prefer resources — the tools are the simpler path.",
-		CompletionHandler:  completions.NewHandler(allowedNodes),
+		CompletionHandler:  completions.NewHandler(h.AllowedNodes),
 		SubscribeHandler:   subMgr.Subscribe,
 		UnsubscribeHandler: subMgr.Unsubscribe,
-	}
-
-	// Wrap InitializedHandler. The supervisor goroutine runs unconditionally
-	// (subscriptions are per-session by SDK contract, unlike the logger which
-	// is stdio-only because multi-session HTTP would race the shared logger).
-	var priorInit func(context.Context, *mcp.InitializedRequest)
-	if httpAddr == "" {
-		priorInit = func(initCtx context.Context, req *mcp.InitializedRequest) {
-			logger := slog.New(mcp.NewLoggingHandler(req.Session, &mcp.LoggingHandlerOptions{
-				LoggerName: "talos-mcp",
-			}))
-			h.SetLogger(logger)
-
-			// Forward version compatibility warning to the connected MCP client.
-			if cv, err := tc.GetClusterVersion(initCtx); err == nil && !cv.InSupportedRange() {
-				logger.Warn("cluster Talos version is outside the tested range; some features may not work correctly",
-					"version", cv.String(),
-					"min_supported", talosversion.MinSupported.String(),
-					"max_tested", talosversion.MaxTested.String(),
-				)
-			}
-		}
-	}
-	serverOpts.InitializedHandler = func(initCtx context.Context, req *mcp.InitializedRequest) {
-		if priorInit != nil {
-			priorInit(initCtx, req)
-		}
-		go subMgr.SuperviseSession(req.Session)
+		// A nil Capabilities makes the SDK advertise logging; the other capabilities are still inferred from the registrations.
+		Capabilities: &mcp.ServerCapabilities{},
+		// Fires only for initialize-based sessions; 2026-07-28 subscriptions end through the SDK's subscriptions/listen deferred unsubscribe.
+		InitializedHandler: func(_ context.Context, req *mcp.InitializedRequest) {
+			go subMgr.SuperviseSession(req.Session)
+		},
 	}
 
 	server := mcp.NewServer(&mcp.Implementation{
@@ -297,16 +297,14 @@ func main() {
 	}, serverOpts)
 
 	// BindServer must happen-before any session can issue resources/subscribe.
-	// Sessions start inside runServer below; binding here is sufficient.
+	// Sessions start only after newServer returns; binding here is sufficient.
 	subMgr.BindServer(server)
 
-	tools.Register(server, h, readOnly)
-	resources.Register(server, tc, allowedNodes)
-	prompts.Register(server, readOnly)
+	tools.Register(server, h, cfg.ReadOnly)
+	resources.Register(server, h.Client, h.AllowedNodes)
+	prompts.Register(server, cfg.ReadOnly)
 
-	if err := runServer(ctx, server, httpAddr, authToken, newHTTPTransportConfig(), tc.Ping); err != nil {
-		slog.Error("server stopped with error", "error", err)
-	}
+	return server, subMgr
 }
 
 // validateHTTPConfig returns an error if HTTP mode is requested without an auth token.
@@ -381,8 +379,8 @@ func buildHTTPMux(mcpHandler http.Handler, token string, hc httpTransportConfig,
 // the bind address (e.g. behind nginx/Caddy/Tailscale).
 //
 // Cross-origin protection is intentionally NOT set on this struct. go-sdk v1.6.0
-// deprecated the StreamableHTTPOptions.CrossOriginProtection field and v1.8.0 removes
-// it; the SDK directs callers to wrap the handler with the stdlib middleware instead.
+// deprecated the StreamableHTTPOptions.CrossOriginProtection field, which v1.8.0 still
+// carries; the SDK directs callers to wrap the handler with the stdlib middleware instead.
 // newProtectedMCPHandler applies that wrapper. The cross-origin layer is orthogonal
 // to DisableLocalhostProtection (cross-origin non-safe-method denial vs. DNS rebinding
 // at the Host-header layer).
@@ -399,8 +397,8 @@ func newStreamableHTTPOptions(logger *slog.Logger) *mcp.StreamableHTTPOptions {
 // buildMuxForTest) — the same drift class that motivated newStreamableHTTPOptions.
 // See PR #177 and issue #179 for the regression this guards against.
 //
-// The wrapper form replaces the deprecated StreamableHTTPOptions.CrossOriginProtection
-// field (go-sdk v1.6.0 deprecation; v1.8.0 removal). Source-compatible with v1.6.x.
+// The wrapper form replaces the StreamableHTTPOptions.CrossOriginProtection field,
+// which go-sdk v1.6.0 deprecated.
 func newProtectedMCPHandler(server *mcp.Server, logger *slog.Logger) http.Handler {
 	mcpHandler := mcp.NewStreamableHTTPHandler(func(_ *http.Request) *mcp.Server {
 		return server

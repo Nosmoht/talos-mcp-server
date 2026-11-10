@@ -8,7 +8,6 @@ import (
 	"log/slog"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/google/jsonschema-go/jsonschema"
@@ -46,9 +45,6 @@ type Handlers struct {
 	// overwrite the first (read-modify-write race). The map is populated lazily
 	// on first use and is bounded by the number of distinct patch targets.
 	patchMu sync.Map // map[string]*sync.Mutex
-	// logger is the active slog.Logger for MCP log notifications.
-	// It is swapped atomically per session in stdio mode.
-	logger atomic.Pointer[slog.Logger]
 	// dialMaintenance replaces dialTalosMaintenance in tests; nil selects it.
 	// Unexported so the TLS/fingerprint dial cannot be swapped from outside the package.
 	dialMaintenance func(ctx context.Context, endpoint string, fingerprint []byte) (maintenanceClient, error)
@@ -60,12 +56,6 @@ type Handlers struct {
 func (h *Handlers) nodePatchMu(key string) *sync.Mutex {
 	mu, _ := h.patchMu.LoadOrStore(key, &sync.Mutex{})
 	return mu.(*sync.Mutex) //nolint:forcetypeassert // only *sync.Mutex is ever stored
-}
-
-// SetLogger replaces the active logger used for MCP log notifications.
-// In stdio mode this is called once per session from InitializedHandler.
-func (h *Handlers) SetLogger(l *slog.Logger) {
-	h.logger.Store(l)
 }
 
 // defaultToolTimeout is the maximum time a read-only tool call may take before
@@ -134,10 +124,8 @@ func permissiveObjectSchema() *jsonschema.Schema {
 	}
 }
 
-// auditLog emits a structured audit record at INFO level.
-// Always writes to the server-side log; additionally forwards to the MCP
-// client via notifications/message when a session logger is installed.
-// MCP delivery is best-effort — errors are silently dropped per slog contract.
+// auditLog emits a structured audit record at INFO level to the server's
+// stderr slog log. It sends nothing to the MCP client.
 func (h *Handlers) auditLog(tool string, args any, nodes []string) {
 	argsJSON, err := json.Marshal(args)
 	if err != nil {
@@ -154,37 +142,19 @@ func (h *Handlers) auditLog(tool string, args any, nodes []string) {
 		"nodes", nodeList,
 		"args", string(argsJSON),
 	)
-
-	if l := h.logger.Load(); l != nil {
-		l.Info("tool invoked",
-			"tool", tool,
-			"nodes", nodeList,
-			"args", string(argsJSON),
-		)
-	}
 }
 
-// mcpLogError forwards an operational error to the MCP client at ERROR level.
-// Only called after guard checks pass (not for validation errors).
-// Best-effort — silently dropped if no logger is set or delivery fails.
+// mcpLogError writes an operational error to the server's stderr slog log at
+// ERROR level. Only called after guard checks pass (not for validation errors).
 func (h *Handlers) mcpLogError(tool string, err error) {
 	slog.Default().Error("tool error", "tool", tool, "error", err)
-
-	if l := h.logger.Load(); l != nil {
-		l.Error("tool error", "tool", tool, "error", err.Error())
-	}
 }
 
-// mcpLogWarn forwards a warning to the MCP client at WARN level.
+// mcpLogWarn writes a warning to the server's stderr slog log at WARN level.
 // Takes an explicit msg parameter (unlike mcpLogError) because warnings
 // carry additional context alongside the underlying error.
-// Best-effort — silently dropped if no logger is set or delivery fails.
 func (h *Handlers) mcpLogWarn(tool string, msg string, err error) {
 	slog.Default().Warn("tool warning", "tool", tool, "msg", msg, "error", err)
-
-	if l := h.logger.Load(); l != nil {
-		l.Warn(msg, "tool", tool, "error", err.Error())
-	}
 }
 
 // resolveDryRun returns true (dry-run mode) unless v is explicitly set to false.
@@ -244,13 +214,6 @@ func (h *Handlers) auditOutcome(tool, outcome string, err error) {
 		"outcome", outcome,
 		"error", errStr,
 	)
-	if l := h.logger.Load(); l != nil {
-		l.Info("tool outcome",
-			"tool", tool,
-			"outcome", outcome,
-			"error", errStr,
-		)
-	}
 }
 
 // canonicalizeAndCheckInsecure validates the common gating for any

@@ -263,7 +263,7 @@ import (
 
 ### Structured logging
 
-- Use `log/slog` with structured key-value fields for MCP client notifications
+- `log/slog` to stderr is the only log channel; the server sends no MCP `notifications/message`.
 - Use `log/slog` for all server-side logging; no `log.Printf`.
 - Audit records are `slog` INFO records `AUDIT` (fields `tool`, `nodes`, `args`) and `AUDIT_OUTCOME` (fields `tool`, `outcome`, `error`), written by `auditLog` / `auditOutcome` in `internal/tools/helpers.go`
 

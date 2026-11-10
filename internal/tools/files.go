@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"path/filepath"
@@ -69,7 +68,7 @@ type ListFilesArgs struct {
 type ReadFileArgs struct {
 	Path     string   `json:"path" jsonschema:"Absolute path to the file on the node to read (e.g. '/etc/os-release'). When TALOS_MCP_ALLOWED_PATHS is set the prefix is enforced as defense-in-depth only; symlinks on the node are not resolved against the allowlist."`
 	MaxBytes int      `json:"max_bytes,omitempty" jsonschema:"Maximum number of bytes to return. Defaults to 32768 (32KB)."`
-	Nodes    []string `json:"nodes,omitempty" jsonschema:"Target node IPs or hostnames. Omit to use the default nodes from talosconfig."`
+	Nodes    []string `json:"nodes,omitempty" jsonschema:"Target node IP or hostname (exactly one). Omit to use the default node from talosconfig."`
 }
 
 // HandleListFiles implements the talos_list_files tool.
@@ -86,98 +85,73 @@ func (h *Handlers) HandleListFiles(ctx context.Context, _ *mcp.CallToolRequest, 
 		return nil, nil, err
 	}
 
-	ctx, err := talos.WithNodes(ctx, args.Nodes, h.AllowedNodes)
+	targets, err := talos.CheckTargets(args.Nodes, h.AllowedNodes)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	path := listPath
-
-	stream, err := h.Client.LS(ctx, &machineapi.ListRequest{
-		Root:    listPath,
-		Recurse: args.Recurse,
-	})
-	if err != nil {
-		return nil, nil, fmt.Errorf("list files %q: %w", path, err)
-	}
-
 	files := []fileEntry{}
-
-	nodeErrors := make(map[string]string)
-
-	var streamErr error
 
 	truncated := false
 
-	for {
-		info, err := stream.Recv()
-		if err != nil {
-			if !errors.Is(err, io.EOF) {
-				streamErr = err
+	out := talos.StreamEach(ctx, targets,
+		func(c context.Context) (machineapi.MachineService_ListClient, error) {
+			return h.Client.LS(c, &machineapi.ListRequest{
+				Root:    listPath,
+				Recurse: args.Recurse,
+			})
+		},
+		func(_ string, info *machineapi.FileInfo) bool {
+			if info.GetName() == "" {
+				return false
 			}
 
-			break
-		}
+			if len(files) >= maxListEntries {
+				truncated = true
 
-		if info.GetName() == "" {
-			// Empty-name messages carry per-node metadata errors (e.g. node unreachable).
-			if meta := info.GetMetadata(); meta != nil && meta.GetError() != "" {
-				node := meta.GetHostname()
-				if node == "" {
-					node = "unknown"
-				}
-
-				nodeErrors[node] = meta.GetError()
+				return true
 			}
 
-			continue
-		}
+			entry := fileEntry{
+				Name:         info.GetName(),
+				RelativeName: info.GetRelativeName(),
+				Size:         info.GetSize(),
+				IsDir:        info.GetIsDir(),
+			}
 
-		if len(files) >= maxListEntries {
-			truncated = true
+			if info.GetMode() != 0 {
+				entry.Mode = fmt.Sprintf("%04o", info.GetMode())
+			}
 
-			break
-		}
+			files = append(files, entry)
 
-		entry := fileEntry{
-			Name:         info.GetName(),
-			RelativeName: info.GetRelativeName(),
-			Size:         info.GetSize(),
-			IsDir:        info.GetIsDir(),
-		}
+			return false
+		},
+	)
 
-		if info.GetMode() != 0 {
-			entry.Mode = fmt.Sprintf("%04o", info.GetMode())
-		}
-
-		files = append(files, entry)
+	nodeErrs, openErr, streamErr := out.KeepSurvivors()
+	if openErr != nil {
+		return nil, nil, fmt.Errorf("list files %q: %w", listPath, openErr)
 	}
 
 	if streamErr != nil {
 		return nil, nil, fmt.Errorf("list files %q: %w", listPath, streamErr)
 	}
 
-	out, err := json.Marshal(files)
+	encoded, err := json.Marshal(files)
 	if err != nil {
 		return nil, nil, fmt.Errorf("marshal JSON: %w", err)
 	}
 
-	text := string(out)
+	text := string(encoded)
 	if truncated {
 		text += fmt.Sprintf("\n\n[truncated at %d entries]", maxListEntries)
 	}
 
-	if len(nodeErrors) > 0 {
-		errJSON, _ := json.Marshal(nodeErrors)
-		text += "\n\n[node errors: " + string(errJSON) + "]"
-	}
+	errMap := nodeErrorMap(nodeErrs)
+	text += nodeErrorsText(errMap)
 
-	dto := listFilesResult{Path: listPath, Entries: files, Truncated: truncated}
-	if len(nodeErrors) > 0 {
-		dto.NodeErrors = nodeErrors
-	}
-
-	return jsonWithTextResult(dto, text)
+	return jsonWithTextResult(listFilesResult{Path: listPath, Entries: files, Truncated: truncated, NodeErrors: errMap}, text)
 }
 
 // HandleReadFile implements the talos_read_file tool.
@@ -189,7 +163,11 @@ func (h *Handlers) HandleReadFile(ctx context.Context, _ *mcp.CallToolRequest, a
 		return nil, nil, err
 	}
 
-	ctx, err := talos.WithNodes(ctx, args.Nodes, h.AllowedNodes)
+	if len(args.Nodes) > 1 {
+		return nil, nil, fmt.Errorf("talos_read_file requires exactly one target node (got %d); read from each node individually", len(args.Nodes))
+	}
+
+	ctx, err := talos.WithSingleNode(ctx, args.Nodes, h.AllowedNodes)
 	if err != nil {
 		return nil, nil, err
 	}

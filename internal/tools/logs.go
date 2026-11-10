@@ -2,16 +2,15 @@ package tools
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"strings"
 	"time"
 
 	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	commonapi "github.com/siderolabs/talos/pkg/machinery/api/common"
+	machineapi "github.com/siderolabs/talos/pkg/machinery/api/machine"
 	talosclient "github.com/siderolabs/talos/pkg/machinery/client"
 
 	"github.com/Nosmoht/talos-mcp-server/internal/talos"
@@ -48,8 +47,9 @@ type eventEntry struct {
 
 // eventsResult is the structured output for talos_events.
 type eventsResult struct {
-	Count  int          `json:"count"`
-	Events []eventEntry `json:"events"`
+	Count      int               `json:"count"`
+	Events     []eventEntry      `json:"events"`
+	NodeErrors map[string]string `json:"node_errors,omitzero"`
 }
 
 var (
@@ -84,7 +84,7 @@ func (h *Handlers) HandleLogs(ctx context.Context, _ *mcp.CallToolRequest, args 
 	ctx, cancel := withToolTimeout(ctx)
 	defer cancel()
 
-	ctx, err := talos.WithNodes(ctx, args.Nodes, h.AllowedNodes)
+	targets, err := talos.CheckTargets(args.Nodes, h.AllowedNodes)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -99,64 +99,40 @@ func (h *Handlers) HandleLogs(ctx context.Context, _ *mcp.CallToolRequest, args 
 		ns = defaultLogsNamespace
 	}
 
-	// follow=false: finite stream capped by tailLines
-	stream, err := h.Client.Logs(ctx, ns, commonapi.ContainerDriver_CONTAINERD, args.ServiceName, false, tailLines)
-	if err != nil {
-		return nil, nil, fmt.Errorf("logs for %q: %w", args.ServiceName, err)
-	}
-
 	lines := []string{}
 
-	nodeErrors := make(map[string]string)
-
-	var streamErr error
-
-	for {
-		msg, err := stream.Recv()
-		if err != nil {
-			if !errors.Is(err, io.EOF) {
-				streamErr = err
+	// follow=false: finite stream capped by tailLines
+	out := talos.StreamEach(ctx, targets,
+		func(c context.Context) (machineapi.MachineService_LogsClient, error) {
+			return h.Client.Logs(c, ns, commonapi.ContainerDriver_CONTAINERD, args.ServiceName, false, tailLines)
+		},
+		func(_ string, msg *commonapi.Data) bool {
+			if msg.GetBytes() == nil {
+				return false
 			}
 
-			break
-		}
-
-		if msg.GetBytes() != nil {
 			lines = append(lines, strings.TrimRight(string(msg.GetBytes()), "\n"))
 
 			// Defense-in-depth: stop collecting once we have tailLines entries.
 			// The server-side cap should already enforce this, but a rogue
 			// implementation could send more, causing unbounded memory growth.
-			if len(lines) >= int(tailLines) {
-				break
-			}
-		} else if meta := msg.GetMetadata(); meta != nil && meta.GetError() != "" {
-			// Per-node error embedded in the stream (e.g. node unreachable).
-			node := meta.GetHostname()
-			if node == "" {
-				node = "unknown"
-			}
+			return len(lines) >= int(tailLines)
+		},
+	)
 
-			nodeErrors[node] = meta.GetError()
-		}
+	nodeErrs, openErr, streamErr := out.KeepSurvivors()
+	if openErr != nil {
+		return nil, nil, fmt.Errorf("logs for %q: %w", args.ServiceName, openErr)
 	}
 
 	if streamErr != nil {
 		return nil, nil, fmt.Errorf("logs stream for %q: %w", args.ServiceName, streamErr)
 	}
 
-	text := strings.Join(lines, "\n")
-	if len(nodeErrors) > 0 {
-		errJSON, _ := json.Marshal(nodeErrors)
-		text += "\n\n[node errors: " + string(errJSON) + "]"
-	}
+	errMap := nodeErrorMap(nodeErrs)
+	text := strings.Join(lines, "\n") + nodeErrorsText(errMap)
 
-	dto := logsResult{Service: args.ServiceName, Lines: lines}
-	if len(nodeErrors) > 0 {
-		dto.NodeErrors = nodeErrors
-	}
-
-	return jsonWithTextResult(dto, text)
+	return jsonWithTextResult(logsResult{Service: args.ServiceName, Lines: lines, NodeErrors: errMap}, text)
 }
 
 // DmesgArgs defines input for talos_dmesg.
@@ -170,7 +146,7 @@ func (h *Handlers) HandleDmesg(ctx context.Context, _ *mcp.CallToolRequest, args
 	ctx, cancel := withToolTimeout(ctx)
 	defer cancel()
 
-	ctx, err := talos.WithNodes(ctx, args.Nodes, h.AllowedNodes)
+	targets, err := talos.CheckTargets(args.Nodes, h.AllowedNodes)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -180,31 +156,20 @@ func (h *Handlers) HandleDmesg(ctx context.Context, _ *mcp.CallToolRequest, args
 		maxLines = defaultDmesgMaxLines
 	}
 
-	// follow=false, tail=false: collect existing messages
-	stream, err := h.Client.Dmesg(ctx, false, false)
-	if err != nil {
-		return nil, nil, fmt.Errorf("dmesg: %w", err)
-	}
-
 	// Ring buffer: pre-allocated to maxLines; once full, oldest entry is
 	// overwritten so memory stays bounded regardless of kernel buffer size.
 	lines := make([]string, 0, maxLines)
 
-	nodeErrors := make(map[string]string)
-
-	var streamErr error
-
-	for {
-		msg, err := stream.Recv()
-		if err != nil {
-			if !errors.Is(err, io.EOF) {
-				streamErr = err
+	// follow=false, tail=false: collect existing messages
+	out := talos.StreamEach(ctx, targets,
+		func(c context.Context) (machineapi.MachineService_DmesgClient, error) {
+			return h.Client.Dmesg(c, false, false)
+		},
+		func(_ string, msg *commonapi.Data) bool {
+			if msg.GetBytes() == nil {
+				return false
 			}
 
-			break
-		}
-
-		if msg.GetBytes() != nil {
 			for _, line := range strings.Split(strings.TrimRight(string(msg.GetBytes()), "\n"), "\n") {
 				if line == "" {
 					continue
@@ -218,15 +183,14 @@ func (h *Handlers) HandleDmesg(ctx context.Context, _ *mcp.CallToolRequest, args
 					lines[maxLines-1] = line
 				}
 			}
-		} else if meta := msg.GetMetadata(); meta != nil && meta.GetError() != "" {
-			// Per-node error embedded in the stream (e.g. node unreachable).
-			node := meta.GetHostname()
-			if node == "" {
-				node = "unknown"
-			}
 
-			nodeErrors[node] = meta.GetError()
-		}
+			return false
+		},
+	)
+
+	nodeErrs, openErr, streamErr := out.KeepSurvivors()
+	if openErr != nil {
+		return nil, nil, fmt.Errorf("dmesg: %w", openErr)
 	}
 
 	if streamErr != nil {
@@ -238,21 +202,10 @@ func (h *Handlers) HandleDmesg(ctx context.Context, _ *mcp.CallToolRequest, args
 		text = "(no dmesg output)"
 	}
 
-	if len(nodeErrors) > 0 {
-		errJSON, _ := json.Marshal(nodeErrors)
-		text += "\n\n[node errors: " + string(errJSON) + "]"
-	}
+	errMap := nodeErrorMap(nodeErrs)
+	text += nodeErrorsText(errMap)
 
-	if lines == nil {
-		lines = []string{}
-	}
-
-	dto := dmesgResult{Lines: lines}
-	if len(nodeErrors) > 0 {
-		dto.NodeErrors = nodeErrors
-	}
-
-	return jsonWithTextResult(dto, text)
+	return jsonWithTextResult(dmesgResult{Lines: lines, NodeErrors: errMap}, text)
 }
 
 // EventsArgs defines input for talos_events.
@@ -269,23 +222,47 @@ func (h *Handlers) HandleEvents(ctx context.Context, _ *mcp.CallToolRequest, arg
 		tailCount = defaultEventsTailCount
 	}
 
-	// Use a cancellable child context so we can stop after collecting enough events.
-	nodesCtx, err := talos.WithNodes(ctx, args.Nodes, h.AllowedNodes)
+	targets, err := talos.CheckTargets(args.Nodes, h.AllowedNodes)
 	if err != nil {
 		return nil, nil, err
 	}
-	collectCtx, cancel := context.WithTimeout(nodesCtx, defaultEventsTimeout)
-	defer cancel()
+
+	rs, out := talos.FanOut(ctx, targets, func(nodeCtx context.Context) ([]eventEntry, error) {
+		return h.collectEvents(nodeCtx, tailCount)
+	})
+
+	nodeErrs, _, err := out.KeepSurvivors()
+	if err != nil {
+		return nil, nil, fmt.Errorf("events watch: %w", err)
+	}
 
 	events := []eventEntry{}
 
-	// WatchEvents streams forever — we stop it via context timeout.
-	// The tail replays the last tailCount historical events, then streaming continues with new ones.
-	// The 5-second timeout gives us the tail events plus any immediate new ones.
-	// DeadlineExceeded and Canceled are expected: they signal normal collection-window expiry.
-	// Any other error (e.g. connection refused) is surfaced so callers can distinguish
-	// "no events" from "node unreachable".
-	if err := h.Client.WatchEvents(collectCtx, tailCount,
+	for _, r := range rs {
+		for _, entry := range r.Payload {
+			// With several nodes the machinery would report the endpoint peer
+			// as the event's node; attribute it to the requested node instead.
+			if targets.Len() > 1 {
+				entry.Node = r.Node
+			}
+
+			events = append(events, entry)
+		}
+	}
+
+	return jsonResult(eventsResult{Count: len(events), Events: events, NodeErrors: nodeErrorMap(nodeErrs)})
+}
+
+// collectEvents streams one node's events until defaultEventsTimeout. Deadline
+// and cancel are the normal end of the window; other errors are returned so
+// "no events" stays distinct from "node unreachable".
+func (h *Handlers) collectEvents(ctx context.Context, tail int32) ([]eventEntry, error) {
+	ctx, cancel := context.WithTimeout(ctx, defaultEventsTimeout)
+	defer cancel()
+
+	entries := []eventEntry{}
+
+	err := h.Client.WatchEvents(ctx, tail,
 		func(ch <-chan talosclient.Event) {
 			for ev := range ch {
 				entry := eventEntry{
@@ -298,12 +275,13 @@ func (h *Handlers) HandleEvents(ctx context.Context, _ *mcp.CallToolRequest, arg
 					entry.Payload = fmt.Sprintf("%v", ev.Payload)
 				}
 
-				events = append(events, entry)
+				entries = append(entries, entry)
 			}
 		},
-	); err != nil && !errors.Is(err, context.DeadlineExceeded) && !errors.Is(err, context.Canceled) {
-		return nil, nil, fmt.Errorf("events watch: %w", err)
+	)
+	if err != nil && !errors.Is(err, context.DeadlineExceeded) && !errors.Is(err, context.Canceled) {
+		return nil, err
 	}
 
-	return jsonResult(eventsResult{Count: len(events), Events: events})
+	return entries, nil
 }

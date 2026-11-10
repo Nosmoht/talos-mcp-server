@@ -96,7 +96,7 @@ func TestPromptCompletion(t *testing.T) {
 			name:   "apply-config mode returns exact modes",
 			prompt: "apply-config",
 			arg:    "mode",
-			want:   []string{"auto", "no_reboot", "reboot", "staged", "try"},
+			want:   []string{"auto", "no_reboot", "staged", "try"},
 		},
 		{
 			name:    "unknown prompt returns empty",

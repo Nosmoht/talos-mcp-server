@@ -80,7 +80,7 @@ func (h *Handlers) HandleValidate(_ context.Context, _ *mcp.CallToolRequest, arg
 		opts = append(opts, validation.WithStrict())
 	}
 
-	warnings, valErr := cfg.Validate(mode, opts...)
+	warnings, valErr := cfg.ValidateAsClient(mode, opts...)
 
 	if warnings == nil {
 		warnings = []string{}

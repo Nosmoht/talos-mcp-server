@@ -154,7 +154,7 @@ func TestHandleApplyConfig(t *testing.T) {
 		{"invalid mode", map[string]string{"patch": "{}", "node": "10.0.0.1", "mode": "bad"}, `unknown mode "bad"`, ""},
 		{"valid defaults", map[string]string{"patch": `{"machine":{}}`, "node": "10.0.0.1"}, "", "10.0.0.1"},
 		{"valid mode staged", map[string]string{"patch": `{"machine":{}}`, "node": "10.0.0.1", "mode": "staged"}, "", "staged"},
-		{"valid mode reboot", map[string]string{"patch": `{"machine":{}}`, "node": "10.0.0.1", "mode": "reboot"}, "", "reboot"},
+		{"mode reboot refused", map[string]string{"patch": `{"machine":{}}`, "node": "192.0.2.1", "mode": "reboot"}, "no_reboot", ""},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

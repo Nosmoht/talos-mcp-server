@@ -9,7 +9,7 @@ var knownServices = []string{
 }
 
 // applyModes mirrors the enum documented in internal/prompts/apply.go.
-var applyModes = []string{"auto", "no_reboot", "reboot", "staged", "try"}
+var applyModes = []string{"auto", "no_reboot", "staged", "try"}
 
 // commonNamespaces lists the COSI namespaces that appear in a default Talos
 // cluster. Less-common namespaces still work at tool-call time; they just

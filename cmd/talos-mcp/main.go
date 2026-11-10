@@ -271,13 +271,13 @@ func newServer(h *tools.Handlers, cfg serverConfig) (*mcp.Server, *subscriptions
 			"- etcd members or status → talos_etcd\n" +
 			"- kernel messages → talos_dmesg; runtime/lifecycle events → talos_events\n" +
 			"- containers → talos_containers; host processes → talos_processes\n" +
-			"- files on a node → talos_list_files / talos_read_file\n" +
+			"- files on a node → talos_list_files / talos_read_file (talos_read_file targets exactly one node)\n" +
 			"- anything else (network, MachineStatus, …) → talos_get " +
 			"(query one node at a time; talos_resource_definitions lists the types).\n" +
 			"All tools take an optional 'nodes' field (node IPs); omit it to use the active context from talosconfig. " +
 			"Mutating tools differ by family: talos_reboot, talos_upgrade, talos_rollback and talos_reset require confirm=true AND explicit nodes (they will not guess a target). " +
 			"talos_service_action requires confirm=true and, when nodes is omitted, fans out to the talosconfig default nodes — pass nodes to scope it. " +
-			"talos_patch_config and talos_apply_config target exactly one node and default to dry_run=true; confirm=true is required only for a real apply (dry_run=false). " +
+			"talos_patch_config and talos_apply_config target exactly one node and default to dry_run=true; confirm=true is required only for a real apply (dry_run=false). They have no reboot mode: apply with no_reboot, then use talos_reboot. " +
 			"talos_meta requires confirm=true only for write/delete. " +
 			"The talos:// MCP Resources mirror talos_get/talos_version for clients that prefer resources — the tools are the simpler path.",
 		CompletionHandler:  completions.NewHandler(h.AllowedNodes),

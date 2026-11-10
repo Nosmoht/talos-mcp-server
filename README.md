@@ -189,7 +189,7 @@ These tools modify cluster state and have explicit safety guards.
 | `talos_apply_config` | Apply a complete machine config to a single node. Supports maintenance-mode (`insecure=true` + `endpoint`) for fresh-node bootstrap. | `dry_run` defaults to `true`; `confirm=true` required when `dry_run=false` |
 | `talos_meta` | Read, write, or delete META partition key/value pairs. Supports maintenance-mode (`insecure=true` + `endpoint`). | `write`/`delete` require `confirm=true`; non-`UserReserved*` keys require enumeration in `TALOS_MCP_META_PRIVILEGED_KEYS` |
 
-All tools accept an optional `nodes` field (list of node IPs or hostnames), except that `talos_read_file`, `talos_get` and `talos_meta` with `action=read` accept at most one node. When omitted, the active context from talosconfig is used.
+All tools accept an optional `nodes` field (list of node IPs or hostnames), except that `talos_read_file`, `talos_get`, `talos_patch_config`, `talos_apply_config` and `talos_meta` with `action=read` accept at most one node, and `talos_etcd_snapshot` requires exactly one. When omitted, the active context from talosconfig is used.
 
 #### Maintenance-mode (`--insecure`) operations
 

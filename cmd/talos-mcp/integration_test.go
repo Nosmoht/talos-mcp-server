@@ -245,81 +245,24 @@ func TestTalosResourceDefinitions(t *testing.T) {
 // TestTalosPatchConfig_DryRun is the regression test for issue #25.
 // talos_patch_config dry-run must merge the patch with the current node config
 // before submitting to the Talos API. Previously failed because the raw patch
-// was sent as a full config document.
+// was sent as a full config document. The format-specific merge cases run as
+// unit tests in internal/tools/patch_pipeline_test.go.
 func TestTalosPatchConfig_DryRun(t *testing.T) {
 	session := connectMCP(t)
 	nodeIP := discoverNode(t, session)
 
-	result := patchDryRun(t, session, nodeIP, `{"machine":{"nodeLabels":{"integration-test":"true"}}}`)
-	// Talos v1.14+ rejects .machine.nodeLabels when the config carries a
-	// KubeNodeConfig document (machinery config/types/k8s/node.go,
-	// V1Alpha1ConflictValidate); such nodes take labels in that document.
-	if result.IsError && strings.Contains(extractText(t, result), ".machine.nodeLabels is already set in v1alpha1 config") {
-		result = patchDryRun(t, session, nodeIP, "apiVersion: v1alpha1\nkind: KubeNodeConfig\nlabels:\n  integration-test: \"true\"\n")
-	}
-	text := extractText(t, result)
-	if result.IsError {
-		t.Fatalf("talos_patch_config returned tool error: %s", text)
-	}
-	// The dry-run diff must show the label: a bare dry-run confirmation would
+	// A new named KmsgLogConfig document: it exists in machinery v1.13 and
+	// v1.14 and has no v1alpha1 conflict check, so any node config accepts it.
+	// The URL is a documentation address; a dry run sends nothing.
+	result := callTool(t, session, "talos_patch_config", map[string]any{
+		"patch":   "apiVersion: v1alpha1\nkind: KmsgLogConfig\nname: integration-test\nurl: udp://192.0.2.1:514\n",
+		"dry_run": true,
+		"nodes":   []string{nodeIP},
+	})
+	// The dry-run diff must show the document: a bare dry-run confirmation would
 	// also pass for a patch that was dropped before merging.
-	if !strings.Contains(text, "integration-test") {
-		t.Errorf("expected dry-run diff to contain the patched label, got: %.500s", text)
-	}
-}
-
-// patchDryRun calls talos_patch_config with dry_run=true on node and returns
-// the result, including tool errors.
-func patchDryRun(t *testing.T, session *mcp.ClientSession, node, patch string) *mcp.CallToolResult {
-	t.Helper()
-	result, err := session.CallTool(context.Background(), &mcp.CallToolParams{
-		Name: "talos_patch_config",
-		Arguments: map[string]any{
-			"patch":   patch,
-			"dry_run": true,
-			"nodes":   []string{node},
-		},
-	})
-	if err != nil {
-		t.Fatalf("CallTool(talos_patch_config): %v", err)
-	}
-	return result
-}
-
-// TestTalosPatchConfig_DryRun_JSON6902 verifies RFC 6902 JSON Patch format is
-// processed through the fetch→merge pipeline. Nodes with multi-document machine
-// configs will return a known configpatcher error; single-document configs apply
-// successfully. Both outcomes confirm the patch reached configpatcher.Apply
-// (i.e. the pipeline is correct), not that the raw patch was sent to the API.
-func TestTalosPatchConfig_DryRun_JSON6902(t *testing.T) {
-	session := connectMCP(t)
-	nodeIP := discoverNode(t, session)
-
-	result, err := session.CallTool(context.Background(), &mcp.CallToolParams{
-		Name: "talos_patch_config",
-		Arguments: map[string]any{
-			"patch":   `[{"op":"add","path":"/machine/nodeLabels/json6902-test","value":"true"}]`,
-			"dry_run": true,
-			"nodes":   []string{nodeIP},
-		},
-	})
-	if err != nil {
-		t.Fatalf("CallTool: %v", err)
-	}
-	text := extractText(t, result)
-
-	if result.IsError {
-		// Multi-document machine configs cannot accept RFC 6902 patches — this is a
-		// known configpatcher limitation, not a pipeline bug. Verify the error comes
-		// from configpatcher.Apply (not from an earlier stage like raw-patch submission).
-		if !strings.Contains(text, "apply patch") && !strings.Contains(text, "multi-document") {
-			t.Errorf("unexpected error (expected apply-patch or multi-document): %.500s", text)
-		}
-		return
-	}
-	// Single-document config: patch applied successfully.
-	if !strings.Contains(text, "json6902-test") && !strings.Contains(text, "dry") {
-		t.Errorf("expected dry-run response to contain patched label or dry-run confirmation, got: %.500s", text)
+	if text := extractText(t, result); !strings.Contains(text, "integration-test") {
+		t.Errorf("expected dry-run diff to contain the patched document, got: %.500s", text)
 	}
 }
 

@@ -84,11 +84,17 @@ Reads `~/.talos/config` by default (the same file `talosctl` uses). Override via
 
 This server is tested against Talos Linux v1.9.x through v1.13.x.
 
-| talos-mcp | Talos Linux | machinery SDK |
-|-----------|-------------|---------------|
-| v0.x (current) | v1.9.0 – v1.13.x | v1.13.4 |
+| talos-mcp | Talos Linux | machinery SDK | MCP go-sdk |
+|-----------|-------------|---------------|------------|
+| v0.x (current) | v1.9.0 – v1.13.x | v1.13.6 | v1.8.0 |
 
 The server logs a startup warning if the connected cluster's Talos version is outside the tested range. All gRPC methods used have been stable since Talos v1.9.
+
+### MCP protocol revisions
+
+Stdio mode serves MCP protocol revision `2026-07-28` and the legacy revisions up to `2025-11-25` (`initialize` handshake).
+
+Streamable HTTP mode is stateful and serves legacy revisions up to `2025-11-25` only; `2026-07-28` clients negotiate down to `2025-11-25` or receive a JSON-RPC error.
 
 ### Upgrade path validation
 
@@ -150,6 +156,8 @@ The server speaks the [MCP protocol](https://modelcontextprotocol.io) over stdio
 ```bash
 ./talos-mcp
 ```
+
+Server logs go to stderr only; the server sends no MCP `notifications/message` log notifications and does not advertise the `logging` capability.
 
 ## Tools
 
@@ -224,7 +232,7 @@ The server exposes Talos COSI resources as MCP resources:
 - `talos://cluster/resource-definitions` — discover resource types.
 - `talos://{node}/resource/{namespace}/{type}[/{id}]` — list or get COSI resources on a specific node.
 
-MCP clients that implement `resources/subscribe` (Claude Desktop, Cursor) receive `notifications/resources/updated` whenever the underlying resource changes — no polling required. Subscriptions are backed by the Talos COSI `Watch` / `WatchKindAggregated` streams and honour the same `TALOS_MCP_ALLOWED_NODES` allowlist as reads.
+MCP clients that implement `resources/subscribe` (legacy revisions up to `2025-11-25`; Claude Desktop, Cursor) or `subscriptions/listen` (revision `2026-07-28`) receive `notifications/resources/updated` whenever the underlying resource changes — no polling required. Subscriptions are backed by the Talos COSI `Watch` / `WatchKindAggregated` streams and honour the same `TALOS_MCP_ALLOWED_NODES` allowlist as reads.
 
 Subscribable resource types (canonical names):
 

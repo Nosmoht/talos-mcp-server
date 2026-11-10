@@ -57,7 +57,7 @@ For every mutating tool the change adds or touches:
 - [ ] **Outcome pairing**: handlers that accept `insecure=true` pair it with a deferred `h.auditOutcome(...)`, per `.claude/rules/insecure-mode.md` § Audit pairing.
 - [ ] **Redaction**: config patches that may contain TLS keys or tokens are logged as `<redacted, N bytes>` (see the `talos_patch_config` handler).
 - [ ] **Error path**: gRPC failures after the guards pass are reported with `h.mcpLogError(toolName, err)`.
-- [ ] **HTTP vs stdio parity**: a new mutating tool's audit trail works in both transports — `auditLog()` in the handler covers stdio mode and `h.mcpLogError()` covers HTTP mode stderr.
+- [ ] **Audit trail**: `auditLog()` and `h.mcpLogError()` write to the server's stderr `slog` log in both transports; the server sends no MCP `notifications/message`.
 
 ### Read-only enforcement
 

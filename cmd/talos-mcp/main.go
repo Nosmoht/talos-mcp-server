@@ -242,8 +242,6 @@ func main() {
 		ReadOnly:          readOnly,
 		SubscriptionRate:  subRate,
 		SubscriptionBurst: subBurst,
-		HTTPMode:          httpAddr != "",
-		ClusterVersion:    tc.GetClusterVersion,
 	})
 	defer subMgr.Shutdown()
 
@@ -257,8 +255,6 @@ type serverConfig struct {
 	ReadOnly          bool
 	SubscriptionRate  time.Duration
 	SubscriptionBurst int
-	HTTPMode          bool
-	ClusterVersion    func(context.Context) (*talosversion.TalosVersion, error)
 }
 
 // newServer builds the MCP server with all registrations and the subscription
@@ -287,37 +283,12 @@ func newServer(h *tools.Handlers, cfg serverConfig) (*mcp.Server, *subscriptions
 		CompletionHandler:  completions.NewHandler(h.AllowedNodes),
 		SubscribeHandler:   subMgr.Subscribe,
 		UnsubscribeHandler: subMgr.Unsubscribe,
-	}
-
-	// Wrap InitializedHandler. The supervisor goroutine runs unconditionally
-	// (subscriptions are per-session by SDK contract, unlike the logger which
-	// is stdio-only because multi-session HTTP would race the shared logger).
-	var priorInit func(context.Context, *mcp.InitializedRequest)
-	if !cfg.HTTPMode {
-		priorInit = func(initCtx context.Context, req *mcp.InitializedRequest) {
-			logger := slog.New(mcp.NewLoggingHandler(req.Session, &mcp.LoggingHandlerOptions{
-				LoggerName: "talos-mcp",
-			}))
-			h.SetLogger(logger)
-
-			// Forward version compatibility warning to the connected MCP client.
-			if cfg.ClusterVersion == nil {
-				return
-			}
-			if cv, err := cfg.ClusterVersion(initCtx); err == nil && !cv.InSupportedRange() {
-				logger.Warn("cluster Talos version is outside the tested range; some features may not work correctly",
-					"version", cv.String(),
-					"min_supported", talosversion.MinSupported.String(),
-					"max_tested", talosversion.MaxTested.String(),
-				)
-			}
-		}
-	}
-	serverOpts.InitializedHandler = func(initCtx context.Context, req *mcp.InitializedRequest) {
-		if priorInit != nil {
-			priorInit(initCtx, req)
-		}
-		go subMgr.SuperviseSession(req.Session)
+		// A nil Capabilities makes the SDK advertise logging; the other capabilities are still inferred from the registrations.
+		Capabilities: &mcp.ServerCapabilities{},
+		// Fires only for initialize-based sessions; 2026-07-28 subscriptions end through the SDK's subscriptions/listen deferred unsubscribe.
+		InitializedHandler: func(_ context.Context, req *mcp.InitializedRequest) {
+			go subMgr.SuperviseSession(req.Session)
+		},
 	}
 
 	server := mcp.NewServer(&mcp.Implementation{
@@ -408,8 +379,8 @@ func buildHTTPMux(mcpHandler http.Handler, token string, hc httpTransportConfig,
 // the bind address (e.g. behind nginx/Caddy/Tailscale).
 //
 // Cross-origin protection is intentionally NOT set on this struct. go-sdk v1.6.0
-// deprecated the StreamableHTTPOptions.CrossOriginProtection field and v1.8.0 removes
-// it; the SDK directs callers to wrap the handler with the stdlib middleware instead.
+// deprecated the StreamableHTTPOptions.CrossOriginProtection field, which v1.8.0 still
+// carries; the SDK directs callers to wrap the handler with the stdlib middleware instead.
 // newProtectedMCPHandler applies that wrapper. The cross-origin layer is orthogonal
 // to DisableLocalhostProtection (cross-origin non-safe-method denial vs. DNS rebinding
 // at the Host-header layer).

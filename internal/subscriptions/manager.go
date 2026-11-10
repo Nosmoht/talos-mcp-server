@@ -134,9 +134,9 @@ func (m *Manager) Unsubscribe(_ context.Context, req *mcp.UnsubscribeRequest) er
 	return nil
 }
 
-// SuperviseSession blocks on ss.Wait() and tears down every subscription
-// owned by the session when it disconnects. One supervisor goroutine per
-// session; installed from the wrapped InitializedHandler in main.go.
+// SuperviseSession blocks on ss.Wait() and tears down the session's
+// subscriptions on disconnect; main.go starts it for initialize-based sessions
+// only. 2026-07-28 sessions reach Unsubscribe through the SDK's listen-deferred call.
 func (m *Manager) SuperviseSession(ss *mcp.ServerSession) {
 	_ = ss.Wait()
 	m.cleanupSession(ss.ID())

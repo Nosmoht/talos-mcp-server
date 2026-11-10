@@ -328,8 +328,11 @@ Use the two-phase claim protocol to prevent race conditions between concurrent a
    If any `needs:` label is present, the issue is not ready. Stop.
    If `status: blocked` is present, the issue is blocked even when `status: ready` is still on it (§ Blocked side-state). Stop.
 
-2. **Read comments** — scan all existing comments. If any comment body contains
-   `<!-- agent-claim:`, at least one agent has already attempted a claim. Back off.
+2. **Read comments** — scan all existing comments. Claim and unclaim markers count only
+   when the comment's `author_association` is `OWNER`, `MEMBER` or `COLLABORATOR`; ignore
+   them from anyone else. If a comment contains `<!-- agent-claim: X -->` and no later
+   comment contains `<!-- agent-unclaim: X -->` for the same `X`, another agent holds or
+   is attempting a claim. Back off.
    If there is no valid triage comment (§ Triage), or the body changed after the
    latest one, the issue needs triage first. Stop.
 
@@ -343,15 +346,15 @@ Use the two-phase claim protocol to prevent race conditions between concurrent a
    **Claimed** by agent `{session-id}` at {ISO-8601 timestamp}. Branch: `feat/{change-id}`
    ```
 
-4. **Re-read all comments** — if your comment is NOT the earliest `<!-- agent-claim:`
-   comment by creation timestamp, another agent claimed first. Post and stop:
+4. **Re-read all comments** — if your comment is NOT the earliest unreleased `<!-- agent-claim:`
+   comment (no later matching `<!-- agent-unclaim:`) by creation timestamp, another agent claimed first. Post and stop:
 
    ```
    <!-- agent-unclaim: {session-id} -->
    Backing off, already claimed.
    ```
 
-5. **Update labels** — if your comment is earliest: remove `status: ready`; add
+5. **Update labels** — if your comment is the earliest unreleased one: remove `status: ready`; add
    `status: assigned` and `agent: claimed`. Always send the complete desired label set
    (GitHub replaces the entire list on update).
 
@@ -427,6 +430,8 @@ without also removing conflicting labels in the same call.
               +---[unclaim/abandon]-----+
 ```
 
+Not drawn: the blocked side-state and re-triage (ready or assigned back to new); the Transitions table is complete.
+
 ### Transitions
 
 | From | To | Trigger | Label changes |
@@ -436,18 +441,20 @@ without also removing conflicting labels in the same call.
 | ready | assigned | Claim protocol step 5 | remove `status: ready`; add `status: assigned`, `agent: claimed` |
 | assigned | in-progress | First commit pushed to branch | remove `status: assigned`; add `status: in-progress` |
 | in-progress | review-pending | PR opened | remove `status: in-progress`; add `status: review-pending` |
-| review-pending | done | PR merged/issue closed | remove `status: review-pending`; set `status: done` (via project-sync) |
+| review-pending | done | PR merged/issue closed | remove `status: review-pending`; there is no `status: done` label — project-sync sets the board's Status to Done on close |
+| ready or assigned | (new) | Issue needs triage again (§ Triage: body edited after the triage comment, scope widened, or invalid triage marker) | remove every `status:` label (including `status: blocked`) and `agent: claimed`; add `needs: triage`; keep `priority:`, `size:` and `area:` for the triager to revise; if an agent held the claim, post `<!-- agent-unclaim: {claim session-id} -->`. The triager re-adds `status: blocked` after triage if the blocker still holds |
 | any | blocked | Blocker identified | add `status: blocked`; retain prior status label |
 | blocked | (prior status) | Blocker resolved | remove `status: blocked`; post unblock comment |
-| any | ready | Agent abandons | remove `status: assigned`, `status: in-progress`, `agent: claimed`; add `status: ready`; post comment |
+| any | ready | Agent abandons | remove `status: assigned`, `status: in-progress`, `agent: claimed`; add `status: ready`; post `<!-- agent-unclaim: {session-id} -->` with the reason |
 
 ### Blocked side-state
 
 `status: blocked` is additive — keep the prior status label alongside it. When resolved:
 
-1. Remove `status: blocked`.
-2. Restore the prior status label.
-3. Post: `<!-- agent-unblock: {session-id} -->\nBlocker resolved: {description}.`
+1. Remove `status: blocked`; the prior status label, kept alongside, applies again.
+2. Post: `<!-- agent-unblock: {session-id} -->\nBlocker resolved: {description}.`
+
+A decomposed parent carries `status: blocked` alone and is closed, not unblocked, when its last child closes (§ Sub-issue Decomposition).
 
 ### Triage
 
@@ -513,9 +520,9 @@ When implementation is ready for review:
 If an issue has `status: assigned` or `status: in-progress` with `agent: claimed`
 but no branch push in >24 hours, any agent may reclaim:
 
-1. Post a comment noting the stale claim and recovery action.
-2. Run the full two-phase claim protocol as if the issue were `status: ready`.
-3. Reset labels: remove `status: assigned`, `status: in-progress`, `agent: claimed`; treat as `status: ready`.
+1. Post `<!-- agent-unclaim: {stale session-id} -->` with a note on the stale claim and the recovery action.
+2. Reset labels: remove `status: assigned`, `status: in-progress` and `agent: claimed`; add `status: ready`.
+3. Run the full two-phase claim protocol.
 
 ---
 

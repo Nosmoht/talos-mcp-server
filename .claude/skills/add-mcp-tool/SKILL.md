@@ -43,7 +43,7 @@ then proceed non-interactively.
 
 6. **Generate test stub.** Write `internal/tools/<name>_test.go` with one
    happy-path test and (for `mutating`) a guards-enforcement test.
-7. **Format.** Run `gofmt -w internal/tools/<name>.go internal/tools/<name>_test.go`.
+7. **Format.** Run `make fmt-fix`.
 8. **Update inventory.** Edit the tool-inventory tables in `AGENTS.md` and
    `README.md`. Preserve alphabetical order.
 

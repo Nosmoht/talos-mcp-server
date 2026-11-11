@@ -12,3 +12,6 @@ coverage.out
 .claude/worktrees/
 .claude/reviews/
 .claude/plans/
+# mise loads these over mise.toml; committed, they would loosen the CI gate.
+mise.local.toml
+.mise.local.toml

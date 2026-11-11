@@ -7,55 +7,60 @@ LDFLAGS    := -s -w \
 	-X main.commit=$(COMMIT) \
 	-X main.date=$(DATE)
 
+MISE           := mise exec --
+GO_MOD_VERSION := $(shell awk '$$1 == "toolchain" {t = $$2; sub(/^go/, "", t)} $$1 == "go" {g = $$2} END {print (t != "" ? t : g)}' go.mod)
+# mise resolves Go from go.mod before its [env] applies; a host GOWORK file path makes it fall back to the host go.
+export GOWORK := off
+
 .DEFAULT_GOAL := help
 
-.PHONY: help build test test-integration bench lint fmt fmt-fix vet check clean clean-worktrees coverage mod-tidy
+.PHONY: help build test test-integration bench toolchain lint arch-lint fmt fmt-fix vet check clean clean-worktrees coverage mod-tidy
 
 help: ## Show available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | \
 		awk 'BEGIN {FS = ":.*?## "}; {printf "  %-12s %s\n", $$1, $$2}'
 
-build: ## Build the binary (CGO_ENABLED=0, version info injected)
-	CGO_ENABLED=0 go build -trimpath -ldflags "$(LDFLAGS)" -o $(BINARY) ./cmd/talos-mcp
+build: toolchain ## Build the binary (CGO_ENABLED=0, version info injected)
+	$(MISE) env CGO_ENABLED=0 go build -trimpath -ldflags "$(LDFLAGS)" -o $(BINARY) ./cmd/talos-mcp
 
-test: ## Run tests with race detector and coverage report
-	go test -v -race -coverprofile=coverage.out -coverpkg=./... ./...
-	go tool cover -func=coverage.out
+test: toolchain ## Run tests with race detector and coverage report
+	$(MISE) go test -v -race -coverprofile=coverage.out -coverpkg=./... ./...
+	$(MISE) go tool cover -func=coverage.out
 
-test-integration: build ## Run integration tests against a live Talos cluster (requires talosconfig)
-	go test -v -tags integration -timeout 120s -count=1 ./cmd/talos-mcp/
+test-integration: toolchain build ## Run integration tests against a live Talos cluster (requires talosconfig)
+	$(MISE) go test -v -tags integration -timeout 120s -count=1 ./cmd/talos-mcp/
 
-bench: ## Run Go benchmarks (use BENCH=pattern to filter, e.g. BENCH=Marshal)
-	go test -bench=$${BENCH:-.} -benchmem -run='^$$' ./internal/tools/
+bench: toolchain ## Run Go benchmarks (use BENCH=pattern to filter, e.g. BENCH=Marshal)
+	$(MISE) go test -bench=$${BENCH:-.} -benchmem -run='^$$' ./internal/tools/
 
-lint: ## Run golangci-lint (install: curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin v2.15.0)
-	@GOPATH=$$(go env GOPATH); \
-	LINT=$$(command -v golangci-lint 2>/dev/null || echo "$$GOPATH/bin/golangci-lint"); \
-	if [ ! -x "$$LINT" ]; then \
-		echo "golangci-lint not found. Install v2.15.0:"; \
-		echo "  curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b \$$(go env GOPATH)/bin v2.15.0"; \
-		exit 1; \
-	fi; \
-	$$LINT run
+toolchain: ## Fail unless mise runs the Go version go.mod selects
+	@want="go$(GO_MOD_VERSION)"; got="$$($(MISE) go env GOVERSION)"; \
+	if [ "$$got" != "$$want" ]; then echo "Go toolchain mismatch: expected $$want, mise runs $$got" >&2; exit 1; fi
 
-fmt: ## Check formatting (fails if any files need formatting)
-	@unformatted=$$(gofmt -l .); \
+lint: toolchain ## Run golangci-lint
+	$(MISE) golangci-lint run
+
+arch-lint: toolchain ## Check package and vendor dependency rules (go-arch-lint)
+	$(MISE) go-arch-lint check
+
+fmt: toolchain ## Check formatting (fails if any files need formatting)
+	@unformatted=$$($(MISE) gofmt -l .); \
 	if [ -n "$$unformatted" ]; then \
 		echo "Unformatted files (run 'make fmt-fix'):"; \
 		echo "$$unformatted"; \
 		exit 1; \
 	fi
 
-fmt-fix: ## Auto-fix formatting with gofmt
-	gofmt -w .
+fmt-fix: toolchain ## Auto-fix formatting with gofmt
+	$(MISE) gofmt -w .
 
-vet: ## Run go vet
-	go vet ./...
+vet: toolchain ## Run go vet
+	$(MISE) go vet ./...
 
-check: fmt vet lint test ## Run full validation (CI parity: fmt + vet + lint + test)
+check: fmt vet lint arch-lint test ## Run full validation (CI parity: fmt + vet + lint + arch-lint + test)
 
-coverage: test ## Generate HTML coverage report and open in browser
-	go tool cover -html=coverage.out
+coverage: toolchain test ## Generate HTML coverage report and open in browser
+	$(MISE) go tool cover -html=coverage.out
 
 clean: ## Remove build artifacts
 	rm -f $(BINARY) coverage.out
@@ -95,5 +100,5 @@ clean-worktrees: ## Prune stale worktree admin entries and remove orphan .claude
 		rm -rf ".claude/worktrees/$$name"; \
 	done
 
-mod-tidy: ## Tidy go module dependencies
-	go mod tidy
+mod-tidy: toolchain ## Tidy go module dependencies
+	$(MISE) go mod tidy

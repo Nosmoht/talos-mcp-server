@@ -5,25 +5,37 @@
 ```bash
 git clone https://github.com/Nosmoht/talos-mcp-server
 cd talos-mcp-server
-make check   # fmt + vet + lint + test
+make check   # fmt + vet + lint + arch-lint + test
 ```
 
 ## Prerequisites
 
-- Go 1.21+
-- [golangci-lint](https://golangci-lint.run/welcome/install/) — required for `make lint` and `make check`
+- [mise](https://mise.jdx.dev) — provides Go at the version `go.mod` selects, and golangci-lint and go-arch-lint at the versions in `mise.toml`
+- git and make
+- On Linux, a C compiler such as gcc: `go test -race` needs cgo
+
+The first `make` target you run installs the pinned tools through `mise exec`, behind the `make toolchain` version check.
+If your mise config sets `paranoid = true`, run `mise trust` once in the checkout.
+`mise.toml` sets `GOENV=off`, so `go env -w` settings are ignored. Configure a module proxy through environment variables such as `GOPROXY`.
+
+To bump a tool, change its version in `mise.toml`, or the `go` line of `go.mod` (the `toolchain` line if `go.mod` has one), then run `mise trust` once in the checkout and `mise lock` in the same change.
+After committing a Go or go-arch-lint bump, check that go-arch-lint's deepScan still reports injections. With some Go versions it silently reports nothing, and `make arch-lint` stays green. The check copies the committed tree (`HEAD`), plants a known violation and must fail with `tools -\-> resources`:
 
 ```bash
-go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+d=$(mktemp -d) && git archive HEAD | tar -x -C "$d" && sed -i.bak 's/resources.Register(server, cfg.ResourceClient,/resources.Register(server, h.Client,/' "$d/cmd/talos-mcp/main.go" && (cd "$d" && GOWORK=off MISE_TRUSTED_CONFIG_PATHS="$d" mise exec -- go-arch-lint check --output-color=false)
 ```
+
+A Dependabot `gomod` PR that raises the `go` line fails the CI `lint` job with "is not in the lockfile" until that re-lock is pushed to the PR.
+`min_version` in `mise.toml` and the `version:` of `jdx/mise-action` in `.github/workflows/ci.yml` move together.
 
 ## Development
 
 ```bash
-make build   # build binary
-make test    # run tests with race detector + coverage
-make lint    # run linter
-make check   # full CI parity (fmt + vet + lint + test)
+make build      # build binary
+make test       # run tests with race detector + coverage
+make lint       # run linter
+make arch-lint  # check package and vendor dependency rules
+make check      # full CI parity (fmt + vet + lint + arch-lint + test)
 ```
 
 ## Commit messages

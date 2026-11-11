@@ -46,12 +46,12 @@ New releases appear on npmjs.com within minutes of every `feat:` / `fix:` / `per
 
 Download the latest release from [GitHub Releases](https://github.com/Nosmoht/talos-mcp-server/releases), extract, and place the binary in your `$PATH`.
 
-**Build from source** (requires Go 1.21+):
+**Build from source** (Go version as set in `go.mod`; tools via [mise](https://mise.jdx.dev)):
 
 ```bash
 git clone https://github.com/Nosmoht/talos-mcp-server
-cd talos-mcp
-go build -o talos-mcp ./cmd/talos-mcp
+cd talos-mcp-server
+make build
 ```
 
 ## Configuration
@@ -358,17 +358,19 @@ A passing result means the package was published by the official GitHub Actions 
 ## Development
 
 ```bash
+# Tools come from mise (https://mise.jdx.dev); mise exec fetches them on first use
+
 # Build
-go build -o talos-mcp ./cmd/talos-mcp
+mise exec -- go build -o talos-mcp ./cmd/talos-mcp
 
 # Test
-go test -race ./...
+mise exec -- go test -race ./...
 
-# Lint (requires golangci-lint v2)
-golangci-lint run
+# Lint
+mise exec -- golangci-lint run
 
 # Format check
-gofmt -l .
+mise exec -- gofmt -l .
 ```
 
 ## License

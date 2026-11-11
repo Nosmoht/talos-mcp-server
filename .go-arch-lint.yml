@@ -1,0 +1,53 @@
+version: 3
+workdir: .
+allow:
+  depOnAnyVendor: false
+# Directories, not an excludeFiles regex: excludeFiles matches absolute paths, so a dot-dir regex drops every file of a checkout under .claude/worktrees/.
+exclude:
+  - .claude
+  - .claire
+  - .work
+excludeFiles:
+  - "^.*_test\\.go$"
+vendors:
+  mcp:        { in: github.com/modelcontextprotocol/go-sdk/** }
+  talos-sdk:  { in: github.com/siderolabs/talos/pkg/machinery/** }
+  cosi:       { in: github.com/cosi-project/runtime/** }
+  grpc:       { in: [google.golang.org/grpc, google.golang.org/grpc/**] }
+  yaml:       { in: go.yaml.in/yaml/v4 }
+  jsonschema: { in: github.com/google/jsonschema-go/** }
+  xext:       { in: [golang.org/x/sync/**, golang.org/x/time/**] }
+components:
+  cmd:           { in: cmd/talos-mcp }
+  tools:         { in: internal/tools }
+  resources:     { in: internal/resources }
+  subscriptions: { in: internal/subscriptions }
+  completions:   { in: internal/completions }
+  prompts:       { in: internal/prompts }
+  talos:         { in: internal/talos }
+  config:        { in: internal/config }
+  marshal:       { in: internal/marshal }
+  version:       { in: internal/version }
+deps:
+  cmd:
+    mayDependOn: [tools, resources, subscriptions, completions, prompts, talos, config, version]
+    canUse: [mcp, xext]
+  tools:
+    mayDependOn: [talos, version, marshal]
+    canUse: [mcp, talos-sdk, cosi, grpc, yaml, jsonschema]
+  resources:
+    mayDependOn: [talos, marshal]
+    canUse: [mcp, talos-sdk, cosi, grpc]
+  subscriptions:
+    mayDependOn: [resources, talos]
+    canUse: [mcp, cosi, xext]
+  completions:
+    mayDependOn: [talos]
+    canUse: [mcp]
+  prompts:
+    canUse: [mcp]
+  talos:
+    mayDependOn: [version]
+    canUse: [talos-sdk, cosi, grpc]
+  marshal:
+    canUse: [cosi, yaml]

@@ -7,8 +7,12 @@ linters:
     - exhaustive
     - gocritic
     - gosec
+    - interfacebloat
     - revive
     - thelper
+  exclusions:
+    # Generated-file headers must not switch linters off: such a header would silently suppress interfacebloat.
+    generated: disable
 formatters:
   # gofmt is a formatter in golangci-lint v2 (moved out of linters).
   # Enabled here to match the `gofmt -l .` check run by `make fmt`,

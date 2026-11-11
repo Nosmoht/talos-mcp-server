@@ -28,7 +28,7 @@ jobs:
         with:
           filters: |
             go:
-              - '*.go'
+              - '**/*.go'
               - 'cmd/**'
               - 'internal/**'
               - 'go.mod'
@@ -36,6 +36,10 @@ jobs:
               - 'Makefile'
               - '.goreleaser.yaml'
               - '.github/workflows/ci.yml'
+              - '.go-arch-lint.yml'
+              - '.golangci.yml'
+              - 'mise.toml'
+              - 'mise.lock'
 
   lint:
     needs: changes
@@ -43,18 +47,17 @@ jobs:
     # The status functions replace the implicit success(), which skips this job whenever
     # 'changes' is skipped, i.e. on every non-PR run. Same for verify, test and build.
     # NOTE: keep Go path list in sync with the 'changes' job and auto-tag.yml.
+    # The 'go' filter intentionally carries CI-only entries that auto-tag.yml omits.
     if: >-
       !cancelled() && !failure() &&
       (github.event_name != 'pull_request' || needs.changes.outputs.go == 'true')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4
-      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v5
+      - uses: jdx/mise-action@6be3c7ed4c21d4f76b208d351d95aac273ebb76d # v5.2.4
         with:
-          go-version-file: go.mod
-      - uses: golangci/golangci-lint-action@82606bf257cbaff209d206a39f5134f0cfbfd2ee # v9
-        with:
-          version: v2.15
+          version: 2026.11.5
+      - run: make fmt vet lint arch-lint
 
   verify:
     needs: changes

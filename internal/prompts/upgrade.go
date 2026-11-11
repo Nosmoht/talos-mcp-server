@@ -48,9 +48,8 @@ Work through each gate in order. If any gate fails, stop and report — do not p
 
 Gate 0 — Version compatibility check
 Fetch the current Talos version from any node using talos_version. Compare with the target version %s.
-Talos supports upgrades of at most one minor version at a time (e.g. v1.11.x → v1.12.x).
-If the target skips a minor version or is a downgrade, stop and report — the upgrade path is not supported.
-Confirm the current version and validate the upgrade path before proceeding to Gate 1.
+Report the current version and the target. Each Talos release defines which current versions it accepts, including some that skip a minor version and some downgrades, so do not refuse a path from the version numbers alone.
+talos_upgrade checks the path against the target release's rules before it touches the node; if it refuses, stop and report its error.
 
 Gate 1 — Cluster health
 Check overall cluster health using talos_health. All checks must pass: etcd healthy, Kubernetes API reachable, all nodes ready. A timeout or any failure here is a hard blocker.

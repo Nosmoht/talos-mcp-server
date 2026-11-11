@@ -6,7 +6,10 @@ import (
 	"fmt"
 
 	"github.com/cosi-project/runtime/pkg/resource"
+	"github.com/cosi-project/runtime/pkg/state"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	talosclient "github.com/siderolabs/talos/pkg/machinery/client"
+	"google.golang.org/grpc/codes"
 
 	"github.com/Nosmoht/talos-mcp-server/internal/marshal"
 	"github.com/Nosmoht/talos-mcp-server/internal/talos"
@@ -27,8 +30,12 @@ func (h *Handlers) handleCOSIResource(ctx context.Context, req *mcp.ReadResource
 
 	namespace := resource.Namespace(ns)
 	rd, err := h.Client.ResolveResourceKind(ctx, &namespace, resType)
-	if err != nil {
+	if talosclient.StatusCode(err) == codes.NotFound {
 		return nil, mcp.ResourceNotFoundError(req.Params.URI)
+	}
+
+	if err != nil {
+		return nil, fmt.Errorf("resolve resource type %q: %w", resType, err)
 	}
 
 	resolvedType := rd.TypedSpec().Type
@@ -39,8 +46,12 @@ func (h *Handlers) handleCOSIResource(ctx context.Context, req *mcp.ReadResource
 		r, err := h.Client.COSIState().Get(ctx,
 			resource.NewMetadata(namespace, resolvedType, resID, resource.VersionUndefined),
 		)
-		if err != nil {
+		if state.IsNotFoundError(err) {
 			return nil, mcp.ResourceNotFoundError(req.Params.URI)
+		}
+
+		if err != nil {
+			return nil, fmt.Errorf("get resource %s/%s/%s: %w", ns, resolvedType, resID, err)
 		}
 
 		data, err := marshal.Resource(r)

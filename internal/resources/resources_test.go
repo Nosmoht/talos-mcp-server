@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"slices"
 	"strings"
 	"testing"
@@ -19,6 +18,8 @@ import (
 	machineapi "github.com/siderolabs/talos/pkg/machinery/api/machine"
 	runtimeres "github.com/siderolabs/talos/pkg/machinery/resources/runtime"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	"github.com/Nosmoht/talos-mcp-server/internal/talos"
 )
@@ -144,10 +145,12 @@ func TestRegister_NoPanic(t *testing.T) {
 	Register(server, nil, nil)
 }
 
-// fakeClient serves resource kinds from a map and resources from state.
+// fakeClient serves resource kinds from a map and resources from state;
+// resolveErr, when set, is returned by every resolve.
 type fakeClient struct {
-	state state.State
-	kinds map[resource.Type]*meta.ResourceDefinition
+	state      state.State
+	kinds      map[resource.Type]*meta.ResourceDefinition
+	resolveErr error
 }
 
 var _ Client = (*fakeClient)(nil)
@@ -157,10 +160,14 @@ func (f *fakeClient) Version(context.Context, ...grpc.CallOption) (*machineapi.V
 }
 
 func (f *fakeClient) ResolveResourceKind(_ context.Context, _ *resource.Namespace, resourceType resource.Type) (*meta.ResourceDefinition, error) {
+	if f.resolveErr != nil {
+		return nil, f.resolveErr
+	}
 	if rd, ok := f.kinds[resourceType]; ok {
 		return rd, nil
 	}
-	return nil, fmt.Errorf("unknown resource type %q", resourceType)
+	// The machinery client reports an unregistered type this way (client/resources.go).
+	return nil, status.Errorf(codes.NotFound, "resource %q is not registered", resourceType)
 }
 
 func (f *fakeClient) COSIState() state.State { return f.state }

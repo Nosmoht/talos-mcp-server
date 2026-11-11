@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -14,18 +15,21 @@ import (
 	"github.com/cosi-project/runtime/pkg/resource/protobuf"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	machineapi "github.com/siderolabs/talos/pkg/machinery/api/machine"
+	talosclient "github.com/siderolabs/talos/pkg/machinery/client"
+	"github.com/siderolabs/talos/pkg/machinery/compatibility"
 	"github.com/siderolabs/talos/pkg/machinery/config/configpatcher"
 	talosconfig "github.com/siderolabs/talos/pkg/machinery/resources/config"
 	"go.yaml.in/yaml/v4"
+	"google.golang.org/grpc/codes"
 
 	"github.com/Nosmoht/talos-mcp-server/internal/talos"
 	"github.com/Nosmoht/talos-mcp-server/internal/version"
 )
 
 const (
-	defaultRebootTimeout  = 5 * time.Minute
-	rebootProbeInterval   = 2 * time.Second
-	comebackProbeInterval = 3 * time.Second
+	defaultRebootTimeout = 5 * time.Minute
+	rebootProbeInterval  = 3 * time.Second
+	rebootProbeTimeout   = 5 * time.Second
 
 	// maxConfigFileSize caps the size of a config file read by readConfigFile.
 	// A machine config should never exceed 1 MiB in practice.
@@ -214,7 +218,7 @@ func (h *Handlers) HandleReboot(ctx context.Context, req *mcp.CallToolRequest, a
 		preID := preBootIDs[node]
 
 		go func() {
-			res, err := h.waitForNodeReboot(timeoutCtx, req, node, preID, startTime)
+			res, err := h.waitForNodeReboot(timeoutCtx, req, node, preID, startTime, rebootProbeInterval)
 			outCh <- nodeOutcome{result: res, err: err}
 		}()
 	}
@@ -269,77 +273,77 @@ func (h *Handlers) readBootID(ctx context.Context, node string) (string, error) 
 		return "", fmt.Errorf("read boot_id content: %w", err)
 	}
 
-	return strings.TrimSpace(string(data)), nil
+	// machined's Read returns nil once its stream context is cancelled, so a read
+	// cut short by a shutdown can end without an error and with partial data.
+	id := strings.TrimSpace(string(data))
+	if len(id) != bootIDLength {
+		return "", fmt.Errorf("read boot_id: %w: got %q", errIncompleteBootID, id)
+	}
+
+	return id, nil
 }
 
-// waitForNodeReboot polls until the given node has completed its reboot.
-// It returns an error if the context deadline is exceeded or if the boot ID
-// did not change (indicating no actual reboot occurred).
-func (h *Handlers) waitForNodeReboot(ctx context.Context, req *mcp.CallToolRequest, node, preBootID string, startTime time.Time) (*rebootResult, error) {
-	// Phase 1: wait for the node to become unreachable (reboot starting).
-	notifyProgress(ctx, req, fmt.Sprintf("Node %s: waiting for reboot to start...", node), 0, 0)
+// bootIDLength is the length of the UUID text in /proc/sys/kernel/random/boot_id.
+const bootIDLength = 36
+
+var errIncompleteBootID = errors.New("incomplete boot ID")
+
+// waitForNodeReboot polls the node's boot ID until it differs from preBootID,
+// the same post check talosctl runs after a reboot.
+func (h *Handlers) waitForNodeReboot(ctx context.Context, req *mcp.CallToolRequest, node, preBootID string, startTime time.Time, interval time.Duration) (*rebootResult, error) {
+	notifyProgress(ctx, req, fmt.Sprintf("Node %s: waiting for a new boot ID...", node), 0, 0)
 
 	for {
-		callCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-		_, vErr := h.Client.GetNodeVersion(callCtx, node)
+		callCtx, cancel := context.WithTimeout(ctx, rebootProbeTimeout)
+		bootID, err := h.readBootID(callCtx, node)
 		cancel()
 
-		if vErr != nil {
-			// Node is unreachable — reboot has started.
-			break
+		if err == nil && bootID != preBootID {
+			return &rebootResult{
+				Node:      node,
+				OldBootID: preBootID,
+				NewBootID: bootID,
+				Duration:  time.Since(startTime).Round(time.Second).String(),
+				Status:    "rebooted successfully",
+			}, nil
+		}
+
+		if err != nil && !isRebootTransient(err) {
+			return nil, fmt.Errorf("node %s: %w", node, err)
 		}
 
 		select {
 		case <-ctx.Done():
-			return nil, fmt.Errorf("timed out waiting for node to go down: %w", ctx.Err())
-		case <-time.After(rebootProbeInterval):
+			reason := "timed out"
+			if errors.Is(ctx.Err(), context.Canceled) {
+				reason = "wait cancelled"
+			}
+
+			if err != nil {
+				return nil, fmt.Errorf("node %s: %s waiting for the node to come back: %w", node, reason, err)
+			}
+
+			return nil, fmt.Errorf("node %s: %s, boot ID did not change (%s) — reboot may not have occurred", node, reason, preBootID)
+		case <-time.After(interval):
 		}
 	}
+}
 
-	// Phase 2: wait for the node to become reachable again (reboot complete).
-	notifyProgress(ctx, req, fmt.Sprintf("Node %s: rebooting, waiting for node to come back...", node), 0, 0)
-
-	for {
-		callCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-		_, vErr := h.Client.GetNodeVersion(callCtx, node)
-		cancel()
-
-		if vErr == nil {
-			break
-		}
-
-		select {
-		case <-ctx.Done():
-			return nil, fmt.Errorf("timed out waiting for node to come back: %w", ctx.Err())
-		case <-time.After(comebackProbeInterval):
-		}
+// isRebootTransient reports whether err is one talosctl's post check retries
+// (cmd/talosctl/pkg/talos/action/node.go, unexported there), a timed-out probe,
+// or a boot ID read cut short by the shutdown.
+func isRebootTransient(err error) bool {
+	if errors.Is(err, io.EOF) || errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) ||
+		errors.Is(err, errIncompleteBootID) {
+		return true
 	}
 
-	// Phase 3: verify boot ID changed to confirm an actual reboot occurred.
-	newBootID, err := h.readBootID(ctx, node)
-	if err != nil {
-		// Boot ID read failure after a successful Version() call is unexpected but
-		// not fatal — report it in the result rather than failing the whole wait.
-		return &rebootResult{
-			Node:      node,
-			OldBootID: preBootID,
-			NewBootID: "<unreadable: " + err.Error() + ">",
-			Duration:  time.Since(startTime).Round(time.Second).String(),
-			Status:    "rebooted (boot ID verification failed)",
-		}, nil
+	switch talosclient.StatusCode(err) { //nolint:exhaustive // every other code ends the wait
+	case codes.Unavailable, codes.Canceled, codes.DeadlineExceeded:
+		return true
+	default:
+		return false
 	}
-
-	if newBootID == preBootID {
-		return nil, fmt.Errorf("node responded but boot ID did not change (%s) — reboot may not have occurred", preBootID)
-	}
-
-	return &rebootResult{
-		Node:      node,
-		OldBootID: preBootID,
-		NewBootID: newBootID,
-		Duration:  time.Since(startTime).Round(time.Second).String(),
-		Status:    "rebooted successfully",
-	}, nil
 }
 
 // UpgradeArgs defines input for talos_upgrade.
@@ -385,27 +389,13 @@ func (h *Handlers) HandleUpgrade(ctx context.Context, req *mcp.CallToolRequest, 
 		return nil, nil, err
 	}
 
-	// Upgrade path validation — skipped when TALOS_MCP_SKIP_VERSION_CHECK=true.
-	// Decision matrix:
-	//   image tag unparseable (custom/factory/latest) → warn + proceed
-	//   image parseable, node version unfetchable      → warn + proceed
-	//   image parseable, node version fetched, path ok → proceed silently
-	//   image parseable, node version fetched, invalid → hard error (reject)
 	if !h.SkipVersionCheck {
 		if len(args.Nodes) > 1 {
 			h.mcpLogWarn("talos_upgrade", "multiple nodes targeted; validating upgrade path against the first node only — upgrade nodes one at a time", fmt.Errorf("%d nodes", len(args.Nodes)))
 		}
 
-		targetVer, parseErr := version.ExtractFromImage(args.Image)
-		if parseErr != nil {
-			h.mcpLogWarn("talos_upgrade", "could not parse version from image tag, skipping upgrade path validation", parseErr)
-		} else {
-			currentVer, fetchErr := h.Client.GetNodeVersion(ctx, args.Nodes[0])
-			if fetchErr != nil {
-				h.mcpLogWarn("talos_upgrade", "could not detect current node version, skipping upgrade path validation", fetchErr)
-			} else if pathErr := version.ValidateUpgradePath(*currentVer, targetVer); pathErr != nil {
-				return nil, nil, fmt.Errorf("upgrade refused: %w (set TALOS_MCP_SKIP_VERSION_CHECK=true to override)", pathErr)
-			}
+		if err := h.checkUpgradePath(ctx, args.Nodes[0], args.Image); err != nil {
+			return nil, nil, fmt.Errorf("upgrade refused: %w (set TALOS_MCP_SKIP_VERSION_CHECK=true to override)", err)
 		}
 	}
 
@@ -433,6 +423,34 @@ func (h *Handlers) HandleUpgrade(ctx context.Context, req *mcp.CallToolRequest, 
 	notifyProgress(ctx, req, "Upgrade complete", 2, 2)
 
 	return unaryResult(rs)
+}
+
+// checkUpgradePath applies the rules the target installer enforces on the node,
+// which it checks only after draining the node and stopping its services.
+// An image tag without a version cannot be checked and passes with a warning.
+func (h *Handlers) checkUpgradePath(ctx context.Context, node, image string) error {
+	targetVer, err := version.ExtractFromImage(image)
+	if err != nil {
+		h.mcpLogWarn("talos_upgrade", "could not parse version from image tag, skipping upgrade path validation", err)
+		return nil
+	}
+
+	currentVer, err := h.Client.GetNodeVersion(ctx, node)
+	if err != nil {
+		return fmt.Errorf("could not detect the current Talos version of node %s: %w", node, err)
+	}
+
+	target, err := compatibility.ParseTalosVersion(&machineapi.VersionInfo{Tag: targetVer.String()})
+	if err != nil {
+		return fmt.Errorf("parse target version: %w", err)
+	}
+
+	host, err := compatibility.ParseTalosVersion(&machineapi.VersionInfo{Tag: currentVer.String()})
+	if err != nil {
+		return fmt.Errorf("parse node version: %w", err)
+	}
+
+	return target.UpgradeableFrom(host)
 }
 
 // RollbackArgs defines input for talos_rollback.

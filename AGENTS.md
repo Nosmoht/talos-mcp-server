@@ -59,10 +59,12 @@ make test            # run tests with race detector + coverage
 make test-integration # integration tests against a live Talos cluster
 make bench           # run Go benchmarks (use BENCH=pattern to filter)
 make lint            # run golangci-lint
+make arch-lint       # check package and vendor dependency rules (go-arch-lint)
 make fmt             # check formatting
 make fmt-fix         # auto-fix formatting with gofmt
 make vet             # run go vet
-make check           # full CI parity (fmt + vet + lint + test)
+make toolchain       # fail unless mise runs the Go version go.mod selects
+make check           # full CI parity (fmt + vet + lint + arch-lint + test)
 make coverage        # HTML coverage report
 make clean           # remove build artifacts
 make clean-worktrees # prune stale worktree entries and orphan dirs
@@ -70,14 +72,16 @@ make mod-tidy        # tidy go module dependencies
 make help            # list available targets
 ```
 
+Every edit to `.go-arch-lint.yml` — a new package, a new third-party module or a new allowed edge — is an architecture change and triggers architecture review (see § Escalation criteria). When `make arch-lint` reports a violation, fix the code first.
+
 Raw equivalents (use only when a `make` target does not fit the iteration):
 
 ```bash
-go build -o talos-mcp ./cmd/talos-mcp
-go test -race ./...
-go test ./internal/tools -run TestName     # focused single-test iteration
-go vet ./...
-gofmt -l .
+mise exec -- go build -o talos-mcp ./cmd/talos-mcp
+mise exec -- go test -race ./...
+mise exec -- go test ./internal/tools -run TestName     # focused single-test iteration
+mise exec -- go vet ./...
+mise exec -- gofmt -l .
 ```
 
 Always run `make check` before opening a PR. For narrow edits, run focused tests
@@ -505,7 +509,7 @@ Then commit normally — git will sign automatically.
 
 When implementation is ready for review:
 
-1. Run `make check` (fmt + vet + lint + test) and fix any failures.
+1. Run `make check` (fmt + vet + lint + arch-lint + test) and fix any failures.
 2. Push your branch (`feat/{change-id}` or `fix/{change-id}`).
 3. Open a PR using the template at `.github/PULL_REQUEST_TEMPLATE.md`.
    Title format: `feat(scope): short description [review:{change-id}]`
@@ -647,9 +651,9 @@ A PR that lacks an existing GitHub approval must be reviewed by a subagent (typi
 | Type | Reviewer | Triggers |
 |---|---|---|
 | `operational-safety` | `operational-safety-reviewer` | New/modified mutating tool, guard logic or safety defaults, audit logging (AUDIT / AUDIT_OUTCOME), read-only enforcement, safety-profile seeding |
-| `provenance` | `provenance-reviewer` | `go.mod` or `go.sum` modified, new external import |
+| `provenance` | `provenance-reviewer` | `go.mod` or `go.sum` modified, new external import, `mise.toml` or `mise.lock` modified |
 | `compatibility` | `compatibility-reviewer` | Tool/prompt/resource signature change, SDK bump, tool removal |
-| `architecture` | `principal-architect-reviewer` | New package, >3 packages modified, structural refactor, API surface addition |
+| `architecture` | `principal-architect-reviewer` | New package, >3 packages modified, structural refactor, API surface addition, `.go-arch-lint.yml` modified, `interfacebloat` enablement/settings/exclusions in `.golangci.yml` changed, new `//nolint` suppressing `interfacebloat` (incl. bare `//nolint` or `//nolint:all`) |
 | `security` | `security-reviewer` | Auth/token handling, input validation, maintenance-mode (`insecure=true`) paths, META key safelist, blocked config paths, hook/enforcement logic |
 | `performance` | `performance-reviewer` | gRPC streaming, goroutine lifecycle, hot-path caching |
 

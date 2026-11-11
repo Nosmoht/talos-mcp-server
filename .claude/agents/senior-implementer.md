@@ -22,7 +22,7 @@ These patterns are enforced by linters, tests, or review:
 - **Audit logging**: every mutating handler calls `h.auditLog(...)` as its first statement; handlers that accept `insecure=true` follow `.claude/rules/insecure-mode.md`.
 - **Build**: `CGO_ENABLED=0`, `-trimpath` — pure Go, no cgo.
 - **Linters**: golangci-lint v2 with `gosec`, `errorlint`, `gocritic`, `revive`.
-- **CI gate**: `make check` = fmt + vet + lint + test with the race detector.
+- **CI gate**: `make check` = fmt + vet + lint + arch-lint + test with the race detector.
 
 ## How to work
 

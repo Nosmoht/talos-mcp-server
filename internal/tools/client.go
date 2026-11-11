@@ -19,7 +19,7 @@ import (
 )
 
 // Client is the Talos API surface the tool handlers call through Handlers.Client.
-type Client interface {
+type Client interface { //nolint:interfacebloat // single seam over the Talos API surface the tool handlers call
 	Version(ctx context.Context, callOptions ...grpc.CallOption) (*machineapi.VersionResponse, error)
 	ServiceList(ctx context.Context, callOptions ...grpc.CallOption) (*machineapi.ServiceListResponse, error)
 	ServiceStart(ctx context.Context, id string, callOptions ...grpc.CallOption) (*machineapi.ServiceStartResponse, error)

@@ -45,6 +45,9 @@ Escalate when the change matches a trigger below or when you find a concrete ris
   - New external dependency introduced  ← also triggers provenance
   - API surface change: new/modified tools, prompts, resources, or MCP endpoints  ← also triggers compatibility if signatures change
   - Structural refactor (file moves, package reorganization)
+  - `.go-arch-lint.yml` modified
+  - `interfacebloat` enablement, settings or exclusions in `.golangci.yml` changed
+  - New `//nolint` directive that suppresses `interfacebloat` (including bare `//nolint` or `//nolint:all`)
 
 → operational-safety  (operational-safety-reviewer → review-operational-safety.md):
   - Any new or modified mutating tool — every tool registered inside the
@@ -74,6 +77,7 @@ Escalate when the change matches a trigger below or when you find a concrete ris
 → provenance  (provenance-reviewer → review-provenance.md):
   - go.mod or go.sum modified
   - Any new external import path introduced
+  - mise.toml or mise.lock modified
 
 → performance  (performance-reviewer → review-performance.md):
   - gRPC connection handling or streaming logic
@@ -139,7 +143,7 @@ Report as **major**:
 
 ### CI readiness
 
-Judge whether `make check` passes (gofmt, go vet, golangci-lint with errorlint/gosec/gocritic/staticcheck, `go test -race`) from the results the caller supplies. When none were supplied, say in the notes that CI readiness is unverified; CI runs the same gate on the pull request.
+Judge whether `make check` passes (gofmt, go vet, golangci-lint with errorlint/gosec/gocritic/staticcheck, go-arch-lint, `go test -race`) from the results the caller supplies. When none were supplied, say in the notes that CI readiness is unverified; CI runs the same gate on the pull request.
 
 ## Output
 

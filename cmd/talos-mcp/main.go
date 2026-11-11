@@ -239,9 +239,11 @@ func main() {
 		log.Fatalf("%v", err) //nolint:gocritic // exitAfterDefer: stop() called explicitly above
 	}
 	server, subMgr := newServer(h, serverConfig{
-		ReadOnly:          readOnly,
-		SubscriptionRate:  subRate,
-		SubscriptionBurst: subBurst,
+		ReadOnly:           readOnly,
+		SubscriptionRate:   subRate,
+		SubscriptionBurst:  subBurst,
+		ResourceClient:     tc,
+		SubscriptionSource: tc,
 	})
 	defer subMgr.Shutdown()
 
@@ -252,16 +254,18 @@ func main() {
 
 // serverConfig carries the inputs of newServer that do not live on tools.Handlers.
 type serverConfig struct {
-	ReadOnly          bool
-	SubscriptionRate  time.Duration
-	SubscriptionBurst int
+	ReadOnly           bool
+	SubscriptionRate   time.Duration
+	SubscriptionBurst  int
+	ResourceClient     resources.Client
+	SubscriptionSource subscriptions.Source
 }
 
 // newServer builds the MCP server with all registrations and the subscription
 // manager. Production and tests share it, so fixtures cannot drift from the
 // production wiring — same drift class as newStreamableHTTPOptions.
 func newServer(h *tools.Handlers, cfg serverConfig) (*mcp.Server, *subscriptions.Manager) {
-	subMgr := subscriptions.NewManager(h.Client, h.AllowedNodes, cfg.SubscriptionRate, cfg.SubscriptionBurst)
+	subMgr := subscriptions.NewManager(cfg.SubscriptionSource, h.AllowedNodes, cfg.SubscriptionRate, cfg.SubscriptionBurst)
 
 	serverOpts := &mcp.ServerOptions{
 		Instructions: "Talos Linux cluster management. Choose a tool by what you need:\n" +
@@ -301,7 +305,7 @@ func newServer(h *tools.Handlers, cfg serverConfig) (*mcp.Server, *subscriptions
 	subMgr.BindServer(server)
 
 	tools.Register(server, h, cfg.ReadOnly)
-	resources.Register(server, h.Client, h.AllowedNodes)
+	resources.Register(server, cfg.ResourceClient, h.AllowedNodes)
 	prompts.Register(server, cfg.ReadOnly)
 
 	return server, subMgr

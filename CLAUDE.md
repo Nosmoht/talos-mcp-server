@@ -6,7 +6,7 @@ MCP server exposing Talos Linux cluster management to AI agents via the native g
 
 ```bash
 make build   # binary with version info
-make check   # full CI parity: fmt + vet + lint + test
+make check   # full CI parity: fmt + vet + lint + arch-lint + test
 ```
 
 ## Safety

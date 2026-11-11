@@ -98,10 +98,10 @@ func (h *Handlers) HandleGetResource(ctx context.Context, _ *mcp.CallToolRequest
 	)
 	defer func() { h.auditOutcome("talos_get", outcome, finalErr) }()
 
-	if args.CertFingerprint != "" && !args.Insecure {
+	if err := fingerprintRequiresInsecure("talos_get", args.CertFingerprint, args.Insecure); err != nil {
 		outcome = OutcomeRefusedFPWithoutInsec
-		finalErr = fmt.Errorf("talos_get refused: cert_fingerprint requires insecure=true")
-		return nil, nil, finalErr
+		finalErr = err
+		return nil, nil, err
 	}
 
 	ctx, cancel := withToolTimeout(ctx)
@@ -140,9 +140,6 @@ func (h *Handlers) HandleGetResource(ctx context.Context, _ *mcp.CallToolRequest
 	return h.getResourceFromCOSI(ctx, args, h.Client.COSIState(), h.Client.ResolveResourceKind, &outcome, &finalErr)
 }
 
-// getResourceFromCOSI runs the COSI Get/List against the supplied state and
-// resolver. Used by both the authenticated and insecure paths so the resource
-// query logic stays in one place.
 func (h *Handlers) getResourceFromCOSI(
 	ctx context.Context,
 	args GetResourceArgs,
@@ -160,40 +157,11 @@ func (h *Handlers) getResourceFromCOSI(
 		return nil, nil, *finalErr
 	}
 
-	resourceType := rd.TypedSpec().Type
-
-	var results []map[string]any
-
-	if args.ResourceID != "" {
-		r, err := st.Get(ctx, resource.NewMetadata(ns, resourceType, args.ResourceID, resource.VersionUndefined))
-		if err != nil {
-			*outcome = OutcomeRPCError
-			*finalErr = fmt.Errorf("get resource %s/%s/%s: %w", ns, resourceType, args.ResourceID, err)
-			return nil, nil, *finalErr
-		}
-		data, err := marshal.Resource(r)
-		if err != nil {
-			*outcome = OutcomeRPCError
-			*finalErr = fmt.Errorf("marshal resource: %w", err)
-			return nil, nil, *finalErr
-		}
-		results = []map[string]any{data}
-	} else {
-		list, err := st.List(ctx, resource.NewMetadata(ns, resourceType, "", resource.VersionUndefined))
-		if err != nil {
-			*outcome = OutcomeRPCError
-			*finalErr = fmt.Errorf("list resources %s/%s: %w", ns, resourceType, err)
-			return nil, nil, *finalErr
-		}
-		for _, r := range list.Items {
-			data, err := marshal.Resource(r)
-			if err != nil {
-				*outcome = OutcomeRPCError
-				*finalErr = fmt.Errorf("marshal resource: %w", err)
-				return nil, nil, *finalErr
-			}
-			results = append(results, data)
-		}
+	results, _, err := marshal.ReadResources(ctx, st, ns, rd.TypedSpec().Type, args.ResourceID, 0)
+	if err != nil {
+		*outcome = OutcomeRPCError
+		*finalErr = err
+		return nil, nil, err
 	}
 
 	if results == nil {

@@ -12,7 +12,7 @@ Loaded automatically when editing `internal/talos/insecure.go`,
 
 `talos.CanonicalIP` is the **single source of truth** for the endpoint string used in:
 - `h.InsecureAllowedNodes.CheckNode(canonicalEndpoint)`
-- `h.nodePatchMu("insecure:" + canonicalEndpoint)` (per-endpoint lock key)
+- `h.insecureApplyMu(canonicalEndpoint)` (per-endpoint lock key)
 - `talosclient.WithEndpoints(canonicalEndpoint)` (dial target)
 
 If any future code path uses `args.Endpoint` raw instead, the IPv4-mapped-IPv6 lock-key bypass returns. Always pipe through `canonicalizeAndCheckInsecure` first.

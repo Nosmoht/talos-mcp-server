@@ -56,9 +56,7 @@ func emptyResult() *mcp.CompleteResult {
 	}
 }
 
-// forPrompt dispatches on (promptName, argName). Prompt name is part of the
-// key because the same argument label can mean different things in a
-// hypothetical future prompt.
+// forPrompt keys on the prompt name too because one argument label can mean different things in different prompts.
 func forPrompt(promptName, arg string, nodes *talos.NodeAllowlist) []string {
 	switch promptName {
 	case "diagnose-node", "investigate-etcd":
@@ -81,7 +79,7 @@ func forPrompt(promptName, arg string, nodes *talos.NodeAllowlist) []string {
 		case "node":
 			return nodes.Exact()
 		case "mode":
-			return applyModes
+			return talos.ApplyModeNames()
 		}
 	}
 	return nil

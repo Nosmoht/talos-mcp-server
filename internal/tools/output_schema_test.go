@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/google/jsonschema-go/jsonschema"
@@ -49,9 +50,6 @@ func TestOutputSchemas_AllAccessorsResolve(t *testing.T) {
 	}
 }
 
-// TestOutputSchema_ValidatesPayload satisfies issue #145 acceptance criterion #3
-// programmatically: marshals a fixture payload for three tools and validates it
-// against the declared schema. Runs in CI — no manual Inspector session needed.
 func TestOutputSchema_ValidatesPayload(t *testing.T) {
 	ctx := context.Background()
 
@@ -82,9 +80,10 @@ func TestOutputSchema_ValidatesPayload(t *testing.T) {
 		{
 			name:   "talos_etcd_snapshot",
 			schema: EtcdSnapshotOutputSchema(),
-			payload: etcdSnapshotResult{
-				Path:  "/tmp/etcd.db",
-				Bytes: 12345,
+			payload: SecretFileResult{
+				Path:   "/tmp/etcd.db",
+				Bytes:  12345,
+				SHA256: strings.Repeat("0", 64),
 			},
 		},
 	}

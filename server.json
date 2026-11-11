@@ -35,7 +35,7 @@
         },
         {
           "name": "TALOS_MCP_READ_ONLY",
-          "description": "Set to \"true\" to disable all mutating tools (default: false)",
+          "description": "Set to \"true\" to disable all mutating tools (default: false). Accepts Go strconv.ParseBool values; any other value, an empty one included, stops the server — leave it unset rather than blank.",
           "isRequired": false
         },
         {
@@ -60,7 +60,7 @@
         },
         {
           "name": "TALOS_MCP_SKIP_VERSION_CHECK",
-          "description": "Set to \"true\" to bypass upgrade path validation (default: false)",
+          "description": "Set to \"true\" to bypass upgrade path validation (default: false). Accepts Go strconv.ParseBool values; any other value, an empty one included, stops the server — leave it unset rather than blank.",
           "isRequired": false
         },
         {

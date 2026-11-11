@@ -520,22 +520,14 @@ func (h *Handlers) HandlePatchConfig(ctx context.Context, req *mcp.CallToolReque
 		Patch:   fmt.Sprintf("<redacted, %d bytes>", len(args.Patch)),
 	}, args.Nodes)
 
-	// Require exactly one node: the fetch→merge path fetches the current config from
-	// the target node. Control-plane and worker nodes have different machine configs,
-	// so applying a config merged from node A to node B would be incorrect.
-	// Patch each node individually when multiple nodes need updating.
 	if len(args.Nodes) > 1 {
 		return nil, nil, fmt.Errorf("talos_patch_config requires exactly one target node (got %d); patch each node individually to ensure correct config merge", len(args.Nodes))
 	}
 
-	// Confirm guard: require explicit confirmation for non-dry-run patches.
-	// Dry-run mode (the default) does not require confirmation.
 	if !resolveDryRun(args.DryRun) && !args.Confirm {
 		return nil, nil, fmt.Errorf("patch_config refused: confirm must be explicitly set to true when dry_run is false")
 	}
 
-	// Blocklist guard: reject patches that touch operator-restricted config paths.
-	// Applied before the network round-trip so misuse is caught cheaply.
 	if err := checkBlockedPaths([]byte(args.Patch), h.BlockedConfigPaths); err != nil {
 		return nil, nil, err
 	}
@@ -545,7 +537,7 @@ func (h *Handlers) HandlePatchConfig(ctx context.Context, req *mcp.CallToolReque
 		return nil, nil, err
 	}
 
-	mode, err := parseApplyConfigMode(args.Mode)
+	mode, err := talos.ParseApplyMode(args.Mode)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -560,32 +552,21 @@ func (h *Handlers) HandlePatchConfig(ctx context.Context, req *mcp.CallToolReque
 		doneMsg = "Configuration validated (dry run)"
 	}
 
-	// Step 1: parse the patch (supports strategic merge patches and RFC 6902 JSON Patches).
 	patch, err := configpatcher.LoadPatch([]byte(args.Patch))
 	if err != nil {
 		return nil, nil, fmt.Errorf("load patch: %w", err)
 	}
 
-	// Acquire a per-node lock before the fetch→merge→apply sequence to prevent a
-	// read-modify-write race in HTTP multi-session mode. Without this, two concurrent
-	// sessions targeting the same node would both fetch the current config (v1), each
-	// merge their own patch, and the second apply would silently overwrite the first.
-	// The lock is held for the full duration of the operation and released on return.
-	// In dry-run mode the lock is still acquired: dry-run still reads live config and
-	// serialising it avoids confusing interleaved progress notifications.
-	nodeID := "<default>"
-	if len(args.Nodes) > 0 {
-		nodeID = args.Nodes[0]
+	// Held from the config fetch through ApplyConfiguration, dry-run included: a write in between would be silently overwritten.
+	ctx, release, err := h.lockConfigWrite(ctx, "talos_patch_config")
+	if err != nil {
+		return nil, nil, err
 	}
-
-	mu := h.nodePatchMu(nodeID)
-	mu.Lock()
-	defer mu.Unlock()
+	defer release()
 
 	notifyProgress(ctx, req, "Fetching current machine config", 1, 3)
 
-	// Step 2: fetch the current MachineConfig from the node via COSI.
-	// talos.WithSingleNode already set the single-node context, so COSI.Get uses one-to-one proxying.
+	// COSI Get needs the one-to-one proxying that WithSingleNode sets.
 	mc, err := h.Client.COSIState().Get(ctx, resource.NewMetadata(
 		talosconfig.NamespaceName,
 		talosconfig.MachineConfigType,
@@ -593,16 +574,16 @@ func (h *Handlers) HandlePatchConfig(ctx context.Context, req *mcp.CallToolReque
 		resource.VersionUndefined,
 	))
 	if err != nil {
-		return nil, nil, fmt.Errorf("get current machine config: %w", err)
+		err = fmt.Errorf("get current machine config: %w", err)
+		h.mcpLogError("talos_patch_config", err)
+		return nil, nil, err
 	}
 
-	// Step 3: extract the raw YAML body from the COSI resource envelope.
 	body, err := extractMachineConfigBody(mc)
 	if err != nil {
 		return nil, nil, fmt.Errorf("extract machine config body: %w", err)
 	}
 
-	// Step 4: apply the patch to the current config.
 	cfg, err := configpatcher.Apply(configpatcher.WithBytes(body), []configpatcher.Patch{patch})
 	if err != nil {
 		return nil, nil, fmt.Errorf("apply patch: %w", err)
@@ -623,8 +604,9 @@ func (h *Handlers) HandlePatchConfig(ctx context.Context, req *mcp.CallToolReque
 
 	resp, err := h.Client.ApplyConfiguration(ctx, applyReq)
 	if err != nil {
-		h.mcpLogError("talos_patch_config", err)
-		return nil, nil, fmt.Errorf("apply configuration: %w", err)
+		_, wrapped := configWriteError(ctx, "talos_patch_config", dryRun, err)
+		h.mcpLogError("talos_patch_config", wrapped)
+		return nil, nil, wrapped
 	}
 
 	notifyProgress(ctx, req, doneMsg, 3, 3)
@@ -684,10 +666,6 @@ type ApplyConfigArgs struct {
 
 // HandleApplyConfig implements the talos_apply_config tool.
 func (h *Handlers) HandleApplyConfig(ctx context.Context, req *mcp.CallToolRequest, args ApplyConfigArgs) (*mcp.CallToolResult, any, error) {
-	// AUDIT-FIRST: emit the audit log BEFORE any guard runs so refused-at-gate
-	// attempts still produce an audit trail. Paired with auditOutcome (deferred
-	// below) so defenders can distinguish refused / success / dial-error /
-	// rpc-error from the log alone.
 	h.auditLog("talos_apply_config", struct {
 		ConfigFile        string   `json:"config_file"`
 		Mode              string   `json:"mode,omitempty"`
@@ -714,41 +692,29 @@ func (h *Handlers) HandleApplyConfig(ctx context.Context, req *mcp.CallToolReque
 	)
 	defer func() { h.auditOutcome("talos_apply_config", outcome, finalErr) }()
 
-	// Consistency check FIRST (before format / file I/O / blocklist):
-	// surface fingerprint-without-insecure cleanly.
-	if args.CertFingerprint != "" && !args.Insecure {
+	if err := fingerprintRequiresInsecure("talos_apply_config", args.CertFingerprint, args.Insecure); err != nil {
 		outcome = OutcomeRefusedFPWithoutInsec
-		finalErr = fmt.Errorf("apply_config refused: cert_fingerprint requires insecure=true")
-		return nil, nil, finalErr
+		finalErr = err
+		return nil, nil, err
 	}
 
 	if args.Insecure {
 		return h.handleApplyConfigInsecure(ctx, req, args, &outcome, &finalErr)
 	}
 
-	// ── Authenticated (mTLS) path — pre-existing behaviour ─────────────────
-
-	// Blocklist guard: talos_apply_config replaces the entire machine config document,
-	// so it cannot be safely allowed when a path blocklist is active — any blocked path
-	// would be silently overwritten. Direct the caller to talos_patch_config instead,
-	// which supports targeted modifications that the blocklist can inspect.
+	// A full config replaces every blocked path, so path checks cannot make it safe.
 	if len(h.BlockedConfigPaths) > 0 {
 		outcome = OutcomeRefusedArgs
 		finalErr = fmt.Errorf("talos_apply_config is disabled while TALOS_MCP_BLOCKED_CONFIG_PATHS is set: use talos_patch_config for targeted changes that respect the blocklist")
 		return nil, nil, finalErr
 	}
 
-	// Require exactly one node: each node has a unique machine config.
-	// Applying the same full config to multiple nodes risks overwriting node-specific settings
-	// (e.g. hostname, network interface names, node-specific certificates).
 	if len(args.Nodes) > 1 {
 		outcome = OutcomeRefusedArgs
 		finalErr = fmt.Errorf("talos_apply_config requires exactly one target node (got %d); apply each node individually", len(args.Nodes))
 		return nil, nil, finalErr
 	}
 
-	// Confirm guard: require explicit confirmation for non-dry-run applies.
-	// Dry-run mode (the default) does not require confirmation.
 	if !resolveDryRun(args.DryRun) && !args.Confirm {
 		outcome = OutcomeRefusedConfirm
 		finalErr = fmt.Errorf("apply_config refused: confirm must be explicitly set to true when dry_run is false")
@@ -763,8 +729,6 @@ func (h *Handlers) HandleApplyConfig(ctx context.Context, req *mcp.CallToolReque
 		return nil, nil, finalErr
 	}
 
-	// Read config file after all guard checks pass — guards are cheap structural
-	// validations; file I/O should not run until the call is authorized.
 	configData, err := readConfigFile(args.ConfigFile)
 	if err != nil {
 		outcome = OutcomeRefusedArgs
@@ -772,7 +736,7 @@ func (h *Handlers) HandleApplyConfig(ctx context.Context, req *mcp.CallToolReque
 		return nil, nil, finalErr
 	}
 
-	mode, err := parseApplyConfigMode(args.Mode)
+	mode, err := talos.ParseApplyMode(args.Mode)
 	if err != nil {
 		outcome = OutcomeRefusedArgs
 		finalErr = err
@@ -781,18 +745,14 @@ func (h *Handlers) HandleApplyConfig(ctx context.Context, req *mcp.CallToolReque
 
 	dryRun := resolveDryRun(args.DryRun)
 
-	// Acquire the same per-node lock used by HandlePatchConfig to prevent a
-	// PatchConfig-vs-ApplyConfig interleaving race: a concurrent PatchConfig
-	// could fetch the current config, then ApplyConfig replaces it, and
-	// PatchConfig would apply its patch against the now-stale base.
-	nodeID := "<default>"
-	if len(args.Nodes) > 0 {
-		nodeID = args.Nodes[0]
+	// Same lock as HandlePatchConfig: this apply would otherwise land between a patch's fetch and apply.
+	ctx, release, err := h.lockConfigWrite(ctx, "talos_apply_config")
+	if err != nil {
+		outcome = OutcomeRefusedWriteBusy
+		finalErr = err
+		return nil, nil, err
 	}
-
-	mu := h.nodePatchMu(nodeID)
-	mu.Lock()
-	defer mu.Unlock()
+	defer release()
 
 	applyMsg := "Applying configuration"
 	doneMsg := "Configuration applied"
@@ -812,9 +772,13 @@ func (h *Handlers) HandleApplyConfig(ctx context.Context, req *mcp.CallToolReque
 
 	resp, err := h.Client.ApplyConfiguration(ctx, applyReq)
 	if err != nil {
+		var unknown bool
+		unknown, finalErr = configWriteError(ctx, "talos_apply_config", dryRun, err)
 		outcome = OutcomeRPCError
-		finalErr = fmt.Errorf("apply configuration: %w", err)
-		h.mcpLogError("talos_apply_config", err)
+		if unknown {
+			outcome = OutcomeUnknown
+		}
+		h.mcpLogError("talos_apply_config", finalErr)
 		return nil, nil, finalErr
 	}
 
@@ -823,33 +787,7 @@ func (h *Handlers) HandleApplyConfig(ctx context.Context, req *mcp.CallToolReque
 	return jsonResult(resp)
 }
 
-// parseApplyConfigMode maps the public string mode to the protobuf enum.
-// Returns an error for unknown modes; empty string defaults to AUTO.
-// Mode "reboot" is refused: it is deprecated in machinery v1.14.
-func parseApplyConfigMode(mode string) (machineapi.ApplyConfigurationRequest_Mode, error) {
-	switch mode {
-	case "reboot":
-		return 0, fmt.Errorf("mode \"reboot\" is not supported: apply with mode \"no_reboot\", then reboot the node with talos_reboot")
-	case "no_reboot":
-		return machineapi.ApplyConfigurationRequest_NO_REBOOT, nil
-	case "staged":
-		return machineapi.ApplyConfigurationRequest_STAGED, nil
-	case "try":
-		return machineapi.ApplyConfigurationRequest_TRY, nil
-	case "auto", "":
-		return machineapi.ApplyConfigurationRequest_AUTO, nil
-	default:
-		return 0, fmt.Errorf("unknown mode %q: must be 'auto', 'no_reboot', 'staged', or 'try'", mode)
-	}
-}
-
-// handleApplyConfigInsecure executes talos_apply_config against a maintenance-
-// mode node via the insecure transport. The blocklist and cluster allowlist
-// gates do NOT apply: maintenance-mode bootstrap necessarily replaces the
-// entire config (there is no post-bootstrap state to protect) and the fresh
-// node is not in TALOS_MCP_ALLOWED_NODES (which gates the configured cluster).
-// The insecure allowlist (TALOS_MCP_INSECURE_ALLOWED_NODES) and bare-IP
-// canonical-form check substitute for those defences.
+// handleApplyConfigInsecure skips the config blocklist and the cluster allowlist; see .claude/rules/insecure-mode.md.
 func (h *Handlers) handleApplyConfigInsecure(ctx context.Context, req *mcp.CallToolRequest, args ApplyConfigArgs, outcome *string, finalErr *error) (*mcp.CallToolResult, any, error) {
 	canonicalEndpoint, fp, gateOutcome, err := h.canonicalizeAndCheckInsecure(args.Endpoint, args.CertFingerprint, len(args.Nodes) > 0)
 	if err != nil {
@@ -858,9 +796,6 @@ func (h *Handlers) handleApplyConfigInsecure(ctx context.Context, req *mcp.CallT
 		return nil, nil, err
 	}
 
-	// Confirm-vs-dry_run mirrors the authenticated path: confirm only required
-	// when dry_run=false. Maintenance-mode ApplyConfiguration honours DryRun
-	// per the talosctl source (verified against apply-config.go).
 	if !resolveDryRun(args.DryRun) && !args.Confirm {
 		*outcome = OutcomeRefusedConfirm
 		*finalErr = fmt.Errorf("apply_config refused: confirm must be explicitly set to true when dry_run is false (insecure mode)")
@@ -874,7 +809,7 @@ func (h *Handlers) handleApplyConfigInsecure(ctx context.Context, req *mcp.CallT
 		return nil, nil, err
 	}
 
-	mode, err := parseApplyConfigMode(args.Mode)
+	mode, err := talos.ParseApplyMode(args.Mode)
 	if err != nil {
 		*outcome = OutcomeRefusedArgs
 		*finalErr = err
@@ -883,10 +818,7 @@ func (h *Handlers) handleApplyConfigInsecure(ctx context.Context, req *mcp.CallT
 
 	dryRun := resolveDryRun(args.DryRun)
 
-	// Per-endpoint lock keyed on the canonical IP — different string forms
-	// (::ffff:1.2.3.4 vs 1.2.3.4) of the same physical address collapse to a
-	// single key so concurrent calls actually serialise.
-	mu := h.nodePatchMu("insecure:" + canonicalEndpoint)
+	mu := h.insecureApplyMu(canonicalEndpoint)
 	mu.Lock()
 	defer mu.Unlock()
 

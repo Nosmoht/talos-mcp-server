@@ -38,56 +38,19 @@ func (h *Handlers) handleCOSIResource(ctx context.Context, req *mcp.ReadResource
 		return nil, fmt.Errorf("resolve resource type %q: %w", resType, err)
 	}
 
-	resolvedType := rd.TypedSpec().Type
-	var results []map[string]any
-	truncated := false
-
-	if resID != "" {
-		r, err := h.Client.COSIState().Get(ctx,
-			resource.NewMetadata(namespace, resolvedType, resID, resource.VersionUndefined),
-		)
-		if state.IsNotFoundError(err) {
-			return nil, mcp.ResourceNotFoundError(req.Params.URI)
-		}
-
-		if err != nil {
-			return nil, fmt.Errorf("get resource %s/%s/%s: %w", ns, resolvedType, resID, err)
-		}
-
-		data, err := marshal.Resource(r)
-		if err != nil {
-			return nil, fmt.Errorf("marshal resource: %w", err)
-		}
-		results = []map[string]any{data}
-	} else {
-		list, err := h.Client.COSIState().List(ctx,
-			resource.NewMetadata(namespace, resolvedType, "", resource.VersionUndefined),
-		)
-		if err != nil {
-			return nil, fmt.Errorf("list resources %s/%s: %w", ns, resolvedType, err)
-		}
-
-		for _, r := range list.Items {
-			if len(results) >= maxListResults {
-				truncated = true
-				break
-			}
-			data, err := marshal.Resource(r)
-			if err != nil {
-				return nil, fmt.Errorf("marshal resource: %w", err)
-			}
-			results = append(results, data)
-		}
+	items, truncated, err := marshal.ReadResources(ctx, h.Client.COSIState(), namespace, rd.TypedSpec().Type, resID, maxListResults)
+	if resID != "" && state.IsNotFoundError(err) {
+		return nil, mcp.ResourceNotFoundError(req.Params.URI)
+	}
+	if err != nil {
+		return nil, err
 	}
 
-	// Resources wrap results in an envelope to convey truncation state.
-	// Unlike the talos_get tool (which returns a raw array), resources may
-	// be capped at maxListResults items; the truncated field signals this.
 	type response struct {
 		Items     []map[string]any `json:"items"`
 		Truncated bool             `json:"truncated,omitempty"`
 	}
-	payload := response{Items: results, Truncated: truncated}
+	payload := response{Items: items, Truncated: truncated}
 
 	out, err := json.Marshal(payload)
 	if err != nil {

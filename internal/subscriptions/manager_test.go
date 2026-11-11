@@ -8,6 +8,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/cosi-project/runtime/pkg/resource"
@@ -136,8 +137,6 @@ func makeResourceDef(canonical string) *meta.ResourceDefinition {
 	return rd
 }
 
-// setup builds a Manager + fakeCore pair with allowedNodes set to testNode.
-// rateEvery is very tight (1 µs) so tests don't rely on wall-clock timing.
 func setup(t *testing.T, burst int) (*Manager, *fakeCore, func(uri string)) {
 	t.Helper()
 
@@ -172,13 +171,14 @@ func setup(t *testing.T, burst int) (*Manager, *fakeCore, func(uri string)) {
 
 	expect := func(wantURI string) {
 		t.Helper()
+		synctest.Wait()
 		select {
 		case got := <-notified:
 			if got != wantURI {
 				t.Errorf("notification URI = %q, want %q", got, wantURI)
 			}
-		case <-time.After(500 * time.Millisecond):
-			t.Fatalf("no notification within timeout (wanted %q)", wantURI)
+		default:
+			t.Fatalf("no notification (wanted %q)", wantURI)
 		}
 	}
 	return m, fc, expect
@@ -187,25 +187,28 @@ func setup(t *testing.T, burst int) (*Manager, *fakeCore, func(uri string)) {
 // ── Tests ────────────────────────────────────────────────────────────────────
 
 func TestSubscribe_SingleResource_Delivers(t *testing.T) {
-	m, fc, expect := setup(t, 5)
-	if err := m.subscribe(context.Background(), "sess-A", testURIItem); err != nil {
-		t.Fatalf("subscribe: %v", err)
-	}
-	// Give runWatch a tick to call Watch and record singleCh.
-	time.Sleep(10 * time.Millisecond)
-	fc.emit(cosistate.Event{Type: cosistate.Updated})
-	expect(testURIItem)
+	synctest.Test(t, func(t *testing.T) {
+		m, fc, expect := setup(t, 5)
+		if err := m.subscribe(context.Background(), "sess-A", testURIItem); err != nil {
+			t.Fatalf("subscribe: %v", err)
+		}
+		synctest.Wait()
+		fc.emit(cosistate.Event{Type: cosistate.Updated})
+		expect(testURIItem)
+	})
 }
 
 func TestSubscribe_ListURI_DeliversAggregated(t *testing.T) {
-	m, fc, expect := setup(t, 5)
-	if err := m.subscribe(context.Background(), "sess-A", testURIList); err != nil {
-		t.Fatalf("subscribe: %v", err)
-	}
-	time.Sleep(10 * time.Millisecond)
-	fc.emitBatch([]cosistate.Event{{Type: cosistate.Updated}, {Type: cosistate.Created}})
-	expect(testURIList)
-	expect(testURIList)
+	synctest.Test(t, func(t *testing.T) {
+		m, fc, expect := setup(t, 5)
+		if err := m.subscribe(context.Background(), "sess-A", testURIList); err != nil {
+			t.Fatalf("subscribe: %v", err)
+		}
+		synctest.Wait()
+		fc.emitBatch([]cosistate.Event{{Type: cosistate.Updated}, {Type: cosistate.Created}})
+		expect(testURIList)
+		expect(testURIList)
+	})
 }
 
 func TestSubscribe_ClusterURI_Rejected(t *testing.T) {
@@ -226,15 +229,17 @@ func TestSubscribe_DisallowedType_Rejected(t *testing.T) {
 }
 
 func TestSubscribe_Alias_ResolvesThenAllowlisted(t *testing.T) {
-	m, fc, expect := setup(t, 5)
-	// Alias "ms" resolves to canonical MachineStatuses.runtime.talos.dev which IS in AllowedTypes.
-	uri := "talos://192.0.2.10/resource/runtime/ms/node-1"
-	if err := m.subscribe(context.Background(), "sess-A", uri); err != nil {
-		t.Fatalf("alias subscribe should succeed: %v", err)
-	}
-	time.Sleep(10 * time.Millisecond)
-	fc.emit(cosistate.Event{Type: cosistate.Updated})
-	expect(uri)
+	synctest.Test(t, func(t *testing.T) {
+		m, fc, expect := setup(t, 5)
+		// "ms" resolves to MachineStatuses.runtime.talos.dev, which the allowed-type set contains.
+		uri := "talos://192.0.2.10/resource/runtime/ms/node-1"
+		if err := m.subscribe(context.Background(), "sess-A", uri); err != nil {
+			t.Fatalf("alias subscribe should succeed: %v", err)
+		}
+		synctest.Wait()
+		fc.emit(cosistate.Event{Type: cosistate.Updated})
+		expect(uri)
+	})
 }
 
 func TestSubscribe_NodeNotAllowed_Rejected(t *testing.T) {
@@ -247,144 +252,149 @@ func TestSubscribe_NodeNotAllowed_Rejected(t *testing.T) {
 }
 
 func TestBootstrapped_Dropped(t *testing.T) {
-	m, fc, _ := setup(t, 5)
-	if err := m.subscribe(context.Background(), "sess-A", testURIItem); err != nil {
-		t.Fatalf("subscribe: %v", err)
-	}
-	time.Sleep(10 * time.Millisecond)
-	fc.emit(cosistate.Event{Type: cosistate.Bootstrapped})
+	synctest.Test(t, func(t *testing.T) {
+		m, fc, _ := setup(t, 5)
+		if err := m.subscribe(context.Background(), "sess-A", testURIItem); err != nil {
+			t.Fatalf("subscribe: %v", err)
+		}
+		synctest.Wait()
+		fc.emit(cosistate.Event{Type: cosistate.Bootstrapped})
 
-	// Bootstrapped must NOT produce a notification.
-	notified := make(chan struct{}, 1)
-	fn := notifyFunc(func(context.Context, string) error {
-		notified <- struct{}{}
-		return nil
+		notified := make(chan struct{}, 1)
+		fn := notifyFunc(func(context.Context, string) error {
+			notified <- struct{}{}
+			return nil
+		})
+		m.notify.Store(&fn)
+		fc.emit(cosistate.Event{Type: cosistate.Bootstrapped})
+		synctest.Wait()
+		select {
+		case <-notified:
+			t.Error("Bootstrapped event was forwarded")
+		default:
+		}
 	})
-	m.notify.Store(&fn)
-	fc.emit(cosistate.Event{Type: cosistate.Bootstrapped})
-	select {
-	case <-notified:
-		t.Error("Bootstrapped event was forwarded")
-	case <-time.After(100 * time.Millisecond):
-		// good — dropped
-	}
 }
 
 func TestErrored_StopsGoroutine(t *testing.T) {
-	m, fc, _ := setup(t, 5)
-	if err := m.subscribe(context.Background(), "sess-A", testURIItem); err != nil {
-		t.Fatalf("subscribe: %v", err)
-	}
-	time.Sleep(10 * time.Millisecond)
-	fc.emit(cosistate.Event{Type: cosistate.Errored, Error: errors.New("node down")})
-	// Give the goroutine a moment to exit; subsequent events must not deliver.
-	time.Sleep(20 * time.Millisecond)
+	synctest.Test(t, func(t *testing.T) {
+		m, fc, _ := setup(t, 5)
+		if err := m.subscribe(context.Background(), "sess-A", testURIItem); err != nil {
+			t.Fatalf("subscribe: %v", err)
+		}
+		synctest.Wait()
+		fc.emit(cosistate.Event{Type: cosistate.Errored, Error: errors.New("node down")})
+		synctest.Wait()
 
-	delivered := make(chan struct{}, 1)
-	fn := notifyFunc(func(context.Context, string) error {
-		delivered <- struct{}{}
-		return nil
+		delivered := make(chan struct{}, 1)
+		fn := notifyFunc(func(context.Context, string) error {
+			delivered <- struct{}{}
+			return nil
+		})
+		m.notify.Store(&fn)
+		fc.emit(cosistate.Event{Type: cosistate.Updated})
+		synctest.Wait()
+		select {
+		case <-delivered:
+			t.Error("goroutine delivered after Errored — it should have exited")
+		default:
+		}
 	})
-	m.notify.Store(&fn)
-	fc.emit(cosistate.Event{Type: cosistate.Updated})
-	select {
-	case <-delivered:
-		t.Error("goroutine delivered after Errored — it should have exited")
-	case <-time.After(100 * time.Millisecond):
-		// good
-	}
 }
 
 func TestUnsubscribe_CancelsGoroutine(t *testing.T) {
-	m, fc, _ := setup(t, 5)
-	if err := m.subscribe(context.Background(), "sess-A", testURIItem); err != nil {
-		t.Fatalf("subscribe: %v", err)
-	}
-	time.Sleep(10 * time.Millisecond)
-	m.unsubscribe("sess-A", testURIItem)
+	synctest.Test(t, func(t *testing.T) {
+		m, fc, _ := setup(t, 5)
+		if err := m.subscribe(context.Background(), "sess-A", testURIItem); err != nil {
+			t.Fatalf("subscribe: %v", err)
+		}
+		synctest.Wait()
+		m.unsubscribe("sess-A", testURIItem)
 
-	// Verify the sub is gone from the map.
-	m.mu.Lock()
-	_, present := m.subs[subKey{sessionID: "sess-A", uri: testURIItem}]
-	m.mu.Unlock()
-	if present {
-		t.Error("subscription still present after unsubscribe")
-	}
-	// Event after cancel must not deliver (channel send into closed ctx is drained by goroutine exit).
-	delivered := make(chan struct{}, 1)
-	fn := notifyFunc(func(context.Context, string) error {
-		delivered <- struct{}{}
-		return nil
+		m.mu.Lock()
+		_, present := m.subs[subKey{sessionID: "sess-A", uri: testURIItem}]
+		m.mu.Unlock()
+		if present {
+			t.Error("subscription still present after unsubscribe")
+		}
+		delivered := make(chan struct{}, 1)
+		fn := notifyFunc(func(context.Context, string) error {
+			delivered <- struct{}{}
+			return nil
+		})
+		m.notify.Store(&fn)
+		synctest.Wait()
+		select {
+		case fc.singleCh <- cosistate.Event{Type: cosistate.Updated}:
+		default:
+		}
+		synctest.Wait()
+		select {
+		case <-delivered:
+			t.Error("delivered after unsubscribe")
+		default:
+		}
 	})
-	m.notify.Store(&fn)
-	time.Sleep(10 * time.Millisecond)
-	select {
-	case fc.singleCh <- cosistate.Event{Type: cosistate.Updated}:
-		// non-blocking send: channel buffer absorbs; goroutine has exited so no read happens.
-	default:
-	}
-	select {
-	case <-delivered:
-		t.Error("delivered after unsubscribe")
-	case <-time.After(50 * time.Millisecond):
-		// good
-	}
 }
 
 func TestSupervisor_TearsDownAllSessionURIs(t *testing.T) {
-	m, _, _ := setup(t, 5)
-	ctx := context.Background()
-	if err := m.subscribe(ctx, "sess-X", testURIItem); err != nil {
-		t.Fatal(err)
-	}
-	if err := m.subscribe(ctx, "sess-X", testURIList); err != nil {
-		t.Fatal(err)
-	}
-	time.Sleep(10 * time.Millisecond)
+	synctest.Test(t, func(t *testing.T) {
+		m, _, _ := setup(t, 5)
+		ctx := context.Background()
+		if err := m.subscribe(ctx, "sess-X", testURIItem); err != nil {
+			t.Fatal(err)
+		}
+		if err := m.subscribe(ctx, "sess-X", testURIList); err != nil {
+			t.Fatal(err)
+		}
+		synctest.Wait()
 
-	m.cleanupSession("sess-X")
+		m.cleanupSession("sess-X")
 
-	m.mu.Lock()
-	remaining := len(m.subs) + len(m.sessions)
-	m.mu.Unlock()
-	if remaining != 0 {
-		t.Errorf("after cleanupSession, subs+sessions = %d, want 0", remaining)
-	}
+		m.mu.Lock()
+		remaining := len(m.subs) + len(m.sessions)
+		m.mu.Unlock()
+		if remaining != 0 {
+			t.Errorf("after cleanupSession, subs+sessions = %d, want 0", remaining)
+		}
+	})
 }
 
 func TestRateLimiter_DropsOverBurst(t *testing.T) {
-	// Much slower rate than the other tests so we can observe drops.
-	allow, _ := talos.ParseNodeAllowlist(testNode)
-	fc := &fakeCore{}
-	st := cosistate.WrapCore(fc)
-	fake := &fakeClient{
-		state: &st,
-		kinds: map[string]*meta.ResourceDefinition{
-			"MachineStatus": makeResourceDef("MachineStatuses.runtime.talos.dev"),
-		},
-	}
-	m := NewManager(fake, allow, time.Second, 3) // 1/s, burst 3
-	t.Cleanup(m.Shutdown)
+	synctest.Test(t, func(t *testing.T) {
+		allow, _ := talos.ParseNodeAllowlist(testNode)
+		fc := &fakeCore{}
+		st := cosistate.WrapCore(fc)
+		fake := &fakeClient{
+			state: &st,
+			kinds: map[string]*meta.ResourceDefinition{
+				"MachineStatus": makeResourceDef("MachineStatuses.runtime.talos.dev"),
+			},
+		}
+		// 1/s: the burst, not the rate, bounds deliveries.
+		m := NewManager(fake, allow, time.Second, 3)
+		t.Cleanup(m.Shutdown)
 
-	var count atomic.Int32
-	fn := notifyFunc(func(context.Context, string) error {
-		count.Add(1)
-		return nil
+		var count atomic.Int32
+		fn := notifyFunc(func(context.Context, string) error {
+			count.Add(1)
+			return nil
+		})
+		m.notify.Store(&fn)
+
+		if err := m.subscribe(context.Background(), "sess-A", testURIItem); err != nil {
+			t.Fatal(err)
+		}
+		synctest.Wait()
+
+		for i := 0; i < 10; i++ {
+			fc.emit(cosistate.Event{Type: cosistate.Updated})
+		}
+		synctest.Wait()
+		if got := count.Load(); got > 4 {
+			t.Errorf("delivered %d events, want ≤ 4 (burst 3 + at most 1 from rate)", got)
+		}
 	})
-	m.notify.Store(&fn)
-
-	if err := m.subscribe(context.Background(), "sess-A", testURIItem); err != nil {
-		t.Fatal(err)
-	}
-	time.Sleep(10 * time.Millisecond)
-
-	for i := 0; i < 10; i++ {
-		fc.emit(cosistate.Event{Type: cosistate.Updated})
-	}
-	time.Sleep(50 * time.Millisecond)
-	if got := count.Load(); got > 4 {
-		t.Errorf("delivered %d events, want ≤ 4 (burst 3 + at most 1 from rate)", got)
-	}
 }
 
 func TestDuplicateSubscribe_Idempotent(t *testing.T) {
@@ -404,40 +414,39 @@ func TestDuplicateSubscribe_Idempotent(t *testing.T) {
 }
 
 func TestNotifierUnboundExitsGoroutine(t *testing.T) {
-	// A fresh manager without notify bound.
-	allow, _ := talos.ParseNodeAllowlist(testNode)
-	fc := &fakeCore{}
-	st := cosistate.WrapCore(fc)
-	fake := &fakeClient{
-		state: &st,
-		kinds: map[string]*meta.ResourceDefinition{
-			"MachineStatus": makeResourceDef("MachineStatuses.runtime.talos.dev"),
-		},
-	}
-	m := NewManager(fake, allow, time.Microsecond, 5)
-	t.Cleanup(m.Shutdown)
-	// notify NOT set
-	if err := m.subscribe(context.Background(), "sess-A", testURIItem); err != nil {
-		t.Fatal(err)
-	}
-	time.Sleep(10 * time.Millisecond)
-	fc.emit(cosistate.Event{Type: cosistate.Updated})
-
-	// After the event, the goroutine should have exited (warned + returned false).
-	// Verify by emitting a second event — it must not block forever.
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		select {
-		case fc.singleCh <- cosistate.Event{Type: cosistate.Updated}:
-		default:
+	synctest.Test(t, func(t *testing.T) {
+		allow, _ := talos.ParseNodeAllowlist(testNode)
+		fc := &fakeCore{}
+		st := cosistate.WrapCore(fc)
+		fake := &fakeClient{
+			state: &st,
+			kinds: map[string]*meta.ResourceDefinition{
+				"MachineStatus": makeResourceDef("MachineStatuses.runtime.talos.dev"),
+			},
 		}
-	}()
-	select {
-	case <-done:
-	case <-time.After(200 * time.Millisecond):
-		t.Error("second emit hung; goroutine did not exit after nil notifier")
-	}
+		m := NewManager(fake, allow, time.Microsecond, 5)
+		t.Cleanup(m.Shutdown)
+		if err := m.subscribe(context.Background(), "sess-A", testURIItem); err != nil {
+			t.Fatal(err)
+		}
+		synctest.Wait()
+		fc.emit(cosistate.Event{Type: cosistate.Updated})
+
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			select {
+			case fc.singleCh <- cosistate.Event{Type: cosistate.Updated}:
+			default:
+			}
+		}()
+		synctest.Wait()
+		select {
+		case <-done:
+		default:
+			t.Error("second emit hung; goroutine did not exit after nil notifier")
+		}
+	})
 }
 
 func TestReSubscribeAfterUnsubscribe(t *testing.T) {

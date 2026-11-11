@@ -45,6 +45,7 @@ deps:
     mayDependOn: [talos]
     canUse: [mcp]
   prompts:
+    mayDependOn: [talos]
     canUse: [mcp]
   talos:
     mayDependOn: [version]

@@ -51,9 +51,10 @@ const (
 	descEtcd = "Query etcd cluster membership and health from a control-plane node. " +
 		"Use this for etcd rather than talos_get type=Member. subcommand='members' (default) or 'status'."
 
-	descEtcdSnapshot = "Take an etcd backup snapshot from a single control-plane node and write it to a local file. " +
+	descEtcdSnapshot = "Take an etcd backup snapshot from a single control-plane node and write it to a new owner-only (0600) local file. " +
 		"Requires exactly one control-plane node in nodes[]. " +
-		"Returns the file path and byte count on success. " +
+		"An existing file or symlink at the path is refused. " +
+		"Returns the file path, byte count and sha256 on success. " +
 		"May take up to 5 minutes on large clusters."
 
 	descListFiles = "List files and directories at a path on a target node's filesystem. " +
@@ -95,7 +96,11 @@ const (
 		"Defaults to dry_run=true — set dry_run=false to actually apply. " +
 		"Requires confirm=true when dry_run=false. " +
 		"Targets exactly one node. " +
-		"Note: Talos may reject an RFC 6902 patch against a multi-document machine config — prefer a strategic-merge patch there."
+		"Note: Talos may reject an RFC 6902 patch against a multi-document machine config — prefer a strategic-merge patch there. " +
+		"A config write (patch or apply) that arrives while another authenticated one runs is refused with 'config write in progress'; retry when it completes. " +
+		"While TALOS_MCP_BLOCKED_CONFIG_PATHS is set, a patch containing a typed config document (apiVersion/kind) is refused, " +
+		"and a $patch directive counts as changing the whole mapping that holds it. " +
+		"A config write that has not finished after 30s is cancelled; with dry_run=false its outcome is then unknown — check the node with talos_get machineconfig before retrying."
 
 	descReset = "Wipe and factory-reset the specified nodes. IRREVERSIBLE: all data on the system disk is permanently destroyed. " +
 		"Requires explicit nodes and confirm=true. " +
@@ -114,7 +119,9 @@ const (
 		"Config must target exactly one node — each node has a unique machine config. " +
 		"When TALOS_MCP_BLOCKED_CONFIG_PATHS is set, the authenticated path is disabled (use talos_patch_config for targeted, blocklist-checked changes); maintenance mode is governed separately by the insecure-mode allowlist gates. " +
 		"For bootstrapping a fresh node in maintenance mode, set insecure=true + endpoint=<node-IP>; " +
-		"requires TALOS_MCP_ENABLE_INSECURE=true and an entry in TALOS_MCP_INSECURE_ALLOWED_NODES."
+		"requires TALOS_MCP_ENABLE_INSECURE=true and an entry in TALOS_MCP_INSECURE_ALLOWED_NODES. " +
+		"A config write (patch or apply) that arrives while another authenticated one runs is refused with 'config write in progress'; retry when it completes. " +
+		"An authenticated config write that has not finished after 30s is cancelled; with dry_run=false its outcome is then unknown — check the node with talos_get machineconfig before retrying."
 
 	descMeta = "Read, write, or delete META partition key/value pairs. " +
 		"action ∈ {read, write, delete}. write/delete require confirm=true. " +

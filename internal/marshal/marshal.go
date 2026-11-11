@@ -1,13 +1,47 @@
-// Package marshal converts COSI resources to JSON-serializable maps.
-// Both the tools and resources packages need this conversion; placing it
-// here avoids a circular dependency between those two packages.
+// Package marshal reads and converts COSI resources for tools and resources, and lives apart from both to avoid an import cycle.
 package marshal
 
 import (
+	"context"
+	"fmt"
+
 	"github.com/cosi-project/runtime/pkg/resource"
 	"github.com/cosi-project/runtime/pkg/resource/meta"
+	"github.com/cosi-project/runtime/pkg/state"
 	yaml "go.yaml.in/yaml/v4"
 )
+
+// ReadResources gets one resource, or lists a type when id is empty, and marshals each item; limit <= 0 means no cap.
+func ReadResources(ctx context.Context, st state.State, ns resource.Namespace, typ resource.Type, id resource.ID, limit int) ([]map[string]any, bool, error) {
+	if id != "" {
+		r, err := st.Get(ctx, resource.NewMetadata(ns, typ, id, resource.VersionUndefined))
+		if err != nil {
+			return nil, false, fmt.Errorf("get resource %s/%s/%s: %w", ns, typ, id, err)
+		}
+		data, err := Resource(r)
+		if err != nil {
+			return nil, false, fmt.Errorf("marshal resource: %w", err)
+		}
+		return []map[string]any{data}, false, nil
+	}
+
+	list, err := st.List(ctx, resource.NewMetadata(ns, typ, "", resource.VersionUndefined))
+	if err != nil {
+		return nil, false, fmt.Errorf("list resources %s/%s: %w", ns, typ, err)
+	}
+	var items []map[string]any
+	for _, r := range list.Items {
+		if limit > 0 && len(items) >= limit {
+			return items, true, nil
+		}
+		data, err := Resource(r)
+		if err != nil {
+			return nil, false, fmt.Errorf("marshal resource: %w", err)
+		}
+		items = append(items, data)
+	}
+	return items, false, nil
+}
 
 // Resource converts a COSI resource to a JSON-serializable map.
 // It uses the same path as talosctl get --output json:

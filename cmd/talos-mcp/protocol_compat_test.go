@@ -125,8 +125,10 @@ func (c *fakeWatchCore) WatchKindAggregated(ctx context.Context, _ resource.Kind
 func newCompatServer(t *testing.T, backend *fakeBackend) *mcp.Server {
 	t.Helper()
 	server, subMgr := newServer(&tools.Handlers{Client: backend}, serverConfig{
-		SubscriptionRate:  time.Microsecond,
-		SubscriptionBurst: 1,
+		SubscriptionRate:   time.Microsecond,
+		SubscriptionBurst:  1,
+		ResourceClient:     backend,
+		SubscriptionSource: backend,
 	})
 	t.Cleanup(subMgr.Shutdown)
 	return server

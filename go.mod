@@ -1,6 +1,6 @@
 module github.com/Nosmoht/talos-mcp-server
 
-go 1.26.10
+go 1.26.11
 
 require (
 	github.com/cosi-project/runtime v1.16.3

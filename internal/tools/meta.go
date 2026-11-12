@@ -39,9 +39,46 @@ var reservedMetaKeys = map[uint8]struct{}{
 	uint8(meta.UserReserved3): {},
 }
 
+var errMetaActionUnreachable = errors.New("talos_meta: unreachable action branch")
+
 // HandleMeta implements the talos_meta tool (read, write or delete a META key).
 func (h *Handlers) HandleMeta(ctx context.Context, _ *mcp.CallToolRequest, args MetaArgs) (*mcp.CallToolResult, any, error) {
-	h.auditLog("talos_meta", struct {
+	h.auditLog("talos_meta", metaAuditArgs(args), args.Nodes)
+
+	var (
+		result  map[string]any
+		outcome string
+		err     error
+	)
+	defer func() { h.auditOutcome("talos_meta", outcome, err) }()
+
+	if err = fingerprintRequiresInsecure("talos_meta", args.CertFingerprint, args.Insecure); err != nil {
+		outcome = OutcomeRefusedFPWithoutInsec
+		return nil, nil, err
+	}
+
+	var key uint8
+	if key, outcome, err = h.checkMetaRequest(args); err != nil {
+		return nil, nil, err
+	}
+
+	ctx, cancel := withToolTimeout(ctx)
+	defer cancel()
+
+	if args.Insecure {
+		result, outcome, err = h.metaInsecure(ctx, args, key)
+	} else {
+		result, outcome, err = h.metaAuthenticated(ctx, args, key)
+	}
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return jsonResult(result)
+}
+
+func metaAuditArgs(args MetaArgs) any {
+	return struct {
 		Action            string   `json:"action"`
 		Key               string   `json:"key"`
 		ValueLength       int      `json:"value_length,omitempty"`
@@ -59,108 +96,86 @@ func (h *Handlers) HandleMeta(ctx context.Context, _ *mcp.CallToolRequest, args 
 		Insecure:          args.Insecure,
 		Endpoint:          args.Endpoint,
 		FingerprintPinned: args.CertFingerprint != "",
-	}, args.Nodes)
-
-	var (
-		outcome  = OutcomeOK
-		finalErr error
-	)
-	defer func() { h.auditOutcome("talos_meta", outcome, finalErr) }()
-
-	if err := fingerprintRequiresInsecure("talos_meta", args.CertFingerprint, args.Insecure); err != nil {
-		outcome = OutcomeRefusedFPWithoutInsec
-		finalErr = err
-		return nil, nil, err
 	}
+}
 
+func (h *Handlers) checkMetaRequest(args MetaArgs) (uint8, string, error) {
 	key, err := talos.ParseMetaKey(args.Key)
 	if err != nil {
-		outcome = OutcomeRefusedArgs
-		finalErr = err
-		return nil, nil, err
+		return 0, OutcomeRefusedArgs, err
 	}
 
 	switch args.Action {
 	case "read":
+		return key, OutcomeOK, nil
 	case "write", "delete":
 		if !args.Confirm {
-			outcome = OutcomeRefusedConfirm
-			finalErr = fmt.Errorf("talos_meta refused: confirm must be set to true for action=%s", args.Action)
-			return nil, nil, finalErr
+			return 0, OutcomeRefusedConfirm, fmt.Errorf("talos_meta refused: confirm must be set to true for action=%s", args.Action)
 		}
-		if _, reserved := reservedMetaKeys[key]; !reserved {
-			if _, allowed := h.MetaPrivilegedKeys[key]; !allowed {
-				outcome = OutcomeRefusedMetaKey
-				finalErr = fmt.Errorf("talos_meta refused: key %d (0x%02x) is not in UserReserved* and not listed in TALOS_MCP_META_PRIVILEGED_KEYS", key, key)
-				return nil, nil, finalErr
-			}
+		if !h.metaKeyWritable(key) {
+			return 0, OutcomeRefusedMetaKey, fmt.Errorf("talos_meta refused: key %d (0x%02x) is not in UserReserved* and not listed in TALOS_MCP_META_PRIVILEGED_KEYS", key, key)
 		}
+		return key, OutcomeOK, nil
 	default:
-		outcome = OutcomeRefusedArgs
-		finalErr = fmt.Errorf("talos_meta refused: action must be 'read', 'write', or 'delete' (got %q)", args.Action)
-		return nil, nil, finalErr
+		return 0, OutcomeRefusedArgs, fmt.Errorf("talos_meta refused: action must be 'read', 'write', or 'delete' (got %q)", args.Action)
+	}
+}
+
+func (h *Handlers) metaKeyWritable(key uint8) bool {
+	if _, reserved := reservedMetaKeys[key]; reserved {
+		return true
+	}
+	_, allowed := h.MetaPrivilegedKeys[key]
+	return allowed
+}
+
+func (h *Handlers) metaInsecure(ctx context.Context, args MetaArgs, key uint8) (map[string]any, string, error) {
+	canonicalEndpoint, fp, gateOutcome, err := h.canonicalizeAndCheckInsecure(args.Endpoint, args.CertFingerprint, len(args.Nodes) > 0)
+	if err != nil {
+		return nil, gateOutcome, err
 	}
 
-	ctx, cancel := withToolTimeout(ctx)
-	defer cancel()
-
-	if args.Insecure {
-		canonicalEndpoint, fp, gateOutcome, err := h.canonicalizeAndCheckInsecure(args.Endpoint, args.CertFingerprint, len(args.Nodes) > 0)
-		if err != nil {
-			outcome = gateOutcome
-			finalErr = err
-			return nil, nil, err
-		}
-		client, err := h.dialInsecure(ctx, canonicalEndpoint, fp)
-		if err != nil {
-			outcome = OutcomeDialError
-			finalErr = err
-			return nil, nil, err
-		}
-		defer func() { _ = client.Close() }()
-
-		switch args.Action {
-		case "read":
-			return readMetaFromCOSI(ctx, client.COSIState(), key, &outcome, &finalErr)
-		case "write":
-			if err := client.MetaWrite(ctx, key, []byte(args.Value)); err != nil {
-				outcome = OutcomeRPCError
-				finalErr = fmt.Errorf("meta write (insecure) key=%d: %w", key, err)
-				return nil, nil, finalErr
-			}
-			return jsonResult(map[string]any{"action": "write", "key": key, "value_length": len(args.Value)})
-		case "delete":
-			if err := client.MetaDelete(ctx, key); err != nil {
-				outcome = OutcomeRPCError
-				finalErr = fmt.Errorf("meta delete (insecure) key=%d: %w", key, err)
-				return nil, nil, finalErr
-			}
-			return jsonResult(map[string]any{"action": "delete", "key": key})
-		}
+	client, err := h.dialInsecure(ctx, canonicalEndpoint, fp)
+	if err != nil {
+		return nil, OutcomeDialError, err
 	}
+	defer func() { _ = client.Close() }()
 
+	switch args.Action {
+	case "read":
+		return readMetaFromCOSI(ctx, client.COSIState(), key)
+	case "write":
+		if err := client.MetaWrite(ctx, key, []byte(args.Value)); err != nil {
+			return nil, OutcomeRPCError, fmt.Errorf("meta write (insecure) key=%d: %w", key, err)
+		}
+		return metaWriteResult(key, args.Value), OutcomeOK, nil
+	case "delete":
+		if err := client.MetaDelete(ctx, key); err != nil {
+			return nil, OutcomeRPCError, fmt.Errorf("meta delete (insecure) key=%d: %w", key, err)
+		}
+		return metaDeleteResult(key), OutcomeOK, nil
+	default:
+		return nil, OutcomeRefusedArgs, errMetaActionUnreachable
+	}
+}
+
+func (h *Handlers) metaAuthenticated(ctx context.Context, args MetaArgs, key uint8) (map[string]any, string, error) {
 	if args.Action == "read" {
 		if len(args.Nodes) > 1 {
-			outcome = OutcomeRefusedArgs
-			finalErr = fmt.Errorf("talos_meta read targets exactly one node (got %d); read each node individually", len(args.Nodes))
-			return nil, nil, finalErr
+			return nil, OutcomeRefusedArgs, fmt.Errorf("talos_meta read targets exactly one node (got %d); read each node individually", len(args.Nodes))
 		}
 
-		ctx, err = talos.WithSingleNode(ctx, args.Nodes, h.AllowedNodes)
+		ctx, err := talos.WithSingleNode(ctx, args.Nodes, h.AllowedNodes)
 		if err != nil {
-			outcome = OutcomeRefusedAllowlist
-			finalErr = err
-			return nil, nil, err
+			return nil, OutcomeRefusedAllowlist, err
 		}
 
-		return readMetaFromCOSI(ctx, h.Client.COSIState(), key, &outcome, &finalErr)
+		return readMetaFromCOSI(ctx, h.Client.COSIState(), key)
 	}
 
 	targets, err := talos.CheckTargets(args.Nodes, h.AllowedNodes)
 	if err != nil {
-		outcome = OutcomeRefusedAllowlist
-		finalErr = err
-		return nil, nil, err
+		return nil, OutcomeRefusedAllowlist, err
 	}
 
 	switch args.Action {
@@ -169,26 +184,28 @@ func (h *Handlers) HandleMeta(ctx context.Context, _ *mcp.CallToolRequest, args 
 			return struct{}{}, h.Client.MetaWrite(c, key, []byte(args.Value))
 		})
 		if _, err := out.FailClosed(); err != nil {
-			outcome = OutcomeRPCError
-			finalErr = fmt.Errorf("meta write key=%d: %w", key, err)
-			return nil, nil, finalErr
+			return nil, OutcomeRPCError, fmt.Errorf("meta write key=%d: %w", key, err)
 		}
-		return jsonResult(map[string]any{"action": "write", "key": key, "value_length": len(args.Value)})
+		return metaWriteResult(key, args.Value), OutcomeOK, nil
 	case "delete":
 		_, out := talos.FanOut(ctx, targets, func(c context.Context) (struct{}, error) {
 			return struct{}{}, h.Client.MetaDelete(c, key)
 		})
 		if _, err := out.FailClosed(); err != nil {
-			outcome = OutcomeRPCError
-			finalErr = fmt.Errorf("meta delete key=%d: %w", key, err)
-			return nil, nil, finalErr
+			return nil, OutcomeRPCError, fmt.Errorf("meta delete key=%d: %w", key, err)
 		}
-		return jsonResult(map[string]any{"action": "delete", "key": key})
+		return metaDeleteResult(key), OutcomeOK, nil
+	default:
+		return nil, OutcomeRefusedArgs, errMetaActionUnreachable
 	}
+}
 
-	outcome = OutcomeRefusedArgs
-	finalErr = errors.New("talos_meta: unreachable action branch")
-	return nil, nil, finalErr
+func metaWriteResult(key uint8, value string) map[string]any {
+	return map[string]any{"action": "write", "key": key, "value_length": len(value)}
+}
+
+func metaDeleteResult(key uint8) map[string]any {
+	return map[string]any{"action": "delete", "key": key}
 }
 
 // readMetaFromCOSI fetches the META key/value pair from the COSI state.
@@ -197,26 +214,18 @@ func (h *Handlers) HandleMeta(ctx context.Context, _ *mcp.CallToolRequest, args 
 // id = "0x06" via MetaKeyTagToID). If the talos runtime renames the
 // resource, the upstream error surfaces verbatim and the caller can rediscover
 // the type via talos_resource_definitions.
-func readMetaFromCOSI(
-	ctx context.Context,
-	st state.State,
-	key uint8,
-	outcome *string,
-	finalErr *error,
-) (*mcp.CallToolResult, any, error) {
+func readMetaFromCOSI(ctx context.Context, st state.State, key uint8) (map[string]any, string, error) {
 	id := runtimeres.MetaKeyTagToID(key)
 
 	r, err := st.Get(ctx, resource.NewMetadata(runtimeres.NamespaceName, runtimeres.MetaKeyType, id, resource.VersionUndefined))
 	if err != nil {
-		*outcome = OutcomeRPCError
-		*finalErr = fmt.Errorf("get MetaKey/%d: %w (discover the current resource type with talos_resource_definitions)", key, err)
-		return nil, nil, *finalErr
+		return nil, OutcomeRPCError, fmt.Errorf("get MetaKey/%d: %w (discover the current resource type with talos_resource_definitions)", key, err)
 	}
+
 	data, err := marshal.Resource(r)
 	if err != nil {
-		*outcome = OutcomeRPCError
-		*finalErr = fmt.Errorf("marshal MetaKey resource: %w", err)
-		return nil, nil, *finalErr
+		return nil, OutcomeRPCError, fmt.Errorf("marshal MetaKey resource: %w", err)
 	}
-	return jsonResult(map[string]any{"action": "read", "key": key, "resource": data})
+
+	return map[string]any{"action": "read", "key": key, "resource": data}, OutcomeOK, nil
 }

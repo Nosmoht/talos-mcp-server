@@ -80,7 +80,39 @@ type VersionArgs struct {
 
 // HandleVersion implements the talos_version tool.
 func (h *Handlers) HandleVersion(ctx context.Context, _ *mcp.CallToolRequest, args VersionArgs) (*mcp.CallToolResult, any, error) {
-	h.auditLog("talos_version", struct {
+	h.auditLog("talos_version", versionAuditArgs(args), args.Nodes)
+
+	var (
+		outcome string
+		err     error
+	)
+	defer func() { h.auditOutcome("talos_version", outcome, err) }()
+
+	if err = fingerprintRequiresInsecure("talos_version", args.CertFingerprint, args.Insecure); err != nil {
+		outcome = OutcomeRefusedFPWithoutInsec
+		return nil, nil, err
+	}
+
+	ctx, cancel := withToolTimeout(ctx)
+	defer cancel()
+
+	if args.Insecure {
+		var resp *machineapi.VersionResponse
+		if resp, outcome, err = h.versionInsecure(ctx, args); err != nil {
+			return nil, nil, err
+		}
+		return jsonResult(resp)
+	}
+
+	var rs []talos.NodeResult[*machineapi.VersionResponse]
+	if rs, outcome, err = h.versionAuthenticated(ctx, args); err != nil {
+		return nil, nil, err
+	}
+	return unaryResult(rs)
+}
+
+func versionAuditArgs(args VersionArgs) any {
+	return struct {
 		Nodes             []string `json:"nodes,omitempty"`
 		Insecure          bool     `json:"insecure,omitempty"`
 		Endpoint          string   `json:"endpoint,omitempty"`
@@ -90,63 +122,43 @@ func (h *Handlers) HandleVersion(ctx context.Context, _ *mcp.CallToolRequest, ar
 		Insecure:          args.Insecure,
 		Endpoint:          args.Endpoint,
 		FingerprintPinned: args.CertFingerprint != "",
-	}, args.Nodes)
+	}
+}
 
-	var (
-		outcome  = OutcomeOK
-		finalErr error
-	)
-	defer func() { h.auditOutcome("talos_version", outcome, finalErr) }()
-
-	if err := fingerprintRequiresInsecure("talos_version", args.CertFingerprint, args.Insecure); err != nil {
-		outcome = OutcomeRefusedFPWithoutInsec
-		finalErr = err
-		return nil, nil, err
+func (h *Handlers) versionInsecure(ctx context.Context, args VersionArgs) (*machineapi.VersionResponse, string, error) {
+	canonicalEndpoint, fp, gateOutcome, err := h.canonicalizeAndCheckInsecure(args.Endpoint, args.CertFingerprint, len(args.Nodes) > 0)
+	if err != nil {
+		return nil, gateOutcome, err
 	}
 
-	ctx, cancel := withToolTimeout(ctx)
-	defer cancel()
+	client, err := h.dialInsecure(ctx, canonicalEndpoint, fp)
+	if err != nil {
+		return nil, OutcomeDialError, err
+	}
+	defer func() { _ = client.Close() }()
 
-	if args.Insecure {
-		canonicalEndpoint, fp, gateOutcome, err := h.canonicalizeAndCheckInsecure(args.Endpoint, args.CertFingerprint, len(args.Nodes) > 0)
-		if err != nil {
-			outcome = gateOutcome
-			finalErr = err
-			return nil, nil, err
-		}
-		client, err := h.dialInsecure(ctx, canonicalEndpoint, fp)
-		if err != nil {
-			outcome = OutcomeDialError
-			finalErr = err
-			return nil, nil, err
-		}
-		defer func() { _ = client.Close() }()
-		resp, err := client.Version(ctx)
-		if err != nil {
-			outcome = OutcomeRPCError
-			finalErr = fmt.Errorf("version (insecure): %w", err)
-			return nil, nil, finalErr
-		}
-		return jsonResult(resp)
+	resp, err := client.Version(ctx)
+	if err != nil {
+		return nil, OutcomeRPCError, fmt.Errorf("version (insecure): %w", err)
 	}
 
+	return resp, OutcomeOK, nil
+}
+
+func (h *Handlers) versionAuthenticated(ctx context.Context, args VersionArgs) ([]talos.NodeResult[*machineapi.VersionResponse], string, error) {
 	targets, err := talos.CheckTargets(args.Nodes, h.AllowedNodes)
 	if err != nil {
-		outcome = OutcomeRefusedAllowlist
-		finalErr = err
-		return nil, nil, err
+		return nil, OutcomeRefusedAllowlist, err
 	}
 
 	rs, out := talos.FanOut(ctx, targets, func(c context.Context) (*machineapi.VersionResponse, error) {
 		return h.Client.Version(c)
 	})
 	if _, err := out.FailClosed(); err != nil {
-		outcome = OutcomeRPCError
-		finalErr = fmt.Errorf("version: %w", err)
-		return nil, nil, finalErr
+		return nil, OutcomeRPCError, fmt.Errorf("version: %w", err)
 	}
 
-	return unaryResult(rs)
+	return rs, OutcomeOK, nil
 }
 
 // HandleServices implements the talos_services tool.
@@ -228,22 +240,12 @@ func (h *Handlers) HandleHealth(ctx context.Context, req *mcp.CallToolRequest, a
 		return nil, nil, err
 	}
 
-	waitTimeout := defaultHealthWaitTimeout
-
-	if args.WaitTimeout != "" {
-		d, err := time.ParseDuration(args.WaitTimeout)
-		if err != nil {
-			return nil, nil, fmt.Errorf("parse wait_timeout %q: %w", args.WaitTimeout, err)
-		}
-
-		waitTimeout = d
+	waitTimeout, err := parseHealthWaitTimeout(args.WaitTimeout)
+	if err != nil {
+		return nil, nil, err
 	}
 
-	var timeoutCtx context.Context
-
-	var cancel context.CancelFunc
-
-	timeoutCtx, cancel = context.WithTimeout(ctx, waitTimeout+defaultHealthWaitTimeoutBuffer)
+	timeoutCtx, cancel := context.WithTimeout(ctx, waitTimeout+defaultHealthWaitTimeoutBuffer)
 	defer cancel()
 
 	messages := []string{}
@@ -291,4 +293,17 @@ func (h *Handlers) HandleHealth(ctx context.Context, req *mcp.CallToolRequest, a
 	}
 
 	return jsonResult(healthResult{Messages: messages})
+}
+
+func parseHealthWaitTimeout(s string) (time.Duration, error) {
+	if s == "" {
+		return defaultHealthWaitTimeout, nil
+	}
+
+	d, err := time.ParseDuration(s)
+	if err != nil {
+		return 0, fmt.Errorf("parse wait_timeout %q: %w", s, err)
+	}
+
+	return d, nil
 }

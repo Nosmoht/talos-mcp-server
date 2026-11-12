@@ -178,24 +178,15 @@ func TestReadMetaFromCOSI_ResourceIdentity(t *testing.T) {
 		t.Fatalf("seed MetaKey: %v", err)
 	}
 
-	var (
-		outcome  = OutcomeOK
-		finalErr error
-	)
-
-	_, structured, err := readMetaFromCOSI(ctx, st, testKey, &outcome, &finalErr)
+	resultMap, outcome, err := readMetaFromCOSI(ctx, st, testKey)
 	if err != nil {
 		t.Fatalf("readMetaFromCOSI: %v (outcome=%s) — does the resource type or id format match upstream pkg/machinery/resources/runtime?", err, outcome)
 	}
 	if outcome != OutcomeOK {
 		t.Errorf("outcome = %q, want %q", outcome, OutcomeOK)
 	}
-	if structured == nil {
+	if resultMap == nil {
 		t.Fatal("expected non-nil structured result")
-	}
-	resultMap, ok := structured.(map[string]any)
-	if !ok {
-		t.Fatalf("structured result is not map[string]any: %T", structured)
 	}
 	if resultMap["action"] != "read" {
 		t.Errorf("action = %v, want read", resultMap["action"])
@@ -222,20 +213,12 @@ func TestReadMetaFromCOSI_NotFound(t *testing.T) {
 	ctx := context.Background()
 	st := state.WrapCore(namespaced.NewState(inmem.Build))
 
-	var (
-		outcome  = OutcomeOK
-		finalErr error
-	)
-
-	_, _, err := readMetaFromCOSI(ctx, st, 99, &outcome, &finalErr)
+	_, outcome, err := readMetaFromCOSI(ctx, st, 99)
 	if err == nil {
 		t.Fatal("expected error for non-existent key, got nil")
 	}
 	if outcome != OutcomeRPCError {
 		t.Errorf("outcome = %q, want %q", outcome, OutcomeRPCError)
-	}
-	if finalErr == nil {
-		t.Error("finalErr should be set when err is non-nil")
 	}
 }
 

@@ -112,18 +112,7 @@ func (h *Handlers) HandleListFiles(ctx context.Context, _ *mcp.CallToolRequest, 
 				return true
 			}
 
-			entry := fileEntry{
-				Name:         info.GetName(),
-				RelativeName: info.GetRelativeName(),
-				Size:         info.GetSize(),
-				IsDir:        info.GetIsDir(),
-			}
-
-			if info.GetMode() != 0 {
-				entry.Mode = fmt.Sprintf("%04o", info.GetMode())
-			}
-
-			files = append(files, entry)
+			files = append(files, newFileEntry(info))
 
 			return false
 		},
@@ -138,20 +127,38 @@ func (h *Handlers) HandleListFiles(ctx context.Context, _ *mcp.CallToolRequest, 
 		return nil, nil, fmt.Errorf("list files %q: %w", listPath, streamErr)
 	}
 
-	encoded, err := json.Marshal(files)
+	return renderListFiles(listFilesResult{Path: listPath, Entries: files, Truncated: truncated, NodeErrors: nodeErrorMap(nodeErrs)})
+}
+
+func newFileEntry(info *machineapi.FileInfo) fileEntry {
+	entry := fileEntry{
+		Name:         info.GetName(),
+		RelativeName: info.GetRelativeName(),
+		Size:         info.GetSize(),
+		IsDir:        info.GetIsDir(),
+	}
+
+	if info.GetMode() != 0 {
+		entry.Mode = fmt.Sprintf("%04o", info.GetMode())
+	}
+
+	return entry
+}
+
+func renderListFiles(result listFilesResult) (*mcp.CallToolResult, any, error) {
+	encoded, err := json.Marshal(result.Entries)
 	if err != nil {
 		return nil, nil, fmt.Errorf("marshal JSON: %w", err)
 	}
 
 	text := string(encoded)
-	if truncated {
+	if result.Truncated {
 		text += fmt.Sprintf("\n\n[truncated at %d entries]", maxListEntries)
 	}
 
-	errMap := nodeErrorMap(nodeErrs)
-	text += nodeErrorsText(errMap)
+	text += nodeErrorsText(result.NodeErrors)
 
-	return jsonWithTextResult(listFilesResult{Path: listPath, Entries: files, Truncated: truncated, NodeErrors: errMap}, text)
+	return jsonWithTextResult(result, text)
 }
 
 // HandleReadFile implements the talos_read_file tool.

@@ -7,10 +7,13 @@ import (
 	"strings"
 )
 
-// ParseMetaKey parses a META key (decimal or 0x/0o/0b-prefixed, 0-255) and refuses a leading 0 without a base prefix because base 0 reads it as octal.
+// ParseMetaKey parses a META key (decimal or 0x/0o/0b-prefixed, 0-255). It refuses a leading 0 without a base prefix, which base 0 reads as octal, and underscores, which base 0 accepts as digit separators.
 func ParseMetaKey(s string) (uint8, error) {
 	if s == "" {
 		return 0, errors.New("key must not be empty")
+	}
+	if strings.Contains(s, "_") {
+		return 0, fmt.Errorf("key %q must not contain underscores", s)
 	}
 	if len(s) > 1 && s[0] == '0' {
 		second := s[1]

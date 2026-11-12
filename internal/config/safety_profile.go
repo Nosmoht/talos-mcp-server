@@ -68,16 +68,17 @@ const (
 func LoadSafetyProfile() (*SafetyProfile, error) {
 	p := &SafetyProfile{}
 
-	profile := strings.ToLower(strings.TrimSpace(os.Getenv("TALOS_MCP_SAFETY_PROFILE")))
-	switch profile {
-	case "":
+	raw, set := os.LookupEnv("TALOS_MCP_SAFETY_PROFILE")
+	profile := strings.ToLower(strings.TrimSpace(raw))
+	switch {
+	case !set:
 		p.Profile = ProfileNone
-	case ProfileConservative:
+	case profile == ProfileConservative:
 		p.Profile = ProfileConservative
 		p.ReadOnly = true
-	case ProfileStandard:
+	case profile == ProfileStandard:
 		p.Profile = ProfileStandard
-	case ProfileExpert:
+	case profile == ProfileExpert:
 		p.Profile = ProfileExpert
 		p.AllowClusterWide = true
 		p.EnableGen = true

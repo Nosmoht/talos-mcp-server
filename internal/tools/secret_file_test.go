@@ -130,9 +130,6 @@ func TestWriteSecretFile_SymlinkRejected(t *testing.T) {
 }
 
 func TestWriteSecretFile_ParentMissing(t *testing.T) {
-	// Dest inside a non-existent directory must fail — we rely on OpenFile
-	// to surface the error rather than pre-stating the parent, so we just
-	// verify a recognisable error message.
 	dest := filepath.Join(t.TempDir(), "missing-subdir", "file")
 	_, err := WriteSecretFile(dest, strings.NewReader("x"))
 	if err == nil {

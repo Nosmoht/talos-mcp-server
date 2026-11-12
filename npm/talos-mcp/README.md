@@ -16,7 +16,7 @@ No Go toolchain required. The correct native binary for your platform (Linux/mac
 
 Reads `~/.talos/config` by default — the same credentials used by `talosctl`.
 
-Set `TALOS_MCP_READ_ONLY=true` to expose only read-only tools.
+Set `TALOS_MCP_READ_ONLY=true` to expose only read-only tools. Boolean flags accept Go `strconv.ParseBool` values; any other value, an empty one included, stops the server.
 
 ## Documentation
 

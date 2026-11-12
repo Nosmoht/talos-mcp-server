@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"net"
-	"strconv"
 	"strings"
 )
 
@@ -93,56 +92,6 @@ func CheckInsecureAllowlist(raw string) (*InsecureAllowlistInspection, error) {
 
 	if !hasEntry {
 		return nil, errors.New("TALOS_MCP_INSECURE_ALLOWED_NODES contains no usable entries (only whitespace/empty tokens)")
-	}
-
-	return out, nil
-}
-
-// ParseMetaPrivilegedKeys parses TALOS_MCP_META_PRIVILEGED_KEYS as a
-// comma-separated list of META keys (uint8). Accepts decimal (`6`), hex
-// (`0x06`, `0X06`), and explicit octal (`0o13`). REJECTS leading-zero
-// decimal-looking input (`013`) because Go's strconv.ParseUint with base 0
-// interprets it as octal, which surprises operators who type META values
-// in decimal.
-//
-// Empty entries (`",,5"`, leading/trailing commas, whitespace-only) are
-// silently skipped. Duplicates collapse via the map. On any parse error
-// or out-of-range value (> 255), returns an error naming the offending entry.
-//
-// Empty input (whitespace-only) returns an empty map and nil error — that
-// is the safe default.
-func ParseMetaPrivilegedKeys(raw string) (map[uint8]struct{}, error) {
-	out := make(map[uint8]struct{})
-	raw = strings.TrimSpace(raw)
-	if raw == "" {
-		return out, nil
-	}
-
-	for _, entry := range strings.Split(raw, ",") {
-		entry = strings.TrimSpace(entry)
-		if entry == "" {
-			continue
-		}
-
-		// Reject leading-zero decimal-looking input that strconv would parse as octal.
-		// Allow 0x..., 0X..., 0o..., 0b... explicitly; allow bare "0" itself.
-		if len(entry) > 1 && entry[0] == '0' {
-			second := entry[1]
-			if second != 'x' && second != 'X' && second != 'o' && second != 'O' && second != 'b' && second != 'B' {
-				return nil, fmt.Errorf("TALOS_MCP_META_PRIVILEGED_KEYS entry %q has ambiguous leading zero: use explicit 0x prefix for hex or 0o for octal", entry)
-			}
-		}
-
-		// bit-size 9 lets us detect overflow > 255 explicitly (uint8's range is 0..255).
-		v, err := strconv.ParseUint(entry, 0, 9)
-		if err != nil {
-			return nil, fmt.Errorf("TALOS_MCP_META_PRIVILEGED_KEYS entry %q: %w", entry, err)
-		}
-		if v > 255 {
-			return nil, fmt.Errorf("TALOS_MCP_META_PRIVILEGED_KEYS entry %q: value %d exceeds META key range 0-255", entry, v)
-		}
-
-		out[uint8(v)] = struct{}{}
 	}
 
 	return out, nil

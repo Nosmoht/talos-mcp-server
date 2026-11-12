@@ -116,11 +116,11 @@ func TestLoadSafetyProfile(t *testing.T) {
 			wantOverrides: []string{"read_only=true", "skip_version_check=true"},
 		},
 		{
-			name:          "non-'true' value maps to false (preserves strict legacy semantics)",
+			name:          "ParseBool spelling 1 enables the flag",
 			env:           map[string]string{"TALOS_MCP_READ_ONLY": "1"},
 			wantProfile:   ProfileNone,
-			wantReadOnly:  false,
-			wantOverrides: []string{"read_only=false"},
+			wantReadOnly:  true,
+			wantOverrides: []string{"read_only=true"},
 		},
 		{
 			name:          "invalid profile returns error",

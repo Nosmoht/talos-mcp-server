@@ -39,33 +39,46 @@ type Handlers struct {
 	// that talos_meta is allowed to write or delete. Empty means only the
 	// reserved keys are writable. Set once at startup.
 	MetaPrivilegedKeys map[uint8]struct{}
-	// patchMu serialises concurrent HandlePatchConfig calls on a per-node basis.
-	// In HTTP multi-session mode two agents could otherwise both fetch the current
-	// config, each merge their own patch, and the second apply would silently
-	// overwrite the first (read-modify-write race). The map is populated lazily
-	// on first use and is bounded by the number of distinct patch targets.
-	patchMu sync.Map // map[string]*sync.Mutex
+	// configWriteMu is process-wide because node spellings (default, hostname, IP) share no key without DNS.
+	configWriteMu sync.Mutex
+	// insecureApplyLocks holds the per-endpoint maintenance-mode apply locks; authenticated writes use configWriteMu.
+	insecureApplyLocks sync.Map
 	// dialMaintenance replaces dialTalosMaintenance in tests; nil selects it.
 	// Unexported so the TLS/fingerprint dial cannot be swapped from outside the package.
 	dialMaintenance func(ctx context.Context, endpoint string, fingerprint []byte) (maintenanceClient, error)
 }
 
-// nodePatchMu returns (or lazily creates) the per-node mutex that serialises
-// concurrent config-patch operations. key is the resolved node identifier or
-// "<default>" when no explicit node was provided.
-func (h *Handlers) nodePatchMu(key string) *sync.Mutex {
-	mu, _ := h.patchMu.LoadOrStore(key, &sync.Mutex{})
+// insecureApplyMu returns the apply lock for an endpoint; the key must come from talos.CanonicalIP, see .claude/rules/insecure-mode.md.
+func (h *Handlers) insecureApplyMu(canonicalEndpoint string) *sync.Mutex {
+	mu, _ := h.insecureApplyLocks.LoadOrStore(canonicalEndpoint, &sync.Mutex{})
 	return mu.(*sync.Mutex) //nolint:forcetypeassert // only *sync.Mutex is ever stored
 }
 
-// defaultToolTimeout is the maximum time a read-only tool call may take before
-// being cancelled. This prevents indefinite hangs when a Talos node is
-// unresponsive. Tools with their own timeout logic (HandleHealth, HandleEvents)
-// do not use this.
+func (h *Handlers) lockConfigWrite(ctx context.Context, tool string) (context.Context, func(), error) {
+	// TryLock, not Lock: a waiting call would hold a TALOS_MCP_MAX_CONCURRENT slot.
+	if !h.configWriteMu.TryLock() {
+		err := fmt.Errorf("%s refused: config write in progress on this server; retry when it completes", tool)
+		slog.Default().Warn("tool refused", "tool", tool, "error", err)
+		return ctx, nil, err
+	}
+	ctx, cancel := withToolTimeout(ctx)
+	return ctx, func() {
+		cancel()
+		h.configWriteMu.Unlock()
+	}, nil
+}
+
+func configWriteError(ctx context.Context, tool string, dryRun bool, err error) (unknown bool, wrapped error) {
+	// The node keeps writing after the client gives up, so a timed-out apply may have landed.
+	if ctx.Err() != nil && !dryRun {
+		return true, fmt.Errorf("%s: outcome unknown, the node may have applied the config; check it with talos_get machineconfig before retrying: %w", tool, err)
+	}
+	return false, fmt.Errorf("apply configuration: %w", err)
+}
+
+// defaultToolTimeout bounds read tools and the locked config-write section so an unresponsive node cannot hang them.
 const defaultToolTimeout = 30 * time.Second
 
-// withToolTimeout returns a context with defaultToolTimeout applied.
-// The caller must defer cancel().
 func withToolTimeout(ctx context.Context) (context.Context, context.CancelFunc) {
 	return context.WithTimeout(ctx, defaultToolTimeout)
 }
@@ -176,10 +189,7 @@ func resolveGraceful(v *bool) bool {
 	return v == nil || *v
 }
 
-// Outcome values for auditOutcome — every insecure-mode handler exit path
-// records exactly one of these strings, paired with the auditLog entry that
-// was emitted at handler entry. Defenders can join (audit-line, outcome-line)
-// by tool + nodes + a per-call correlation field.
+// Outcome* values are the outcome field of an AUDIT_OUTCOME record.
 const (
 	OutcomeOK                     = "ok"
 	OutcomeRefusedEnable          = "refused:enable-insecure-unset"
@@ -194,16 +204,11 @@ const (
 	OutcomeDialError              = "dial-error"
 	OutcomeRPCError               = "rpc-error"
 	OutcomeRefusedArgs            = "refused:args-invalid"
+	OutcomeRefusedWriteBusy       = "refused:config-write-in-progress"
+	OutcomeUnknown                = "outcome-unknown"
 )
 
-// auditOutcome emits a paired log line for every auditLog call, recording
-// the final outcome (success, refused-at-gate, dial-error, rpc-error) so an
-// IR responder can distinguish reconnaissance from action. Callers use:
-//
-//	defer func() { h.auditOutcome("talos_apply_config", outcome, returnErr) }()
-//
-// outcome is set by the handler to one of the Outcome* constants above
-// before each return.
+// auditOutcome logs a handler's outcome with its tool and error but no per-call key.
 func (h *Handlers) auditOutcome(tool, outcome string, err error) {
 	errStr := ""
 	if err != nil {
@@ -216,15 +221,6 @@ func (h *Handlers) auditOutcome(tool, outcome string, err error) {
 	)
 }
 
-// canonicalizeAndCheckInsecure validates the common gating for any
-// maintenance-mode tool call. It returns the canonical endpoint string used
-// uniformly for allowlist match, lock-key derivation, and gRPC dial; the
-// decoded fingerprint bytes (nil when no fingerprint was supplied); and the
-// outcome code identifying which gate failed (empty when all gates pass).
-//
-// The validation order is deliberate: consistency checks before format checks
-// (so an LLM that sets cert_fingerprint without insecure=true gets the
-// semantically-correct error, not a hex-format error).
 func (h *Handlers) canonicalizeAndCheckInsecure(endpoint, certFingerprint string, nodesProvided bool) (canonicalEndpoint string, fp []byte, outcome string, err error) {
 	if !h.EnableInsecure {
 		return "", nil, OutcomeRefusedEnable, fmt.Errorf("insecure mode refused: TALOS_MCP_ENABLE_INSECURE must be set to true at server startup")
@@ -252,6 +248,13 @@ func (h *Handlers) canonicalizeAndCheckInsecure(endpoint, certFingerprint string
 		fp = fpBytes
 	}
 	return canon, fp, "", nil
+}
+
+func fingerprintRequiresInsecure(tool, certFingerprint string, insecure bool) error {
+	if certFingerprint != "" && !insecure {
+		return fmt.Errorf("%s refused: cert_fingerprint requires insecure=true", tool)
+	}
+	return nil
 }
 
 // dialInsecure builds a one-shot maintenance-mode client. Errors are returned

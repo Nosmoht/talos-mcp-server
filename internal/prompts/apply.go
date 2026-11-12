@@ -5,6 +5,8 @@ import (
 	"fmt"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/Nosmoht/talos-mcp-server/internal/talos"
 )
 
 func applyConfigPrompt() *mcp.Prompt {
@@ -30,13 +32,8 @@ func handleApplyConfig(_ context.Context, req *mcp.GetPromptRequest) (*mcp.GetPr
 	}
 
 	mode := optionalArg(req, "mode", "try")
-	switch mode {
-	case "auto", "no_reboot", "staged", "try":
-		// valid
-	case "reboot":
-		return nil, fmt.Errorf("prompt %q: mode \"reboot\" is not supported: apply with mode \"no_reboot\", then reboot the node with talos_reboot", req.Params.Name)
-	default:
-		return nil, fmt.Errorf("prompt %q: unknown mode %q: must be auto, no_reboot, staged, or try", req.Params.Name, mode)
+	if _, err := talos.ParseApplyMode(mode); err != nil {
+		return nil, fmt.Errorf("prompt %q: %w", req.Params.Name, err)
 	}
 
 	msg := fmt.Sprintf(`Apply a machine config patch to Talos node %s.

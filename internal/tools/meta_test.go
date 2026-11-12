@@ -14,51 +14,6 @@ import (
 	"github.com/Nosmoht/talos-mcp-server/internal/talos"
 )
 
-func TestParseMetaKey(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name    string
-		input   string
-		want    uint8
-		wantErr string
-	}{
-		{name: "decimal", input: "6", want: 6},
-		{name: "decimal max", input: "255", want: 255},
-		{name: "decimal zero", input: "0", want: 0},
-		{name: "hex lower", input: "0x0c", want: 12},
-		{name: "hex upper", input: "0X0C", want: 12},
-		{name: "explicit octal", input: "0o17", want: 15},
-		{name: "empty", input: "", wantErr: "must not be empty"},
-		{name: "leading zero rejected", input: "06", wantErr: "ambiguous leading zero"},
-		{name: "leading zero rejected (long)", input: "013", wantErr: "ambiguous leading zero"},
-		{name: "overflow", input: "256", wantErr: "exceeds META key range"},
-		{name: "non-numeric", input: "abc", wantErr: "invalid syntax"},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			got, err := parseMetaKey(tc.input)
-			if tc.wantErr != "" {
-				if err == nil {
-					t.Fatalf("expected error containing %q, got nil", tc.wantErr)
-				}
-				if !strings.Contains(err.Error(), tc.wantErr) {
-					t.Fatalf("error %q does not contain %q", err.Error(), tc.wantErr)
-				}
-				return
-			}
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-			if got != tc.want {
-				t.Errorf("got %d, want %d", got, tc.want)
-			}
-		})
-	}
-}
-
 // TestHandleMeta_Guards verifies the action / confirm / privileged-key /
 // insecure gates of talos_meta. The mock client panics on Meta* calls, so
 // reaching the gRPC layer surfaces as a test failure.

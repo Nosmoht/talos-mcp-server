@@ -72,6 +72,7 @@ Reads `~/.talos/config` by default (the same file `talosctl` uses). Override via
 | `TALOS_MCP_ENABLE_INSECURE` | `false` | Unlock `insecure=true` on `talos_apply_config` / `talos_get` / `talos_version` / `talos_meta`. Bypasses mTLS — REQUIRES `TALOS_MCP_INSECURE_ALLOWED_NODES`. |
 | `TALOS_MCP_INSECURE_ALLOWED_NODES` | (unset) | Comma-separated IPs / CIDRs permitted as maintenance-mode endpoints. Required when `TALOS_MCP_ENABLE_INSECURE=true`. Refused: `0.0.0.0/0`, `::/0`, IPv4 mask `<16`, IPv6 mask `<48`. |
 | `TALOS_MCP_META_PRIVILEGED_KEYS` | *(none)* | Comma-separated META keys (decimal or `0x`-prefixed hex) that `talos_meta` is allowed to write/delete beyond `UserReserved1/2/3`. |
+| `TALOS_MCP_BLOCKED_CONFIG_PATHS` | (unset) | Comma-separated dot-paths (e.g. `machine.security,cluster.etcd`) that `talos_patch_config` refuses to change. Every document of a multi-document patch is inspected; a `$patch` directive counts as changing the mapping that holds it (a top-level one, the whole document); a patch containing a typed document (`apiVersion`/`kind`) is refused. While set, the authenticated `talos_apply_config` path is disabled. |
 | `TALOS_MCP_SAFETY_PROFILE` | (unset) | `conservative` / `standard` / `expert` preset that seeds gating flags. `expert` enables `EnableInsecure`. |
 | `TALOS_MCP_RATE_LIMIT` | `10` | HTTP mode: token-bucket refill rate (requests/second, float) |
 | `TALOS_MCP_RATE_BURST` | `20` | HTTP mode: token-bucket burst capacity (int) |
@@ -79,6 +80,8 @@ Reads `~/.talos/config` by default (the same file `talosctl` uses). Override via
 | `TALOS_MCP_MAX_CONCURRENT` | `20` | HTTP mode: max concurrent POST handlers (fail-fast 503 on overload) |
 | `TALOS_MCP_SUBSCRIPTION_RATE` | `1s` | Minimum interval between delivered `resources/updated` notifications per `(session, URI)` pair (Go duration, e.g. `500ms`) |
 | `TALOS_MCP_SUBSCRIPTION_BURST` | `3` | Initial notification burst per `(session, URI)` before the rate kicks in |
+
+The boolean `TALOS_MCP_*` flags accept the Go `strconv.ParseBool` spellings `1`, `t`, `T`, `TRUE`, `true`, `True`, `0`, `f`, `F`, `FALSE`, `false`, `False`; any other value, an empty one included, stops the server at startup.
 
 ## Compatibility
 
@@ -177,7 +180,7 @@ Server logs go to stderr only; the server sends no MCP `notifications/message` l
 | `talos_dmesg` | Read kernel ring buffer messages. |
 | `talos_events` | Fetch recent Talos runtime events (service changes, config changes). |
 | `talos_etcd` | Query etcd cluster: `members` (default) or `status`. |
-| `talos_etcd_snapshot` | Stream an etcd snapshot to a local file path. |
+| `talos_etcd_snapshot` | Stream an etcd snapshot to a new owner-only (0600) local file; an existing path is refused. The result includes the byte count and sha256. |
 | `talos_list_files` | List files and directories on a node filesystem. |
 | `talos_read_file` | Read the contents of a single file from exactly one target node's filesystem (e.g. /etc/os-release, /etc/machine-config.yaml). Passing more than one node is rejected. To browse directories first use talos_list_files. |
 | `talos_validate` | Validate a machine config (YAML/JSON) offline — no cluster connection. |
@@ -192,9 +195,9 @@ These tools modify cluster state and have explicit safety guards.
 | `talos_reboot` | Reboot target nodes. Supports `mode`: `default`, `powercycle`, `force`. | `confirm=true` required; `nodes` must be explicit |
 | `talos_upgrade` | Upgrade Talos on target nodes. Supports `preserve` (default `true`), `stage`, `force`, `reboot_mode`. | `confirm=true` required; `nodes` and `image` required |
 | `talos_rollback` | Roll back the last upgrade on target nodes. | `confirm=true` required; `nodes` must be explicit |
-| `talos_patch_config` | Apply a targeted machine config patch (strategic-merge or RFC 6902 JSON Patch). | `dry_run` defaults to `true`; `confirm=true` required when `dry_run=false` |
+| `talos_patch_config` | Apply a targeted machine config patch (strategic-merge or RFC 6902 JSON Patch). | `dry_run` defaults to `true`; `confirm=true` required when `dry_run=false`; a second authenticated config write while one runs is refused (`config write in progress`; retry); a write unfinished after 30s is cancelled and, with `dry_run=false`, reports an unknown outcome (check `talos_get machineconfig`) |
 | `talos_reset` | Wipe and factory-reset target nodes (irreversible). | `confirm=true` required; `nodes` must be explicit |
-| `talos_apply_config` | Apply a complete machine config to a single node. Supports maintenance-mode (`insecure=true` + `endpoint`) for fresh-node bootstrap. | `dry_run` defaults to `true`; `confirm=true` required when `dry_run=false` |
+| `talos_apply_config` | Apply a complete machine config to a single node. Supports maintenance-mode (`insecure=true` + `endpoint`) for fresh-node bootstrap. | `dry_run` defaults to `true`; `confirm=true` required when `dry_run=false`; a second authenticated config write while one runs is refused (`config write in progress`; retry); an authenticated write unfinished after 30s is cancelled and, with `dry_run=false`, reports an unknown outcome (check `talos_get machineconfig`); maintenance mode has no such limit |
 | `talos_meta` | Read, write, or delete META partition key/value pairs. Supports maintenance-mode (`insecure=true` + `endpoint`). | `write`/`delete` require `confirm=true`; non-`UserReserved*` keys require enumeration in `TALOS_MCP_META_PRIVILEGED_KEYS` |
 
 All tools accept an optional `nodes` field (list of node IPs or hostnames), except that `talos_read_file`, `talos_get`, `talos_patch_config`, `talos_apply_config` and `talos_meta` with `action=read` accept at most one node, and `talos_etcd_snapshot` requires exactly one. When omitted, the active context from talosconfig is used.

@@ -4,6 +4,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 )
 
@@ -63,9 +64,7 @@ const (
 	ProfileExpert = "expert"
 )
 
-// LoadSafetyProfile reads the current process environment and returns the
-// effective SafetyProfile. Returns an error if TALOS_MCP_SAFETY_PROFILE holds
-// an unrecognised value.
+// LoadSafetyProfile returns the effective profile, or an error for an unrecognised profile or override value.
 func LoadSafetyProfile() (*SafetyProfile, error) {
 	p := &SafetyProfile{}
 
@@ -88,26 +87,38 @@ func LoadSafetyProfile() (*SafetyProfile, error) {
 			profile, ProfileConservative, ProfileStandard, ProfileExpert)
 	}
 
-	applyOverride("TALOS_MCP_READ_ONLY", &p.ReadOnly, "read_only", &p.Overrides)
-	applyOverride("TALOS_MCP_ALLOW_CLUSTER_WIDE", &p.AllowClusterWide, "allow_cluster_wide", &p.Overrides)
-	applyOverride("TALOS_MCP_ENABLE_GEN", &p.EnableGen, "enable_gen", &p.Overrides)
-	applyOverride("TALOS_MCP_SKIP_VERSION_CHECK", &p.SkipVersionCheck, "skip_version_check", &p.Overrides)
-	applyOverride("TALOS_MCP_ENABLE_INSECURE", &p.EnableInsecure, "enable_insecure", &p.Overrides)
+	flags := []struct {
+		envKey string
+		target *bool
+		label  string
+	}{
+		{"TALOS_MCP_READ_ONLY", &p.ReadOnly, "read_only"},
+		{"TALOS_MCP_ALLOW_CLUSTER_WIDE", &p.AllowClusterWide, "allow_cluster_wide"},
+		{"TALOS_MCP_ENABLE_GEN", &p.EnableGen, "enable_gen"},
+		{"TALOS_MCP_SKIP_VERSION_CHECK", &p.SkipVersionCheck, "skip_version_check"},
+		{"TALOS_MCP_ENABLE_INSECURE", &p.EnableInsecure, "enable_insecure"},
+	}
+	for _, f := range flags {
+		if err := applyOverride(f.envKey, f.target, f.label, &p.Overrides); err != nil {
+			return nil, err
+		}
+	}
 
 	return p, nil
 }
 
-// applyOverride sets *target to the parsed boolean from envKey when the
-// variable is present in the environment, and appends "<label>=<value>" to
-// *overrides so the startup log can report which overrides fired.
-func applyOverride(envKey string, target *bool, label string, overrides *[]string) {
+func applyOverride(envKey string, target *bool, label string, overrides *[]string) error {
 	raw, ok := os.LookupEnv(envKey)
 	if !ok {
-		return
+		return nil
 	}
-	v := raw == "true"
+	v, err := strconv.ParseBool(raw)
+	if err != nil {
+		return fmt.Errorf("invalid %s %q: %w", envKey, raw, err)
+	}
 	*target = v
 	*overrides = append(*overrides, fmt.Sprintf("%s=%t", label, v))
+	return nil
 }
 
 // LogFields returns structured slog fields describing the effective profile.

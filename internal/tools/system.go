@@ -98,10 +98,10 @@ func (h *Handlers) HandleVersion(ctx context.Context, _ *mcp.CallToolRequest, ar
 	)
 	defer func() { h.auditOutcome("talos_version", outcome, finalErr) }()
 
-	if args.CertFingerprint != "" && !args.Insecure {
+	if err := fingerprintRequiresInsecure("talos_version", args.CertFingerprint, args.Insecure); err != nil {
 		outcome = OutcomeRefusedFPWithoutInsec
-		finalErr = fmt.Errorf("talos_version refused: cert_fingerprint requires insecure=true")
-		return nil, nil, finalErr
+		finalErr = err
+		return nil, nil, err
 	}
 
 	ctx, cancel := withToolTimeout(ctx)

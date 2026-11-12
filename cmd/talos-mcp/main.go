@@ -116,10 +116,6 @@ func main() {
 	allowedPaths := tools.ParseAllowedPaths(os.Getenv("TALOS_MCP_ALLOWED_PATHS"))
 	blockedConfigPaths := splitNonEmpty(os.Getenv("TALOS_MCP_BLOCKED_CONFIG_PATHS"), ",")
 
-	// Maintenance-mode (insecure) configuration. The allowlist is REQUIRED
-	// when EnableInsecure is true — the unauthenticated transport relies on
-	// it as the only network-layer defence. main.go log.Fatalf-s rather than
-	// silently treating an unset allowlist as "no restriction".
 	var (
 		insecureAllowedNodes *talos.NodeAllowlist
 		insecureBroadEntries []string
@@ -143,7 +139,7 @@ func main() {
 		}
 	}
 
-	metaPrivilegedKeys, err := config.ParseMetaPrivilegedKeys(os.Getenv("TALOS_MCP_META_PRIVILEGED_KEYS"))
+	metaPrivilegedKeys, err := talos.ParseMetaPrivilegedKeys(os.Getenv("TALOS_MCP_META_PRIVILEGED_KEYS"))
 	if err != nil {
 		stop()
 		log.Fatalf("%v", err) //nolint:gocritic // exitAfterDefer: stop() called explicitly above
@@ -164,9 +160,6 @@ func main() {
 	slog.Info("talos-mcp started", "version", version, "commit", commit, "date", date, "read_only", readOnly) //nolint:gosec // G706 false positive: version/commit/date are build-time ldflags constants injected by GoReleaser, not runtime user input
 	slog.Info("safety profile", safety.LogFields()...)
 
-	// Best-effort cluster version compatibility check. Non-fatal — the server
-	// starts regardless and operators can set TALOS_MCP_SKIP_VERSION_CHECK=true
-	// to suppress validation warnings.
 	if cv, err := tc.GetClusterVersion(ctx); err != nil {
 		slog.Warn("could not detect cluster Talos version", "error", err)
 	} else if !cv.InSupportedRange() {
@@ -275,14 +268,9 @@ func newServer(h *tools.Handlers, cfg serverConfig) (*mcp.Server, *subscriptions
 			"- etcd members or status → talos_etcd\n" +
 			"- kernel messages → talos_dmesg; runtime/lifecycle events → talos_events\n" +
 			"- containers → talos_containers; host processes → talos_processes\n" +
-			"- files on a node → talos_list_files / talos_read_file (talos_read_file targets exactly one node)\n" +
-			"- anything else (network, MachineStatus, …) → talos_get " +
-			"(query one node at a time; talos_resource_definitions lists the types).\n" +
-			"All tools take an optional 'nodes' field (node IPs); omit it to use the active context from talosconfig. " +
-			"Mutating tools differ by family: talos_reboot, talos_upgrade, talos_rollback and talos_reset require confirm=true AND explicit nodes (they will not guess a target). " +
-			"talos_service_action requires confirm=true and, when nodes is omitted, fans out to the talosconfig default nodes — pass nodes to scope it. " +
-			"talos_patch_config and talos_apply_config target exactly one node and default to dry_run=true; confirm=true is required only for a real apply (dry_run=false). They have no reboot mode: apply with no_reboot, then use talos_reboot. " +
-			"talos_meta requires confirm=true only for write/delete. " +
+			"- files on a node → talos_list_files / talos_read_file\n" +
+			"- anything else (network, MachineStatus, …) → talos_get; talos_resource_definitions lists the types\n" +
+			"Each tool's description documents its guard parameters and node scope. " +
 			"The talos:// MCP Resources mirror talos_get/talos_version for clients that prefer resources — the tools are the simpler path.",
 		CompletionHandler:  completions.NewHandler(h.AllowedNodes),
 		SubscribeHandler:   subMgr.Subscribe,
@@ -444,10 +432,6 @@ func runServer(ctx context.Context, server *mcp.Server, addr, token string, hc h
 	return nil
 }
 
-// splitNonEmpty splits s by sep and returns non-empty, trimmed tokens.
-// parseSubscriptionLimits parses the rate/burst knobs for the subscription
-// manager, applying defaults when the env vars are unset. Returns an error
-// when a value is present but unparseable.
 func parseSubscriptionLimits(rateStr, burstStr string) (time.Duration, int, error) {
 	rate := time.Second
 	if rateStr != "" {
@@ -474,7 +458,6 @@ func parseSubscriptionLimits(rateStr, burstStr string) (time.Duration, int, erro
 	return rate, burst, nil
 }
 
-// Returns nil when s is empty.
 func splitNonEmpty(s, sep string) []string {
 	if s == "" {
 		return nil

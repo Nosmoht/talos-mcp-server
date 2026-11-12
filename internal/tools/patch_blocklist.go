@@ -1,16 +1,16 @@
 package tools
 
 import (
+	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"strings"
 
 	"go.yaml.in/yaml/v4"
 )
 
-// checkBlockedPaths returns an error when the patch touches any path listed in
-// blocked. It handles both RFC 6902 JSON Patch arrays and strategic merge
-// patches (YAML or JSON maps). An empty blocked slice is a no-op.
 func checkBlockedPaths(patchDoc []byte, blocked []string) error {
 	if len(blocked) == 0 {
 		return nil
@@ -22,11 +22,8 @@ func checkBlockedPaths(patchDoc []byte, blocked []string) error {
 	}
 
 	for _, p := range paths {
-		// An empty path is an RFC 6902 root-document pointer ("/").
-		// A root replacement would overwrite every config key, including all
-		// blocked paths, so reject it whenever any blocklist is active.
 		if p == "" {
-			return fmt.Errorf("patch contains a root-document operation (RFC 6902 path \"/\") which would overwrite all blocked paths")
+			return fmt.Errorf("patch replaces the whole config document (RFC 6902 path \"/\" or a top-level $patch), which would overwrite blocked config path %q", blocked[0])
 		}
 
 		for _, b := range blocked {
@@ -47,12 +44,7 @@ func pathConflicts(p, b string) bool {
 		strings.HasPrefix(b, p+".")
 }
 
-// extractPatchPaths returns all dot-separated field paths touched by a patch
-// document. Supports RFC 6902 JSON Patch arrays (extracts the "path" field of
-// each operation, normalised to dot notation) and strategic merge patches
-// (YAML or JSON maps, flattened to dot-paths).
 func extractPatchPaths(patchDoc []byte) ([]string, error) {
-	// Try RFC 6902: JSON array of operation objects.
 	var ops []struct {
 		Op   string `json:"op"`
 		Path string `json:"path"`
@@ -72,16 +64,25 @@ func extractPatchPaths(patchDoc []byte) ([]string, error) {
 		return out, nil
 	}
 
-	// Strategic merge patch: YAML or JSON map.
-	var m map[string]any
-	if err := yaml.Unmarshal(patchDoc, &m); err != nil {
-		return nil, fmt.Errorf("parse patch as YAML/JSON: %w", err)
-	}
-
+	// configpatcher.LoadPatch loads every document, so each is inspected and typed ones are refused.
+	dec := yaml.NewDecoder(bytes.NewReader(patchDoc))
 	var paths []string
-	collectPaths("", m, &paths)
-
-	return paths, nil
+	for i := 1; ; i++ {
+		var m map[string]any
+		err := dec.Decode(&m)
+		if errors.Is(err, io.EOF) {
+			return paths, nil
+		}
+		if err != nil {
+			return nil, fmt.Errorf("parse patch as YAML/JSON: %w", err)
+		}
+		_, hasAPIVersion := m["apiVersion"]
+		_, hasKind := m["kind"]
+		if hasAPIVersion || hasKind {
+			return nil, fmt.Errorf("patch document %d carries apiVersion/kind: typed config documents are refused while TALOS_MCP_BLOCKED_CONFIG_PATHS is set", i)
+		}
+		collectPaths("", m, &paths)
+	}
 }
 
 // normaliseJSONPointer converts an RFC 6902 JSON pointer (e.g. "/machine/network/hostname")
@@ -99,24 +100,24 @@ func normaliseJSONPointer(ptr string) string {
 	return strings.Join(parts, ".")
 }
 
-// collectPaths recursively walks a decoded YAML map and appends only leaf
-// dot-paths to paths. Intermediate container nodes are not added; only the
-// deepest keys (non-map values, or empty maps) are recorded. This prevents
-// false positives when a patch touches an unrelated sibling subtree whose
-// ancestor happens to share a prefix with a blocked path.
+// collectPaths records only leaf paths, because an intermediate node would conflict with every blocked path below it.
 func collectPaths(prefix string, m map[string]any, paths *[]string) {
 	for k, v := range m {
+		// machinery applies $patch to the mapping that holds it (delete removes that whole node), so the parent path is recorded.
+		if k == "$patch" {
+			*paths = append(*paths, prefix)
+			continue
+		}
+
 		full := k
 		if prefix != "" {
 			full = prefix + "." + k
 		}
 
 		if child, ok := v.(map[string]any); ok && len(child) > 0 {
-			// Non-empty map — recurse without recording this intermediate node.
 			collectPaths(full, child, paths)
 		} else {
-			// Leaf: scalar, array, or empty map (empty map effectively replaces
-			// the subtree, so it must be checked against blocked paths).
+			// An empty map replaces the subtree, so it counts as a leaf.
 			*paths = append(*paths, full)
 		}
 	}

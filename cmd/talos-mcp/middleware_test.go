@@ -7,7 +7,6 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
-	"time"
 
 	"golang.org/x/sync/semaphore"
 	"golang.org/x/time/rate"
@@ -80,13 +79,17 @@ func TestLimitRequestBody(t *testing.T) {
 
 func TestLimitConcurrency(t *testing.T) {
 	block := make(chan struct{})
+	acquired := make(chan struct{}, 1)
 	inner := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		select {
+		case acquired <- struct{}{}:
+		default:
+		}
 		<-block
 		w.WriteHeader(http.StatusOK)
 	})
 	handler := LimitConcurrency(semaphore.NewWeighted(1))(inner)
 
-	// Start a POST that blocks inside the inner handler.
 	req1 := httptest.NewRequest(http.MethodPost, "/", nil)
 	rr1 := httptest.NewRecorder()
 	done := make(chan struct{})
@@ -94,10 +97,8 @@ func TestLimitConcurrency(t *testing.T) {
 		handler.ServeHTTP(rr1, req1)
 		close(done)
 	}()
-	// Give the goroutine time to acquire the semaphore.
-	time.Sleep(10 * time.Millisecond)
+	<-acquired
 
-	// Second POST while first is in-flight: expect 503.
 	req2 := httptest.NewRequest(http.MethodPost, "/", nil)
 	rr2 := httptest.NewRecorder()
 	handler.ServeHTTP(rr2, req2)
@@ -108,14 +109,12 @@ func TestLimitConcurrency(t *testing.T) {
 		t.Error("concurrent POST: missing Retry-After header")
 	}
 
-	// Unblock the first POST and verify it completed successfully.
 	close(block)
 	<-done
 	if rr1.Code != http.StatusOK {
 		t.Fatalf("first POST (after unblock): got %d, want 200", rr1.Code)
 	}
 
-	// GET bypasses the semaphore entirely.
 	nonBlock := LimitConcurrency(semaphore.NewWeighted(1))(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))

@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strconv"
 
 	"github.com/cosi-project/runtime/pkg/resource"
 	"github.com/cosi-project/runtime/pkg/state"
@@ -40,11 +39,7 @@ var reservedMetaKeys = map[uint8]struct{}{
 	uint8(meta.UserReserved3): {},
 }
 
-// HandleMeta implements the talos_meta tool. action ∈ {read, write, delete}.
-// Reading happens via the COSI MetaKey resource — the upstream resource-type
-// name is not yet verified against the live Talos source; the handler surfaces
-// upstream errors verbatim so callers can recover via talos_resource_definitions
-// if the type drifts.
+// HandleMeta implements the talos_meta tool (read, write or delete a META key).
 func (h *Handlers) HandleMeta(ctx context.Context, _ *mcp.CallToolRequest, args MetaArgs) (*mcp.CallToolResult, any, error) {
 	h.auditLog("talos_meta", struct {
 		Action            string   `json:"action"`
@@ -72,24 +67,21 @@ func (h *Handlers) HandleMeta(ctx context.Context, _ *mcp.CallToolRequest, args 
 	)
 	defer func() { h.auditOutcome("talos_meta", outcome, finalErr) }()
 
-	if args.CertFingerprint != "" && !args.Insecure {
+	if err := fingerprintRequiresInsecure("talos_meta", args.CertFingerprint, args.Insecure); err != nil {
 		outcome = OutcomeRefusedFPWithoutInsec
-		finalErr = fmt.Errorf("talos_meta refused: cert_fingerprint requires insecure=true")
-		return nil, nil, finalErr
+		finalErr = err
+		return nil, nil, err
 	}
 
-	key, err := parseMetaKey(args.Key)
+	key, err := talos.ParseMetaKey(args.Key)
 	if err != nil {
 		outcome = OutcomeRefusedArgs
 		finalErr = err
 		return nil, nil, err
 	}
 
-	// Validate action enum + write/delete confirm + privileged-key safelist
-	// before dialling.
 	switch args.Action {
 	case "read":
-		// no extra guards
 	case "write", "delete":
 		if !args.Confirm {
 			outcome = OutcomeRefusedConfirm
@@ -112,7 +104,6 @@ func (h *Handlers) HandleMeta(ctx context.Context, _ *mcp.CallToolRequest, args 
 	ctx, cancel := withToolTimeout(ctx)
 	defer cancel()
 
-	// Dispatch to authenticated or insecure transport.
 	if args.Insecure {
 		canonicalEndpoint, fp, gateOutcome, err := h.canonicalizeAndCheckInsecure(args.Endpoint, args.CertFingerprint, len(args.Nodes) > 0)
 		if err != nil {
@@ -148,7 +139,6 @@ func (h *Handlers) HandleMeta(ctx context.Context, _ *mcp.CallToolRequest, args 
 		}
 	}
 
-	// Authenticated path.
 	if args.Action == "read" {
 		if len(args.Nodes) > 1 {
 			outcome = OutcomeRefusedArgs
@@ -196,37 +186,9 @@ func (h *Handlers) HandleMeta(ctx context.Context, _ *mcp.CallToolRequest, args 
 		return jsonResult(map[string]any{"action": "delete", "key": key})
 	}
 
-	// Unreachable: action enum is validated above.
 	outcome = OutcomeRefusedArgs
 	finalErr = errors.New("talos_meta: unreachable action branch")
 	return nil, nil, finalErr
-}
-
-// parseMetaKey converts the string key field to uint8. Accepts decimal
-// (`6`), hex (`0x06`), and explicit octal (`0o6`). REJECTS leading-zero
-// decimal-looking input (`06`) because strconv.ParseUint with base 0 would
-// interpret it as octal — surprising for operators who type META keys in
-// decimal. Out-of-range (> 255) is rejected explicitly even though the
-// bit-size already covers it (clearer error message).
-func parseMetaKey(s string) (uint8, error) {
-	if s == "" {
-		return 0, errors.New("key must not be empty")
-	}
-	// Reject ambiguous leading-zero decimal-looking input.
-	if len(s) > 1 && s[0] == '0' {
-		second := s[1]
-		if second != 'x' && second != 'X' && second != 'o' && second != 'O' && second != 'b' && second != 'B' {
-			return 0, fmt.Errorf("key %q has ambiguous leading zero: use explicit 0x prefix for hex or 0o for octal", s)
-		}
-	}
-	v, err := strconv.ParseUint(s, 0, 9)
-	if err != nil {
-		return 0, fmt.Errorf("key %q: %w", s, err)
-	}
-	if v > 255 {
-		return 0, fmt.Errorf("key %q: value %d exceeds META key range 0-255", s, v)
-	}
-	return uint8(v), nil
 }
 
 // readMetaFromCOSI fetches the META key/value pair from the COSI state.

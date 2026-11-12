@@ -95,57 +95,8 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	safety, err := config.LoadSafetyProfile()
+	cfg, err := loadStartupConfig()
 	if err != nil {
-		stop()
-		log.Fatalf("%v", err) //nolint:gocritic // exitAfterDefer: stop() called explicitly above
-	}
-	readOnly := safety.ReadOnly
-	skipVersionCheck := safety.SkipVersionCheck
-
-	httpAddr := os.Getenv("TALOS_MCP_HTTP_ADDR")
-	authToken := os.Getenv("TALOS_MCP_AUTH_TOKEN")
-	os.Unsetenv("TALOS_MCP_AUTH_TOKEN") //nolint:errcheck // remove token from /proc/<pid>/environ
-
-	allowedNodes, err := talos.ParseNodeAllowlist(os.Getenv("TALOS_MCP_ALLOWED_NODES"))
-	if err != nil {
-		stop()
-		log.Fatalf("invalid TALOS_MCP_ALLOWED_NODES: %v", err) //nolint:gocritic // exitAfterDefer: stop() called explicitly above
-	}
-
-	allowedPaths := tools.ParseAllowedPaths(os.Getenv("TALOS_MCP_ALLOWED_PATHS"))
-	blockedConfigPaths := splitNonEmpty(os.Getenv("TALOS_MCP_BLOCKED_CONFIG_PATHS"), ",")
-
-	var (
-		insecureAllowedNodes *talos.NodeAllowlist
-		insecureBroadEntries []string
-	)
-	if safety.EnableInsecure {
-		rawAllowlist := os.Getenv("TALOS_MCP_INSECURE_ALLOWED_NODES")
-		inspection, err := config.CheckInsecureAllowlist(rawAllowlist)
-		if err != nil {
-			stop()
-			log.Fatalf("%v", err) //nolint:gocritic // exitAfterDefer: stop() called explicitly above
-		}
-		insecureBroadEntries = inspection.BroadEntries
-		insecureAllowedNodes, err = talos.ParseNodeAllowlist(rawAllowlist)
-		if err != nil {
-			stop()
-			log.Fatalf("invalid TALOS_MCP_INSECURE_ALLOWED_NODES: %v", err) //nolint:gocritic // exitAfterDefer: stop() called explicitly above
-		}
-		if insecureAllowedNodes == nil || insecureAllowedNodes.Len() == 0 {
-			stop()
-			log.Fatalf("TALOS_MCP_INSECURE_ALLOWED_NODES yielded no entries: cannot enable insecure mode") //nolint:gocritic // exitAfterDefer
-		}
-	}
-
-	metaPrivilegedKeys, err := talos.ParseMetaPrivilegedKeys(os.Getenv("TALOS_MCP_META_PRIVILEGED_KEYS"))
-	if err != nil {
-		stop()
-		log.Fatalf("%v", err) //nolint:gocritic // exitAfterDefer: stop() called explicitly above
-	}
-
-	if err := validateHTTPConfig(httpAddr, authToken); err != nil {
 		stop()
 		log.Fatalf("%v", err) //nolint:gocritic // exitAfterDefer: stop() called explicitly above
 	}
@@ -157,73 +108,20 @@ func main() {
 	}
 	defer tc.Close() //nolint:errcheck
 
-	slog.Info("talos-mcp started", "version", version, "commit", commit, "date", date, "read_only", readOnly) //nolint:gosec // G706 false positive: version/commit/date are build-time ldflags constants injected by GoReleaser, not runtime user input
-	slog.Info("safety profile", safety.LogFields()...)
-
-	if cv, err := tc.GetClusterVersion(ctx); err != nil {
-		slog.Warn("could not detect cluster Talos version", "error", err)
-	} else if !cv.InSupportedRange() {
-		slog.Warn("cluster Talos version is outside the tested range; some features may not work correctly",
-			"version", cv.String(),
-			"min_supported", talosversion.MinSupported.String(),
-			"max_tested", talosversion.MaxTested.String(),
-		)
-	} else {
-		slog.Info("cluster Talos version", "version", cv.String(), "status", "supported")
-	}
-
-	if allowedNodes != nil {
-		slog.Info("node allowlist active", "entries", allowedNodes.Len()) //nolint:gosec // G706: entry count is an integer, not user-controlled string input
-	} else {
-		slog.Info("node allowlist disabled")
-	}
-
-	if len(allowedPaths) > 0 {
-		slog.Info("path allowlist active", "entries", len(allowedPaths)) //nolint:gosec // G706: entry count is an integer, not user-controlled string input
-		slog.Warn("path allowlist is defense-in-depth only: the prefix check runs on the MCP server host and does not resolve symlinks on the remote node, so a symlink under an allowed prefix that points elsewhere is not detected")
-	} else {
-		slog.Info("path allowlist disabled")
-	}
-
-	if skipVersionCheck {
-		slog.Warn("version check disabled (TALOS_MCP_SKIP_VERSION_CHECK=true)")
-	}
-
-	if len(blockedConfigPaths) > 0 {
-		slog.Info("config path blocklist active", "entries", len(blockedConfigPaths)) //nolint:gosec // G706: entry count is an integer, not user-controlled string input
-	} else {
-		slog.Info("config path blocklist disabled")
-	}
-
-	if safety.EnableInsecure {
-		//nolint:gosec // G706: message is a constant; fields are integer count and operator-supplied CIDR, not user input
-		slog.Warn("maintenance-mode (insecure) operations ENABLED — bypasses mTLS; ensure the allowlist is tight",
-			"allowlist_entries", insecureAllowedNodes.Len(),
-		)
-		for _, broad := range insecureBroadEntries {
-			//nolint:gosec // G706: message is a constant; cidr is operator-supplied config, not user input
-			slog.Warn("insecure allowlist entry is broader than recommended", "cidr", broad)
-		}
-	} else {
-		slog.Info("maintenance-mode (insecure) operations disabled")
-	}
-
-	if len(metaPrivilegedKeys) > 0 {
-		//nolint:gosec // G706: message is a constant; field is an integer count, not user input
-		slog.Warn("META privileged-key safelist active — these keys are writable beyond UserReserved1/2/3",
-			"key_count", len(metaPrivilegedKeys),
-		)
-	}
+	slog.Info("talos-mcp started", "version", version, "commit", commit, "date", date, "read_only", cfg.safety.ReadOnly) //nolint:gosec // G706 false positive: version/commit/date are build-time ldflags constants injected by GoReleaser, not runtime user input
+	slog.Info("safety profile", cfg.safety.LogFields()...)
+	logClusterVersion(ctx, tc)
+	cfg.logGuards()
 
 	h := &tools.Handlers{
 		Client:               tc,
-		AllowedNodes:         allowedNodes,
-		AllowedPaths:         allowedPaths,
-		SkipVersionCheck:     skipVersionCheck,
-		BlockedConfigPaths:   blockedConfigPaths,
-		EnableInsecure:       safety.EnableInsecure,
-		InsecureAllowedNodes: insecureAllowedNodes,
-		MetaPrivilegedKeys:   metaPrivilegedKeys,
+		AllowedNodes:         cfg.allowedNodes,
+		AllowedPaths:         cfg.allowedPaths,
+		SkipVersionCheck:     cfg.safety.SkipVersionCheck,
+		BlockedConfigPaths:   cfg.blockedConfigPaths,
+		EnableInsecure:       cfg.safety.EnableInsecure,
+		InsecureAllowedNodes: cfg.insecureAllowedNodes,
+		MetaPrivilegedKeys:   cfg.metaPrivilegedKeys,
 	}
 
 	subRate, subBurst, err := parseSubscriptionLimits(os.Getenv("TALOS_MCP_SUBSCRIPTION_RATE"), os.Getenv("TALOS_MCP_SUBSCRIPTION_BURST"))
@@ -232,7 +130,7 @@ func main() {
 		log.Fatalf("%v", err) //nolint:gocritic // exitAfterDefer: stop() called explicitly above
 	}
 	server, subMgr := newServer(h, serverConfig{
-		ReadOnly:           readOnly,
+		ReadOnly:           cfg.safety.ReadOnly,
 		SubscriptionRate:   subRate,
 		SubscriptionBurst:  subBurst,
 		ResourceClient:     tc,
@@ -240,8 +138,143 @@ func main() {
 	})
 	defer subMgr.Shutdown()
 
-	if err := runServer(ctx, server, httpAddr, authToken, newHTTPTransportConfig(), tc.Ping); err != nil {
+	if err := runServer(ctx, server, cfg.httpAddr, cfg.authToken, newHTTPTransportConfig(), tc.Ping); err != nil {
 		slog.Error("server stopped with error", "error", err)
+	}
+}
+
+type startupConfig struct {
+	safety               *config.SafetyProfile
+	httpAddr             string
+	authToken            string
+	allowedNodes         *talos.NodeAllowlist
+	allowedPaths         []string
+	blockedConfigPaths   []string
+	insecureAllowedNodes *talos.NodeAllowlist
+	insecureBroadEntries []string
+	metaPrivilegedKeys   map[uint8]struct{}
+}
+
+func loadStartupConfig() (*startupConfig, error) {
+	safety, err := config.LoadSafetyProfile()
+	if err != nil {
+		return nil, err
+	}
+
+	cfg := &startupConfig{
+		safety:    safety,
+		httpAddr:  os.Getenv("TALOS_MCP_HTTP_ADDR"),
+		authToken: os.Getenv("TALOS_MCP_AUTH_TOKEN"),
+	}
+	os.Unsetenv("TALOS_MCP_AUTH_TOKEN") //nolint:errcheck // remove token from /proc/<pid>/environ
+
+	if cfg.allowedNodes, err = talos.ParseNodeAllowlist(os.Getenv("TALOS_MCP_ALLOWED_NODES")); err != nil {
+		return nil, fmt.Errorf("invalid TALOS_MCP_ALLOWED_NODES: %w", err)
+	}
+
+	cfg.allowedPaths = tools.ParseAllowedPaths(os.Getenv("TALOS_MCP_ALLOWED_PATHS"))
+	cfg.blockedConfigPaths = splitNonEmpty(os.Getenv("TALOS_MCP_BLOCKED_CONFIG_PATHS"), ",")
+
+	if safety.EnableInsecure {
+		if cfg.insecureAllowedNodes, cfg.insecureBroadEntries, err = loadInsecureAllowlist(); err != nil {
+			return nil, err
+		}
+	}
+
+	if cfg.metaPrivilegedKeys, err = talos.ParseMetaPrivilegedKeys(os.Getenv("TALOS_MCP_META_PRIVILEGED_KEYS")); err != nil {
+		return nil, err
+	}
+
+	if err := validateHTTPConfig(cfg.httpAddr, cfg.authToken); err != nil {
+		return nil, err
+	}
+
+	return cfg, nil
+}
+
+func loadInsecureAllowlist() (*talos.NodeAllowlist, []string, error) {
+	rawAllowlist := os.Getenv("TALOS_MCP_INSECURE_ALLOWED_NODES")
+
+	inspection, err := config.CheckInsecureAllowlist(rawAllowlist)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	allowlist, err := talos.ParseNodeAllowlist(rawAllowlist)
+	if err != nil {
+		return nil, nil, fmt.Errorf("invalid TALOS_MCP_INSECURE_ALLOWED_NODES: %w", err)
+	}
+
+	if allowlist == nil || allowlist.Len() == 0 {
+		return nil, nil, errors.New("TALOS_MCP_INSECURE_ALLOWED_NODES yielded no entries: cannot enable insecure mode")
+	}
+
+	return allowlist, inspection.BroadEntries, nil
+}
+
+func logClusterVersion(ctx context.Context, tc *talos.Client) {
+	cv, err := tc.GetClusterVersion(ctx)
+	switch {
+	case err != nil:
+		slog.Warn("could not detect cluster Talos version", "error", err)
+	case !cv.InSupportedRange():
+		slog.Warn("cluster Talos version is outside the tested range; some features may not work correctly",
+			"version", cv.String(),
+			"min_supported", talosversion.MinSupported.String(),
+			"max_tested", talosversion.MaxTested.String(),
+		)
+	default:
+		slog.Info("cluster Talos version", "version", cv.String(), "status", "supported")
+	}
+}
+
+func (cfg *startupConfig) logGuards() {
+	if cfg.allowedNodes != nil {
+		slog.Info("node allowlist active", "entries", cfg.allowedNodes.Len()) //nolint:gosec // G706: entry count is an integer, not user-controlled string input
+	} else {
+		slog.Info("node allowlist disabled")
+	}
+
+	if len(cfg.allowedPaths) > 0 {
+		slog.Info("path allowlist active", "entries", len(cfg.allowedPaths)) //nolint:gosec // G706: entry count is an integer, not user-controlled string input
+		slog.Warn("path allowlist is defense-in-depth only: the prefix check runs on the MCP server host and does not resolve symlinks on the remote node, so a symlink under an allowed prefix that points elsewhere is not detected")
+	} else {
+		slog.Info("path allowlist disabled")
+	}
+
+	if cfg.safety.SkipVersionCheck {
+		slog.Warn("version check disabled (TALOS_MCP_SKIP_VERSION_CHECK=true)")
+	}
+
+	if len(cfg.blockedConfigPaths) > 0 {
+		slog.Info("config path blocklist active", "entries", len(cfg.blockedConfigPaths)) //nolint:gosec // G706: entry count is an integer, not user-controlled string input
+	} else {
+		slog.Info("config path blocklist disabled")
+	}
+
+	cfg.logInsecureMode()
+
+	if len(cfg.metaPrivilegedKeys) > 0 {
+		//nolint:gosec // G706: message is a constant; field is an integer count, not user input
+		slog.Warn("META privileged-key safelist active — these keys are writable beyond UserReserved1/2/3",
+			"key_count", len(cfg.metaPrivilegedKeys),
+		)
+	}
+}
+
+func (cfg *startupConfig) logInsecureMode() {
+	if !cfg.safety.EnableInsecure {
+		slog.Info("maintenance-mode (insecure) operations disabled")
+		return
+	}
+
+	//nolint:gosec // G706: message is a constant; fields are integer count and operator-supplied CIDR, not user input
+	slog.Warn("maintenance-mode (insecure) operations ENABLED — bypasses mTLS; ensure the allowlist is tight",
+		"allowlist_entries", cfg.insecureAllowedNodes.Len(),
+	)
+	for _, broad := range cfg.insecureBroadEntries {
+		//nolint:gosec // G706: message is a constant; cidr is operator-supplied config, not user input
+		slog.Warn("insecure allowlist entry is broader than recommended", "cidr", broad)
 	}
 }
 

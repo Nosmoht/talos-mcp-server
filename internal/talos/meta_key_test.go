@@ -25,6 +25,8 @@ func TestParseMetaKey(t *testing.T) {
 		{name: "leading zero rejected (long)", input: "013", wantErr: "ambiguous leading zero"},
 		{name: "overflow", input: "256", wantErr: "exceeds META key range"},
 		{name: "non-numeric", input: "abc", wantErr: "invalid syntax"},
+		{name: "decimal underscore rejected", input: "1_0", wantErr: "must not contain underscores"},
+		{name: "hex underscore rejected", input: "0x_0c", wantErr: "must not contain underscores"},
 	}
 
 	for _, tc := range tests {
@@ -75,6 +77,7 @@ func TestParseMetaPrivilegedKeys(t *testing.T) {
 		{name: "negative", input: "-1", wantErr: "invalid syntax"},
 		{name: "non-numeric", input: "abc", wantErr: "invalid syntax"},
 		{name: "trailing comma whitespace", input: "6, , 7,", want: []uint8{6, 7}},
+		{name: "underscore rejected", input: "6, 1_3", wantErr: "must not contain underscores"},
 	}
 
 	for _, tc := range tests {

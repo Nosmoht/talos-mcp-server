@@ -45,23 +45,10 @@ func pathConflicts(p, b string) bool {
 }
 
 func extractPatchPaths(patchDoc []byte) ([]string, error) {
-	var ops []struct {
-		Op   string `json:"op"`
-		Path string `json:"path"`
-		From string `json:"from"` // present for "move" and "copy" ops (RFC 6902 §4.3, §4.4)
-	}
+	// A map, not a struct: evanphx/json-patch (behind configpatcher.LoadPatch) matches keys exactly, struct decoding would also take "PATH".
+	var ops []map[string]json.RawMessage
 	if json.Unmarshal(patchDoc, &ops) == nil && len(ops) > 0 {
-		out := make([]string, 0, len(ops)*2)
-		for _, op := range ops {
-			out = append(out, normaliseJSONPointer(op.Path))
-			// "move" and "copy" also read from the "from" path; check it too so that
-			// an operation like {"op":"move","from":"/machine/security","path":"/x"}
-			// does not silently bypass the blocklist.
-			if (op.Op == "move" || op.Op == "copy") && op.From != "" {
-				out = append(out, normaliseJSONPointer(op.From))
-			}
-		}
-		return out, nil
+		return rfc6902Paths(ops)
 	}
 
 	// configpatcher.LoadPatch loads every document, so each is inspected and typed ones are refused.
@@ -83,6 +70,32 @@ func extractPatchPaths(patchDoc []byte) ([]string, error) {
 		}
 		collectPaths("", m, &paths)
 	}
+}
+
+// rfc6902Paths returns each operation's path, and its from for every op so a mis-cased op key cannot hide a move or copy.
+func rfc6902Paths(ops []map[string]json.RawMessage) ([]string, error) {
+	out := make([]string, 0, len(ops)*2)
+	for i, op := range ops {
+		if _, ok := op["path"]; !ok {
+			return nil, fmt.Errorf("patch operation %d has no \"path\"", i+1)
+		}
+		for _, key := range []string{"path", "from"} {
+			raw, ok := op[key]
+			if !ok {
+				continue
+			}
+			var ptr string
+			if err := json.Unmarshal(raw, &ptr); err != nil {
+				return nil, fmt.Errorf("patch operation %d: %q is not a string: %w", i+1, key, err)
+			}
+			// evanphx/json-patch drops the first segment unchecked, so "x/cluster/etcd" targets /cluster/etcd.
+			if ptr != "" && !strings.HasPrefix(ptr, "/") {
+				return nil, fmt.Errorf("patch operation %d: %q %q must start with \"/\" (RFC 6901)", i+1, key, ptr)
+			}
+			out = append(out, normaliseJSONPointer(ptr))
+		}
+	}
+	return out, nil
 }
 
 // normaliseJSONPointer converts an RFC 6902 JSON pointer (e.g. "/machine/network/hostname")

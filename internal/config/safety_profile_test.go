@@ -128,6 +128,16 @@ func TestLoadSafetyProfile(t *testing.T) {
 			wantErrSubstr: `invalid TALOS_MCP_SAFETY_PROFILE "paranoid"`,
 		},
 		{
+			name:          "set but empty profile returns error",
+			env:           map[string]string{"TALOS_MCP_SAFETY_PROFILE": ""},
+			wantErrSubstr: `invalid TALOS_MCP_SAFETY_PROFILE ""`,
+		},
+		{
+			name:          "whitespace-only profile returns error",
+			env:           map[string]string{"TALOS_MCP_SAFETY_PROFILE": "  "},
+			wantErrSubstr: `invalid TALOS_MCP_SAFETY_PROFILE ""`,
+		},
+		{
 			name:         "profile name is case-insensitive",
 			env:          map[string]string{"TALOS_MCP_SAFETY_PROFILE": "EXPERT"},
 			wantProfile:  ProfileExpert,

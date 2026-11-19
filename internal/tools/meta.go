@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/cosi-project/runtime/pkg/resource"
+	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/cosi-project/runtime/pkg/state"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/siderolabs/talos/pkg/machinery/meta"
@@ -14,6 +15,43 @@ import (
 	"github.com/Nosmoht/talos-mcp-server/internal/marshal"
 	"github.com/Nosmoht/talos-mcp-server/internal/talos"
 )
+
+// MetaReadArgs exposes only parameters needed to read a META key. Keeping
+// mutation controls out of this schema makes read-only access safe by design.
+type MetaReadArgs struct {
+	Key             string   `json:"key" jsonschema:"META key as decimal or 0x-prefixed hexadecimal (0-255)."`
+	Nodes           []string `json:"nodes,omitempty" jsonschema:"Authenticated mode: zero or one target node. Omit for the default node; mutually exclusive with endpoint."`
+	Insecure        bool     `json:"insecure,omitempty" jsonschema:"Read from a maintenance-mode node without mTLS. Requires endpoint and TALOS_MCP_ENABLE_INSECURE=true."`
+	Endpoint        string   `json:"endpoint,omitempty" jsonschema:"Bare IP address of a maintenance-mode node, required when insecure=true."`
+	CertFingerprint string   `json:"cert_fingerprint,omitempty" jsonschema:"Optional SHA-256 server certificate fingerprint for TOFU pinning, valid only when insecure=true."`
+}
+
+// META resource data is polymorphic, but the read response envelope is stable.
+var metaReadOutputSchema = &jsonschema.Schema{
+	Type: "object",
+	Properties: map[string]*jsonschema.Schema{
+		"action":   {Type: "string"},
+		"key":      {Type: "integer"},
+		"resource": {Type: "object"},
+	},
+	Required: []string{"action", "key", "resource"},
+}
+
+// MetaReadOutputSchema returns the structured result schema for talos_meta_read.
+func MetaReadOutputSchema() *jsonschema.Schema { return metaReadOutputSchema }
+
+// HandleMetaRead delegates through the existing META read path. The read-only
+// argument type cannot express action=write or action=delete.
+func (h *Handlers) HandleMetaRead(ctx context.Context, req *mcp.CallToolRequest, args MetaReadArgs) (*mcp.CallToolResult, any, error) {
+	return h.HandleMeta(ctx, req, MetaArgs{
+		Action:          "read",
+		Key:             args.Key,
+		Nodes:           args.Nodes,
+		Insecure:        args.Insecure,
+		Endpoint:        args.Endpoint,
+		CertFingerprint: args.CertFingerprint,
+	})
+}
 
 // MetaArgs defines input for the talos_meta tool — read/write/delete on the
 // META partition key/value store. Supports both authenticated and

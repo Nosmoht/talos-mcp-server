@@ -6,8 +6,8 @@ import (
 	"fmt"
 
 	"github.com/cosi-project/runtime/pkg/resource"
-	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/cosi-project/runtime/pkg/state"
+	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/siderolabs/talos/pkg/machinery/meta"
 	runtimeres "github.com/siderolabs/talos/pkg/machinery/resources/runtime"

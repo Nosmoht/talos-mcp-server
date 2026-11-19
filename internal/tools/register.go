@@ -54,7 +54,7 @@ const (
 	descEtcd = "Query etcd cluster membership and health from a control-plane node. " +
 		"Use this for etcd rather than talos_get type=Member. subcommand='members' (default) or 'status'."
 
-	descEtcdSnapshot = "Take an etcd backup snapshot from a single control-plane node and write it to a new owner-only (0600) local file. " +
+	descEtcdSnapshot = "Create a local etcd backup snapshot from a single control-plane node; writes a new owner-only (0600) file on the MCP server host. " +
 		"Requires exactly one control-plane node in nodes[]. " +
 		"An existing file or symlink at the path is refused. " +
 		"Returns the file path, byte count and sha256 on success. " +
@@ -126,7 +126,12 @@ const (
 		"A config write (patch or apply) that arrives while another authenticated one runs is refused with 'config write in progress'; retry when it completes. " +
 		"An authenticated config write that has not finished after 30s is cancelled; with dry_run=false its outcome is then unknown — check the node with talos_get machineconfig before retrying."
 
-	descMeta = "Read, write, or delete META partition key/value pairs. " +
+	descMetaRead = "Read a META partition key from a single Talos node. " +
+		"Use this read-only tool to inspect META keys; for writes or deletion use talos_meta. " +
+		"Supports maintenance-mode (insecure=true + endpoint) with TALOS_MCP_ENABLE_INSECURE=true and an allowed endpoint."
+
+	descMeta = "Read, write, or delete META partition key/value pairs (legacy combined interface). " +
+		"Prefer talos_meta_read for reads. " +
 		"action ∈ {read, write, delete}. write/delete require confirm=true. " +
 		"Reading is unrestricted; write/delete are restricted to meta.UserReserved1/2/3 " +
 		"unless the key is enumerated in TALOS_MCP_META_PRIVILEGED_KEYS. " +
@@ -151,6 +156,7 @@ var toolDescriptions = map[string]string{
 	"talos_events":               descEvents,
 	"talos_etcd":                 descEtcd,
 	"talos_etcd_snapshot":        descEtcdSnapshot,
+	"talos_meta_read":            descMetaRead,
 	"talos_list_files":           descListFiles,
 	"talos_read_file":            descReadFile,
 	"talos_validate":             descValidate,
@@ -187,12 +193,13 @@ func Register(server *mcp.Server, h *Handlers, readOnly bool) {
 	addReadTool(server, "talos_dmesg", descDmesg, DmesgOutputSchema(), h.HandleDmesg)
 	addReadTool(server, "talos_events", descEvents, EventsOutputSchema(), h.HandleEvents)
 	addReadTool(server, "talos_etcd", descEtcd, EtcdOutputSchema(), h.HandleEtcd)
-	addReadTool(server, "talos_etcd_snapshot", descEtcdSnapshot, EtcdSnapshotOutputSchema(), h.HandleEtcdSnapshot)
 	addReadTool(server, "talos_list_files", descListFiles, ListFilesOutputSchema(), h.HandleListFiles)
 	addReadTool(server, "talos_read_file", descReadFile, ReadFileOutputSchema(), h.HandleReadFile)
 	addReadTool(server, "talos_validate", descValidate, ValidateOutputSchema(), h.HandleValidate)
+	addReadTool(server, "talos_meta_read", descMetaRead, MetaReadOutputSchema(), h.HandleMetaRead)
 
 	if !readOnly {
+		addLocalWritingTool(server, "talos_etcd_snapshot", descEtcdSnapshot, EtcdSnapshotOutputSchema(), h.HandleEtcdSnapshot)
 		addMutatingTool(server, "talos_service_action", descServiceAction, h.HandleServiceAction)
 		addMutatingTool(server, "talos_reboot", descReboot, h.HandleReboot)
 		addMutatingTool(server, "talos_upgrade", descUpgrade, h.HandleUpgrade)
@@ -218,6 +225,18 @@ func addMutatingTool[In, Out any](server *mcp.Server, name, description string, 
 		Name:        name,
 		Description: description,
 		Annotations: &mcp.ToolAnnotations{DestructiveHint: boolPtr(true), OpenWorldHint: closedWorld()},
+	}, handler)
+}
+
+// addLocalWritingTool registers a tool that changes the MCP server host's filesystem
+// without modifying or overwriting Talos cluster state. It must not be
+// available in TALOS_MCP_READ_ONLY mode, even though it is non-destructive.
+func addLocalWritingTool[In, Out any](server *mcp.Server, name, description string, outputSchema *jsonschema.Schema, handler mcp.ToolHandlerFor[In, Out]) {
+	mcp.AddTool(server, &mcp.Tool{
+		Name:         name,
+		Description:  description,
+		Annotations:  &mcp.ToolAnnotations{ReadOnlyHint: false, DestructiveHint: boolPtr(false), OpenWorldHint: closedWorld()},
+		OutputSchema: outputSchema,
 	}, handler)
 }
 

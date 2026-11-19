@@ -67,6 +67,9 @@ func TestToolDescriptions_Disambiguation(t *testing.T) {
 		// dedicated tools must point back at the generic talos_get they replace.
 		"talos_services": {"talos_get"},
 		"talos_etcd":     {"talos_get"},
+		// Read and write META tools have intentionally different safety surfaces.
+		"talos_meta_read": {"talos_meta"},
+		"talos_meta":      {"talos_meta_read"},
 		// the three log-ish tools must cross-reference each other.
 		"talos_logs":   {"talos_dmesg", "talos_events"},
 		"talos_dmesg":  {"talos_logs", "talos_events"},

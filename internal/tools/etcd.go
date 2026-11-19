@@ -28,7 +28,7 @@ func EtcdSnapshotOutputSchema() *jsonschema.Schema { return etcdSnapshotOutputSc
 
 // EtcdArgs defines input for talos_etcd.
 type EtcdArgs struct {
-	Subcommand string   `json:"subcommand" jsonschema:"Etcd subcommand: 'members' or 'status'."`
+	Subcommand string   `json:"subcommand,omitempty" jsonschema:"Etcd subcommand: 'members' or 'status'."`
 	Nodes      []string `json:"nodes,omitempty" jsonschema:"Target node IPs or hostnames. Omit to use the default nodes from talosconfig."`
 }
 

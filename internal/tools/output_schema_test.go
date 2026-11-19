@@ -29,6 +29,7 @@ func TestOutputSchemas_AllAccessorsResolve(t *testing.T) {
 		"talos_events":               EventsOutputSchema,
 		"talos_etcd":                 EtcdOutputSchema,
 		"talos_etcd_snapshot":        EtcdSnapshotOutputSchema,
+		"talos_meta_read":            MetaReadOutputSchema,
 		"talos_list_files":           ListFilesOutputSchema,
 		"talos_read_file":            ReadFileOutputSchema,
 		"talos_validate":             ValidateOutputSchema,
@@ -75,6 +76,15 @@ func TestOutputSchema_ValidatesPayload(t *testing.T) {
 			schema: HealthOutputSchema(),
 			payload: healthResult{
 				Messages: []string{"etcd is healthy", "nodes are ready"},
+			},
+		},
+		{
+			name:   "talos_meta_read",
+			schema: MetaReadOutputSchema(),
+			payload: map[string]any{
+				"action":   "read",
+				"key":      12,
+				"resource": map[string]any{"spec": map[string]any{"value": "example"}},
 			},
 		},
 		{

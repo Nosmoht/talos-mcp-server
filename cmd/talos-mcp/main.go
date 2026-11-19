@@ -299,6 +299,7 @@ func newServer(h *tools.Handlers, cfg serverConfig) (*mcp.Server, *subscriptions
 			"- service state → talos_services; a service's logs → talos_logs\n" +
 			"- Talos versions → talos_version\n" +
 			"- etcd members or status → talos_etcd\n" +
+			"- META reads → talos_meta_read; META writes/deletes → talos_meta\n" +
 			"- kernel messages → talos_dmesg; runtime/lifecycle events → talos_events\n" +
 			"- containers → talos_containers; host processes → talos_processes\n" +
 			"- files on a node → talos_list_files / talos_read_file\n" +
